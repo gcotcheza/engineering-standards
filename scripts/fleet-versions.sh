@@ -50,9 +50,11 @@ canon_version=${canon_version%"${canon_version##*[![:space:]]}"}   # trim traili
 canon_hash=$(sha256sum "$canon_file" | cut -d' ' -f1)
 
 # Say what the report was measured against: a forgotten `git pull` in the canonical
-# clone would otherwise make a superseded fleet read as clean. Read-only git only.
+# clone would otherwise make a superseded fleet read as clean. Read-only git only:
+# plain `git status` refreshes .git/index as a side effect, and this clone is
+# what every session on the box loads — --no-optional-locks keeps it untouched.
 canon_head=$(git -C "$CANON" rev-parse --short HEAD 2>/dev/null || echo '?')
-canon_dirty=$(git -C "$CANON" status --porcelain --untracked-files=no 2>/dev/null | grep -c . || true)
+canon_dirty=$(git -C "$CANON" --no-optional-locks status --porcelain --untracked-files=no 2>/dev/null | grep -c . || true)
 
 dirty_note=""
 [ "${canon_dirty:-0}" -gt 0 ] && dirty_note=" ($canon_dirty uncommitted change(s) in the canonical clone — report may not reflect origin)"
