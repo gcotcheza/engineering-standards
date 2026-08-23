@@ -42,6 +42,7 @@ canon_file=$CANON/ENGINEERING-STANDARDS.md
 canon_vfile=$CANON/VERSION
 [ -r "$canon_file"  ] || die "canonical file unreadable: $canon_file"
 [ -r "$canon_vfile" ] || die "canonical VERSION unreadable: $canon_vfile"
+canon_version=""   # `read` leaves it unset on a zero-byte file, which set -u would then trip on
 read -r canon_version < "$canon_vfile" || true
 canon_version=${canon_version#"${canon_version%%[![:space:]]*}"}   # trim leading
 canon_version=${canon_version%"${canon_version##*[![:space:]]}"}   # trim trailing
