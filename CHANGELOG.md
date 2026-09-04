@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-04 — published
+Published: README, LICENSE, ROLLOUT and SOURCES rewritten for a public reader; the standard itself unchanged.
+
 ## 2026-08-23 — fleet-level check (tooling only; the standard is unchanged and VERSION is not bumped)
 `scripts/fleet-versions.sh` compares every project's vendored `docs/STANDARDS.md` against the canonical clone — the one comparison no project gate can make, since each project's drift test only checks its copy against its own header. Reports ok / MISSING / UNREADABLE / BADHEADER / DRIFTED / DIVERGED / STALE / VERSION / NOLINK / BADLINK; a project with no vendored copy, or a run that checks zero projects, is a failure rather than a pass. Prints the canonical HEAD it measured against. ROLLOUT.md step 5.
 

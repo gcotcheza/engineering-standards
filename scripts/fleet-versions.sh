@@ -14,9 +14,12 @@
 # Exit: 0 all projects on the canonical version · 1 one or more need attention ·
 #       2 usage error, canonical clone unreadable/invalid, or no projects to check.
 #
+# The defaults below describe one host's layout; every one of them is overridable
+# by environment variable, so the script is not tied to that machine.
+#
 # Env: STANDARDS_CANONICAL (default /srv/engineering-standards), STANDARDS_ROOT
-# (default /var/www), STANDARDS_PROJECTS (space-separated; default = the nine in
-# ROLLOUT.md; set but empty is an error, not the default).
+# (default /var/www), STANDARDS_PROJECTS (space-separated; default = the projects
+# listed below; set but empty is an error, not the default).
 
 set -uo pipefail
 set -f   # the project list is split on whitespace, never glob-expanded
