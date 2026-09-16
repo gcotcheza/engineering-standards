@@ -44,17 +44,19 @@ They apply here in full; anything below overrides them and says why.
 
 ## Step 0, before any project PR
 
-Set the floor up first — it is one clone and one symlink, it needs no project's cooperation, and it means every session already has the standard while the per-project PRs are still being written:
+Set the floor up first — it is one clone and one symlink, it needs no project's cooperation, and it means the sessions that run outside any project already have the standard while the per-project PRs are still being written:
 
 ```
 git clone <engineering-standards> <canonical-path>
-ln -s <canonical-path>/ENGINEERING-STANDARDS.md ~/.claude/rules/engineering-standards.md
+ln -s <canonical-path>/ENGINEERING-STANDARDS.md <non-project-session-dir>/CLAUDE.md
 ```
 
-Then verify it the way rule W9 asks — start a session and check the rules actually loaded — rather than concluding it from the fact that the symlink exists.
+`<non-project-session-dir>` is the directory those sessions start in (a home directory, typically). Do not put the floor in the user-level `~/.claude/rules/` or `~/.claude/CLAUDE.md`: those load in *every* session, so once a project vendors its own copy (step 3) the standard sits in that session's context twice, on every call.
+
+Then verify it the way rule W9 asks — start a headless session from a subdirectory of that directory and read which files its transcript says were loaded — rather than concluding it from the fact that the symlink exists.
 
 ## Three things to decide before starting
 
 - **Who owns the canonical file.** One repo, one reviewer, changes by PR — otherwise the vendored copies will disagree within a month, which is exactly the failure this whole exercise exists to prevent.
-- **Whether the machine-wide floor is `~/.claude/rules/` or `~/.claude/CLAUDE.md`.** Recommended: `rules/`, because a symlinked rule file is one line to add and one line to remove, and it keeps the standard separate from whatever personal preferences that CLAUDE.md accumulates. Either way it is a floor and never the whole answer — subagents are not guaranteed to receive it.
+- **Where the floor lives.** Recommended: a project-level `CLAUDE.md` symlink in the directory the non-project sessions start in, not a user-level rule. A user-level `~/.claude/rules/` file is one line to add and remove, but it loads in every session on the machine, and after the rollout that doubled the standard in every project session (measured at roughly 3.5k tokens re-read per call). Either way it is a floor and never the whole answer — subagents are not guaranteed to receive it.
 - **What a project does when it cannot meet a rule yet.** Recommended: an `## Exceptions` block in its own `CLAUDE.md`, each line naming the rule, the reason and what would have to be true to drop it. Silence must stop being an option — it is what conflicts 6 and 7 in `SOURCES.md` are made of.
