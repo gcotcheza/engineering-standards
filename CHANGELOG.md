@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-16 — rollout note (docs only; the standard is unchanged and VERSION is not bumped)
+ROLLOUT.md step 0 and the floor decision: the machine-wide floor goes in the CLAUDE.md of the directory the non-project sessions start in, not in the user-level rules folder, because a user-level rule loads in every session and doubles the standard in every project that has vendored its copy. Verification is a headless session's transcript, not the symlink's existence.
+
 ## 2026-09-04 — published
 Published: README, LICENSE, ROLLOUT and SOURCES rewritten for a public reader; the standard itself unchanged.
 
