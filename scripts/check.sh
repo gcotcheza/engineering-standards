@@ -17,6 +17,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+# Every step and the ledger stamp read the repo, never the caller's directory.
+cd -- "${REPO_ROOT}" || exit 2
 GIT=${CHECK_GIT:-git}
 SHELLCHECK_IMAGE='koalaman/shellcheck:v0.10.0'
 
@@ -39,10 +41,13 @@ FULL_RUN=1
 ONLY=0
 case "${1:-}" in
     "") ;;
-    --only) ONLY=${2:?"--only needs a step number"}; FULL_RUN=0 ;;
-    *) echo "usage: check.sh [--only N]" >&2; exit 2 ;;
+    --only)
+        case "${2:-}" in 1|2|3|4) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1, 2, 3 or 4)" >&2; exit 2 ;; esac ;;
+    *) echo "usage: check.sh [--only N]  (N is 1, 2, 3 or 4)" >&2; exit 2 ;;
 esac
 
+# Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
+# shellcheck disable=SC2317
 cleanup() {
     local code=$?
     if [ "${FULL_RUN}" -eq 1 ]; then
@@ -62,14 +67,14 @@ fail_step() {
 run_step() {
     [ "${FULL_RUN}" -eq 1 ] || [ "${ONLY}" -eq "$1" ] || return 0
     printf -- '--- step %s: %s ---\n' "$1" "$(step_name "$1")"
-    "step_$1"
+    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; esac
 }
 
 step_1() {
     local f
     while IFS= read -r f; do
         bash -n "$f" || fail_step 1
-    done < <(cd "${REPO_ROOT}" && "${GIT}" ls-files '*.sh')
+    done < <("${GIT}" ls-files '*.sh')
 }
 
 step_2() {
@@ -79,7 +84,7 @@ step_2() {
         fail_step 2
     fi
     local files
-    files=$(cd "${REPO_ROOT}" && "${GIT}" ls-files '*.sh')
+    files=$("${GIT}" ls-files '*.sh')
     [ -n "${files}" ] || return 0
     # shellcheck disable=SC2086
     docker run --rm --network none -v "${REPO_ROOT}:/mnt:ro" -w /mnt \
