@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-09-18 sha256:8e3bd128c45613cb6c089154f88d41370fbd00e1002de8bb36d9840990e5c02e
+# fleet-deploy-lib 2026-09-18 sha256:b0853842f7d6e759bf8d0546ae839460b45a3526d91571d83c112e74fce47f7d
 # shellcheck shell=bash
 # resolve <PR#> proves three things before anything moves: gh says MERGED, the merge
 # commit IS origin/main, and its tree is the tree that was gated. $GH and $GIT are the caller's.
@@ -9,9 +9,33 @@ json_value() {
         | head -1
 }
 
+# gh_repo prints owner/repo from `$GIT remote get-url origin`, understanding
+# git@github.com:owner/repo.git, ssh://git@github.com/owner/repo.git and
+# https://github.com/owner/repo(.git). Anything else: no output, exit 1.
+gh_repo() {
+    local url path
+    url=$($GIT remote get-url origin 2>/dev/null) || return 1
+    case "$url" in
+        git@github.com:*)       path=${url#git@github.com:} ;;
+        ssh://git@github.com/*) path=${url#ssh://git@github.com/} ;;
+        https://github.com/*)   path=${url#https://github.com/} ;;
+        *) return 1 ;;
+    esac
+    path=${path%.git}
+    printf '%s' "$path" | grep -qE '^[^/]+/[^/]+$' || return 1
+    printf '%s\n' "$path"
+}
+
 resolve() {
-    local json state tip
-    json=$($GH pr view "$PR" --json state,headRefOid,mergeCommit) \
+    local json state tip origin_url
+    REPO="${DEPLOY_GH_REPO:-}"
+    if [ -z "$REPO" ]; then
+        REPO="$(gh_repo)" || {
+            origin_url="$($GIT remote get-url origin 2>/dev/null)"
+            refuse "origin's URL (${origin_url}) does not name a GitHub repository; set DEPLOY_GH_REPO."
+        }
+    fi
+    json=$($GH pr view "$PR" -R "$REPO" --json state,headRefOid,mergeCommit) \
         || refuse "gh could not read PR #$PR."
     detail "$json"
     state=$(json_value "$json" state)
