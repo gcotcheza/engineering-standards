@@ -28,6 +28,7 @@ CANON=${STANDARDS_CANONICAL:-/srv/engineering-standards}
 ROOT=${STANDARDS_ROOT:-/var/www}
 DEFAULT_PROJECTS="memento orbit health-tracker kidsquest ghiecode ghie-writes reflection scribly pig-dice-game"
 LINK_TARGET='../../docs/STANDARDS.md'   # what every project commits, byte-for-byte (#56)
+LIB_FILES="ledger resolve preflight summary"   # scripts/lib/deploy/*.sh, the vendored deploy library
 
 QUIET=0
 case "${1:-}" in
@@ -63,6 +64,20 @@ dirty_note=""
 [ "${canon_dirty:-0}" -gt 0 ] && dirty_note=" ($canon_dirty uncommitted change(s) in the canonical clone — report may not reflect origin)"
 say "canonical: version=$canon_version sha256=${canon_hash:0:16}… head=$canon_head$dirty_note"
 say ""
+
+# --- canonical deploy library --------------------------------------------------
+# Same idea as the docs comparison above, for scripts/lib/deploy/. A project's
+# copy is judged byte-for-byte against this directory — a re-stamped header
+# (self-consistent, wrong body) is caught by the cmp below before any header is
+# ever read, which is what makes it visible at all (#T1 in the brief).
+canon_lib=$CANON/scripts/lib/deploy
+canon_lib_vfile=$canon_lib/VERSION
+[ -d "$canon_lib"      ] || die "canonical deploy-lib dir unreadable: $canon_lib"
+[ -r "$canon_lib_vfile" ] || die "canonical deploy-lib VERSION unreadable: $canon_lib_vfile"
+canon_lib_version=""
+read -r canon_lib_version < "$canon_lib_vfile" || true
+canon_lib_version=${canon_lib_version#"${canon_lib_version%%[![:space:]]*}"}
+canon_lib_version=${canon_lib_version%"${canon_lib_version##*[![:space:]]}"}
 
 # --- project list ------------------------------------------------------------
 if [ "${STANDARDS_PROJECTS+x}" = x ]; then list=$STANDARDS_PROJECTS; else list=$DEFAULT_PROJECTS; fi
@@ -133,6 +148,58 @@ for p in "${projects[@]}"; do
         say "  $(printf '%-10s' "$st") $p  ($why)"
         bad=$((bad+1))
     fi
+
+    # --- deploy-library line ---------------------------------------------------
+    # dstatus prints lowercase (none/ok) or uppercase (MISSING/STALE/DRIFTED/
+    # BADHEADER) on purpose: the watchdog's line parser only captures a leading
+    # ALL-CAPS word (see check_standards() in vps-health-check.sh), so lowercase
+    # is how "nothing to see here" stays invisible to it, exactly like the
+    # existing "ok" line above — a capitalised OK/NONE here would misreport as
+    # an attention line on every healthy or not-yet-adopted project.
+    dsh=$ROOT/$p/scripts/deploy.sh
+    ldir=$ROOT/$p/scripts/lib/deploy
+    dstatus=none; dwhy="no scripts/deploy.sh — deploy-lib not adopted yet"
+    if [ -e "$dsh" ]; then
+        if [ ! -d "$ldir" ]; then
+            dstatus=MISSING; dwhy="scripts/deploy.sh present but no scripts/lib/deploy"
+        else
+            dstatus=ok
+            for lf in $LIB_FILES; do
+                if ! cmp -s "$ldir/$lf.sh" "$canon_lib/$lf.sh" 2>/dev/null; then
+                    dstatus=DRIFTED
+                    dwhy="$lf.sh differs from canonical byte-for-byte (local edit, incl. a re-stamped header, or missing)"
+                    break
+                fi
+            done
+            if [ "$dstatus" = ok ]; then
+                for lf in $LIB_FILES; do
+                    dheader=$(head -n1 "$ldir/$lf.sh" 2>/dev/null)
+                    if [[ $dheader =~ ^#\ fleet-deploy-lib\ [0-9]{4}-[0-9]{2}-[0-9]{2}\ sha256:([0-9a-f]{64})$ ]]; then
+                        dbody_hash=$(tail -n +2 "$ldir/$lf.sh" | sha256sum | cut -d' ' -f1)
+                        if [ "${BASH_REMATCH[1]}" != "$dbody_hash" ]; then
+                            dstatus=BADHEADER; dwhy="$lf.sh header hash does not match its own body"; break
+                        fi
+                    else
+                        dstatus=BADHEADER; dwhy="$lf.sh header is not the fleet-deploy-lib stamp"; break
+                    fi
+                done
+            fi
+            if [ "$dstatus" = ok ]; then
+                dver=""
+                if [ -r "$ldir/VERSION" ]; then read -r dver < "$ldir/VERSION" || true; fi
+                if [ "$dver" != "$canon_lib_version" ]; then
+                    dstatus=STALE; dwhy="VERSION is '$dver', canonical is '$canon_lib_version'"
+                else
+                    dwhy="deploy-lib $canon_lib_version"
+                fi
+            fi
+        fi
+    fi
+    case "$dstatus" in
+        none|ok) ;;
+        *) bad=$((bad+1)) ;;
+    esac
+    say "  $(printf '%-10s' "$dstatus") $p  ($dwhy)"
 done
 
 say ""
