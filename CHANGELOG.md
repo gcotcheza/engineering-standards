@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-18 — repo gate + deploy-lib drift check (tooling only; the standard is unchanged and VERSION is not bumped)
+`scripts/check.sh` — this repo's own pre-merge gate: `bash -n` on every tracked script,
+shellcheck (`koalaman/shellcheck:v0.10.0`, style severity, no `-x` — a missing image fails
+loud, never skips), `scripts/lib/deploy/test.sh`, then `scripts/fleet-versions-test.sh`;
+cheapest first (T3), prints `=== GATE OK ===` / `=== GATE FAILED (step N: name) ===`, and
+records a full run to the fleet gate ledger the same way Fineprint's `ci.sh` does — a
+partial (`--only N`) run records nothing. `scripts/fleet-versions.sh` now also compares
+each project's vendored `scripts/lib/deploy/` against canonical: one extra parsable line
+per project (`none` / `MISSING` / `STALE` / `DRIFTED` / `BADHEADER` / `ok`), same shape the
+watchdog's line parser already reads, existing lines and exit codes unchanged. A body
+edited without re-stamping the header is `DRIFTED`; a body edited AND re-stamped correctly
+is also `DRIFTED` — the case a project's own drift test cannot see. `scripts/fleet-versions-test.sh`
+proves both against fakes; each case proved red once. README: "The gate" and one sentence
+under the fleet check.
+
 ## 2026-09-18 — vendored deploy library (tooling only; the standard is unchanged and VERSION is not bumped)
 `scripts/lib/deploy/` — `summary.sh`, `resolve.sh`, `ledger.sh`, `preflight.sh` and its own `VERSION`, the shared half of a deploy script that Fineprint, Reflection and Scribly each needed (C1: the third copy). Moved out of Fineprint's `scripts/deploy.sh` rather than rewritten: same function names, same sentences. Every file carries `# fleet-deploy-lib <VERSION> sha256:<body>` on line 1 and each project's gate recomputes it, which is the same drift mechanism `docs/STANDARDS.md` already uses. `scripts/lib/deploy/test.sh` proves every function, every refusal sentence and every header against fakes; each check was proved red once. README: "Vendored scripts".
 
