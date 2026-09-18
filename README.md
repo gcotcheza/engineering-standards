@@ -22,11 +22,10 @@ nine project names — all overridable by environment variable.
 
 ## Vendored scripts
 
-`scripts/lib/deploy/` is the half of a project's `scripts/deploy.sh` that every project needs
-the same: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (which commit a pull
-request number means), `ledger.sh` (the gate ledger a project's gate writes and its deploy
-reads) and `preflight.sh`. A project copies those four files and `VERSION` into its own
-`scripts/lib/deploy/`, byte-identical, and sources them.
+`scripts/lib/deploy/` is the half of a project's `scripts/deploy.sh` that is the same
+everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (which commit a pull
+request number means), `ledger.sh` (the gate ledger) and `preflight.sh`. A project copies those
+four files and `VERSION` into its own `scripts/lib/deploy/`, byte-identical, and sources them.
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
 project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After
