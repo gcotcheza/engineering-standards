@@ -20,6 +20,22 @@ floor. `scripts/fleet-versions.sh` compares every project against the canonical 
 with one host's layout as its defaults — the canonical path, the projects root and the
 nine project names — all overridable by environment variable.
 
+## Vendored scripts
+
+`scripts/lib/deploy/` is the half of a project's `scripts/deploy.sh` that is the same
+everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (which commit a pull
+request number means), `ledger.sh` (the gate ledger) and `preflight.sh`. A project copies those
+four files and `VERSION` into its own `scripts/lib/deploy/`, byte-identical, and sources them.
+
+Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
+project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After
+changing a file here, re-stamp it: `h=$(tail -n +2 f.sh | sha256sum | cut -d' ' -f1); sed -i
+"1s|.*|# fleet-deploy-lib $(cat VERSION) sha256:$h|" f.sh`
+
+Taking an update is: copy the files, run the project's own deploy test, open the PR.
+`scripts/lib/deploy/test.sh` proves the library against fakes alone — no checkout, no docker.
+The standards `VERSION` is **not** bumped for a library change: the library carries its own.
+
 **Who it is for.** Anyone running several small apps alone, or with AI agents doing the
 typing, who wants one answer to "how do we do things here" that is enforced rather than
 hoped for. It is not a proposal or a wishlist — it is in daily use, and the rules are
