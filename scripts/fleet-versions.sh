@@ -26,7 +26,7 @@ set -f   # the project list is split on whitespace, never glob-expanded
 
 CANON=${STANDARDS_CANONICAL:-/srv/engineering-standards}
 ROOT=${STANDARDS_ROOT:-/var/www}
-DEFAULT_PROJECTS="memento orbit health-tracker kidsquest ghiecode ghie-writes reflection scribly pig-dice-game"
+DEFAULT_PROJECTS="fineprint memento orbit health-tracker kidsquest ghiecode ghie-writes reflection scribly pig-dice-game"
 LINK_TARGET='../../docs/STANDARDS.md'   # what every project commits, byte-for-byte (#56)
 LIB_FILES="ledger resolve preflight summary"   # scripts/lib/deploy/*.sh, the vendored deploy library
 
