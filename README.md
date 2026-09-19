@@ -49,6 +49,17 @@ Taking an update is: copy the files, run the project's own deploy test, open the
 `scripts/lib/deploy/test.sh` proves the library against fakes alone — no checkout, no docker.
 The standards `VERSION` is **not** bumped for a library change: the library carries its own.
 
+**A deploy script finds its helpers in its own directory.** Before any `cd`, `scripts/deploy.sh`
+captures its own directory as an absolute path — `SCRIPT_DIR="$(cd -- "$(dirname --
+"${BASH_SOURCE[0]}")" && pwd)"`, the pattern this repo's own scripts already use — and resolves
+`docs-only.sh`, `verify.sh` and every other helper from `SCRIPT_DIR`, never from `ROOT`. `ROOT`
+names only the checkout being deployed: on a first deploy its `scripts/` are not on the box yet,
+so a helper resolved through it exits 127 and the landing gets done by hand instead. A project's
+standards test greps `deploy.sh` for `"$ROOT/scripts/` and fails the gate on a match.
+
+First landing, once per project, from a clone: `DEPLOY_ROOT=/var/www/<app> bash
+<clone>/scripts/deploy.sh <PR#>` — never a hand landing.
+
 **The gate ledger.** The EXIT trap is what records a run, and a trap that fires on a kill sees
 `$?` from the last command that finished, not from the suite. Sourcing `ledger.sh` discards
 any `GATE_SUITE_PASSED` inherited from the environment, so an operator's `export` or a CI
