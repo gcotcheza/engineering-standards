@@ -136,7 +136,7 @@ equals  'case 12: exit code' "${RC}" 1
 # A dummy token in a fake credentials file. It must never reach the output or
 # the cache, and the assertions below fail if it does.
 printf 'some avg10=0.00 avg60=0.00 avg300=0.00 total=1\nfull avg10=0.00 avg60=0.00 avg300=0.13 total=1\n' >"${WORK}/pressure"
-DUMMY_TOKEN='sk-ant-oat01-DUMMY-FOR-TESTS-never-real-0000'
+DUMMY_TOKEN='DUMMY-not-a-real-token-0000'
 printf '{"claudeAiOauth":{"accessToken":"%s","expiresAt":%s000}}\n' "${DUMMY_TOKEN}" "$(( $(date +%s) + 3600 ))" >"${WORK}/fake-creds.json"
 
 cat >"${WORK}/meter-server.py" <<'PY'
