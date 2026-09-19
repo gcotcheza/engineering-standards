@@ -141,6 +141,12 @@ queued_title(){ awk -v n="$1" '$1==n {$1=""; sub(/^ /,""); print; exit}' "$QUEUE
 # A session that keeps no registry file has not opted in: not idle.
 # `heavy-work --status` prints `  last: ...` lines from the finished job while it
 # is free; those are history, never a held slot.
+unit_is_up(){
+  awk '{ l=$0; sub(/^[^[:alnum:]]+/, "", l); n = split(l, f, " ")
+         if (n >= 3 && f[3] ~ /^(active|activating|deactivating)$/) up=1 }
+       END { exit !up }'
+}
+
 busy_reason(){
   local s="$1" reg pane app apane rest out rc
   reg="$REG_DIR/$s-workers.active"
@@ -152,9 +158,9 @@ busy_reason(){
     case "$app" in ''|'#'*) continue ;; esac
     [ "$apane" = "$pane" ] || continue
     rc=0
-    out="$("$SYSTEMCTL" list-units --type=service --state=active --no-legend "$app-deploy-*" 2>/dev/null)" || rc=$?
+    out="$("$SYSTEMCTL" list-units --all --no-legend "$app-deploy-*" 2>/dev/null)" || rc=$?
     if [ "$rc" -ne 0 ]; then printf 'systemctl could not be asked about %s (exit %s)' "$app" "$rc"; return 0; fi
-    [ -n "$out" ] && { printf 'a deploy unit is active for %s' "$app"; return 0; }
+    printf '%s\n' "$out" | unit_is_up && { printf 'a deploy unit is active for %s' "$app"; return 0; }
   done <"$APP_OWNERS"
   rc=0
   out="$("$HEAVY" --status 2>/dev/null)" || rc=$?

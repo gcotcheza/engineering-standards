@@ -55,13 +55,22 @@ exit 1
 SH
 printf 'ok 5h 10%%/50 week-all 20%%/60 week-fable 30%%/60\n' >"${WORK}/budget-out"
 
+# Column order, the leading ● and the --state=active filtering are copied from
+# this box's real `systemctl list-units --all --no-legend`.
 cat >"${WORK}/systemctl" <<'SH'
 #!/usr/bin/env bash
 d="$(dirname "$0")"
 rc="$(cat "$d/systemctl-rc" 2>/dev/null || echo 0)"
 [ "$rc" = 0 ] || exit "$rc"
-[ -f "$d/deploy-active" ] || exit 0
-for a in "$@"; do case "$a" in *-deploy-*) grep -F "${a%-\*}" "$d/deploy-active" >/dev/null && echo "${a%\*}1234.service loaded active running deploy" ;; esac; done
+args=" $* "
+[ -f "$d/deploy-units" ] || exit 0
+while read -r app active; do
+    [ -n "${app:-}" ] || continue
+    case "$args" in *" $app-deploy-"*) ;; *) continue ;; esac
+    case "$args" in *" --state=active "*) [ "$active" = active ] || continue ;; esac
+    case "$active" in failed|not-found) printf '\xe2\x97\x8f ' ;; *) printf '  ' ;; esac
+    printf '%s-deploy-pr80.service loaded %s start Deploy %s\n' "$app" "$active" "$app"
+done <"$d/deploy-units"
 exit 0
 SH
 
@@ -124,12 +133,28 @@ run --dry-run
 matches 'case 3: a missing registry file skips the session' "${OUT}" 'skip orbit: no readable registry file'
 sed -i '/^69 orbit$/d' "${WORK}/owners"
 
-# --- 4. a deploy unit active for one of the session's apps -> skipped ---------
-printf 'ghiecode-deploy\n' >"${WORK}/deploy-active"
+# --- 4. a deploy unit for one of the session's apps -> skipped ----------------
+printf 'ghiecode active\n' >"${WORK}/deploy-units"
 run --dry-run
 matches 'case 4: an active deploy unit skips the session' "${OUT}" 'skip advisor: a deploy unit is active for ghiecode'
 lacks   'case 4: and nothing is said to it' "${OUT}" "${SENT_A}"
-rm -f "${WORK}/deploy-active"
+
+printf 'ghiecode activating\n' >"${WORK}/deploy-units"
+run --dry-run
+matches 'case 4b: an activating deploy unit skips the session' "${OUT}" 'skip advisor: a deploy unit is active for ghiecode'
+lacks   'case 4b: and nothing is said to it' "${OUT}" "${SENT_A}"
+
+printf 'ghiecode deactivating\n' >"${WORK}/deploy-units"
+run --dry-run
+matches 'case 4c: a deactivating deploy unit skips the session' "${OUT}" 'skip advisor: a deploy unit is active for ghiecode'
+
+printf 'ghiecode inactive\n' >"${WORK}/deploy-units"
+run --dry-run
+contains 'case 4d: an inactive unit listed by --all is not busy' "${OUT}" "${SENT_A}"
+
+printf 'ghiecode failed\n' >"${WORK}/deploy-units"
+run --dry-run
+contains 'case 4e: a failed unit behind the ● marker is not busy' "${OUT}" "${SENT_A}"
 
 SYSTEMCTL_BIN="${WORK}/no-such-systemctl" run --dry-run
 matches 'case 4f: a missing systemctl is busy, not idle' "${OUT}" 'skip advisor: systemctl could not be asked about ghiecode \(exit 127\)'
@@ -138,7 +163,7 @@ lacks   'case 4f: and nothing is said to it' "${OUT}" "${SENT_A}"
 printf '7\n' >"${WORK}/systemctl-rc"
 run --dry-run
 matches 'case 4g: a failing systemctl is busy, not idle' "${OUT}" 'skip advisor: systemctl could not be asked about ghiecode \(exit 7\)'
-rm -f "${WORK}/systemctl-rc"
+rm -f "${WORK}/systemctl-rc" "${WORK}/deploy-units"
 
 # --- 5. heavy-work: the real HELD form skips, the real free form does not ------
 cat >"${WORK}/heavy-status" <<'ST'
