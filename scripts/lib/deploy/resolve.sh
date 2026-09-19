@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-09-18 sha256:b0853842f7d6e759bf8d0546ae839460b45a3526d91571d83c112e74fce47f7d
+# fleet-deploy-lib 2026-09-19 sha256:b0853842f7d6e759bf8d0546ae839460b45a3526d91571d83c112e74fce47f7d
 # shellcheck shell=bash
 # resolve <PR#> proves three things before anything moves: gh says MERGED, the merge
 # commit IS origin/main, and its tree is the tree that was gated. $GH and $GIT are the caller's.

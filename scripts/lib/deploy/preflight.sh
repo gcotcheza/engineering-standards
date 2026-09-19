@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-09-18 sha256:20799dd7c09b625d76689c79824ec94fa54cb2200fbff31e977ca5a7c56bb67f
+# fleet-deploy-lib 2026-09-19 sha256:20799dd7c09b625d76689c79824ec94fa54cb2200fbff31e977ca5a7c56bb67f
 # shellcheck shell=bash
 # preflight prints what the box looked like and never refuses; refuse_if_dirty is the
 # one pre-flight judgement, and it sits ahead of every command that moves the checkout.
