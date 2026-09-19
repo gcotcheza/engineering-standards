@@ -62,6 +62,8 @@ checked** — because a rule nothing checks is a preference, and preferences dri
   - `aria-current` on the item that is current, `aria-describedby` where a field carries help or an error;
   - touch targets at least 44px, even when the visible pill is smaller.
 
+**T9. A gate never builds, tags or runs an image tag this project builds for production — the gate's tag is separate and disposable — and a deploy builds the production tag itself, from the merged tree.** Reusing the production tag hands every branch a write to what production is recreated from: a live container once came up carrying extensions only an unmerged branch builds, because a gate run had overwritten `:latest`. — *checked by:* `scripts/gate-image-tags.sh <project-root>` in the gate. That is the first half only: no deploy here proves its running container by image id, so the second half binds by review until one does — `ROLLOUT.md` carries it as open work.
+
 ---
 
 ## Security & privacy

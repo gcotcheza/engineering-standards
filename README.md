@@ -4,7 +4,7 @@ One engineering standard for a small fleet of production web apps — Laravel, S
 a couple of static sites — built and maintained by one person with an AI-assisted
 workflow, where most of the code is written by AI sessions and reviewed before it ships.
 
-`ENGINEERING-STANDARDS.md` is the standard itself: 36 rules in four groups (Code, Tests,
+`ENGINEERING-STANDARDS.md` is the standard itself: 37 rules in four groups (Code, Tests,
 Security & privacy, Workflow). Each rule is stated three ways — **the rule**, *why it
 exists*, and **how it is checked** — on the principle that a rule nothing checks is a
 preference, and preferences drift.
@@ -27,11 +27,17 @@ watchdog's line parser already reads.
 
 `scripts/check.sh` is this repo's own pre-merge gate, cheapest checks first: `bash -n` on
 every tracked script, shellcheck (the pinned image, style severity — a missing image is a
-loud failure, never a skip), `scripts/lib/deploy/test.sh`, then
-`scripts/fleet-versions-test.sh`. A full run records to the fleet gate ledger
+loud failure, never a skip), then the five fixture-only tests — `scripts/lib/deploy/test.sh`,
+`scripts/fleet-versions-test.sh`, `scripts/fleet-budget-test.sh`, `scripts/queue-start-test.sh`
+and `scripts/gate-image-tags-test.sh`. A full run records to the fleet gate ledger
 (`scripts/lib/deploy/ledger.sh`); `scripts/check.sh --only N` runs one step alone and
 records nothing, so debugging a step never pollutes the ledger. This repo carries no
 `docs/DECISIONS.md`; this section is the record of why the gate is shaped this way.
+
+`scripts/gate-image-tags.sh <project-root>` is rule T9's check, and this repo's seventh gate step
+runs its fixtures. Point it at a project root and it names the compose files it read, the image
+values it could not resolve, and any tag that project builds for both its gate and production. It
+never passes in silence, so "nothing is built here" and "I could not tell" cannot be confused.
 
 ## Vendored scripts
 
