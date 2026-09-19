@@ -182,7 +182,7 @@ lacks   'case 5: and nothing is said to it' "${OUT}" "${SENT_A}"
 
 cp "${WORK}/heavy-status-free" "${WORK}/heavy-status"
 run --dry-run
-contains 'case 5b: `free` plus `last: session=advisor` is not a held slot' "${OUT}" "${SENT_A}"
+contains 'case 5b: a free status whose last: line names the session is not a held slot' "${OUT}" "${SENT_A}"
 lacks    'case 5b: and the session is not called busy' "${OUT}" 'skip advisor: heavy-work holds a slot'
 
 printf '3\n' >"${WORK}/heavy-rc"
