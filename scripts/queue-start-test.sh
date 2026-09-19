@@ -241,6 +241,56 @@ STATE_FILE="${WORK}/dangling" run --dry-run
 matches 'case 10d: an unreadable state file is logged' "${OUT}" 'state file .*dangling exists but cannot be read'
 rm -f "${WORK}/dangling"
 
+# --- 10e/10f. a busy pane: our sentence stays queued, a foreign line does not -
+# Real (non-dry-run) delivery through a fake tmux: capture-pane/send-keys/
+# display-message are faked; the row never empties, only its content differs.
+mkdir -p "${WORK}/bin" "${WORK}/tmuxstate"
+cat >"${WORK}/bin/tmux" <<'SH'
+#!/usr/bin/env bash
+d="${FAKE_TMUX_DIR:?}"
+shift; shift; sub="$1"; shift
+mode="$(cat "$d/mode" 2>/dev/null || echo idle)"
+case "$sub" in
+  capture-pane)
+    case "$mode" in
+      busy)    [ -s "$d/typed" ] && printf '❯ %s\n' "$(cat "$d/typed")" || printf '❯ \n' ;;
+      foreign) [ -s "$d/typed" ] && printf '❯ some other pending thought\n' || printf '❯ \n' ;;
+      *)       printf '❯ \n' ;;
+    esac ;;
+  send-keys)
+    if [ "${@: -1}" = Enter ]; then :; else printf '%s' "${@: -1}" >"$d/typed"; fi ;;
+  display-message) printf '2' ;;
+esac
+SH
+chmod 755 "${WORK}/bin/tmux"
+
+live() {
+    OUT="$(QS_OWNERS="${WORK}/owners" QS_BACKLOG="${WORK}/backlog.md" \
+        QS_STATE="${WORK}/state" QS_REGISTRY_DIR="${WORK}/reg" \
+        QS_BUDGET_SH="${WORK}/budget" QS_APP_OWNERS="${WORK}/app-owners" \
+        QS_SYSTEMCTL="${WORK}/systemctl" QS_HEAVY_WORK="${WORK}/heavy-work" \
+        QS_LOCK="${WORK}/lock" QS_ALLOW_ANY_PATH=1 QS_SETTLE=0 \
+        QS_TMUX_SOCK="${WORK}/fake.sock" FAKE_TMUX_DIR="${WORK}/tmuxstate" \
+        PATH="${WORK}/bin:${PATH}" "${CHECK}" "$@" 2>&1)"
+    RC=$?
+}
+
+rm -f "${WORK}/tmuxstate/typed"
+echo busy >"${WORK}/tmuxstate/mode"
+live --once advisor
+contains 'case 10e: a pane still holding our line is logged as queued' "${OUT}" 'queued in a busy pane advisor:0.0: advisor item 71 (the line is consumed at its next turn)'
+lacks    'case 10e: and it is not called undelivered' "${OUT}" 'not delivered advisor'
+matches  'case 10e: the item is recorded like a normal delivery' "$(cat "${WORK}/state" 2>/dev/null)" '^71 advisor [0-9]+$'
+rm -f "${WORK}/state"
+
+rm -f "${WORK}/tmuxstate/typed"
+echo foreign >"${WORK}/tmuxstate/mode"
+live --once advisor
+matches 'case 10f: a foreign line keeps the old not-delivered behaviour' "${OUT}" 'not delivered advisor: item 71 \(rc 3\) — retrying next tick'
+lacks   'case 10f: no queued-pane line for a foreign line' "${OUT}" 'queued in a busy pane'
+equals  'case 10f: nothing is recorded for a foreign line' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
+rm -f "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed"
+
 # --- 11. the owners lint ------------------------------------------------------
 lint() { LOUT="$("${LINT}" "${WORK}/backlog.md" "$1" 2>&1)"; LRC=$?; }
 

@@ -83,9 +83,10 @@ give_up_clear(){
   fi
 }
 
-# 0 delivered (input line empty again), 3 unreadable or not accepted, 4 deferred.
+# 0 delivered (input line empty again, or queued in a busy pane), 3 unreadable
+# or not accepted, 4 deferred.
 deliver(){
-  local pane="$1" text="$2" dialog_screen screen row cx try=0
+  local pane="$1" text="$2" session="$3" item="$4" dialog_screen screen row cx try=0 stuck ours shorter
   dialog_screen="$(tmux_ capture-pane -peJ -S -60 -t "$pane" 2>/dev/null)" || dialog_screen=''
   if [ -z "$dialog_screen" ]; then
     log "transport: pane $pane unreadable — nothing delivered"; return 3
@@ -121,6 +122,16 @@ deliver(){
   if [ -z "$row" ]; then
     log "defer: pane $pane has no ❯ input row after $ENTER_TRIES Enters — delivery unverified, not recorded"
     return 4
+  fi
+  # The row still holds OUR sentence: Claude Code queues a mid-turn line and
+  # consumes it next turn, so this counts as delivered, not a retry.
+  stuck="$(input_text "$row")"; ours="$(strip_ws "$text")"
+  shorter=${#stuck}
+  [ "${#ours}" -lt "$shorter" ] && shorter=${#ours}
+  if [ "$shorter" -ge 10 ] && { is_prefix "$stuck" "$ours" || is_prefix "$ours" "$stuck"; } \
+     && ! printf '%s\n' "$screen" | grep -qE "$DIALOG_RE"; then
+    log "queued in a busy pane $pane: $session item $item (the line is consumed at its next turn)"
+    return 0
   fi
   give_up_clear "$pane" "$row" "$text"
   log "transport: pane $pane still holds the line after $ENTER_TRIES Enters"
@@ -233,7 +244,7 @@ run_session(){
     log "dry-run $s: $sentence"
     return 0
   fi
-  deliver "$pane" "$sentence"; rc=$?
+  deliver "$pane" "$sentence" "$s" "$n"; rc=$?
   if [ "$rc" -ne 0 ]; then log "not delivered $s: item $n (rc $rc) — retrying next tick"; return 0; fi
   if record "$n" "$s"; then
     log "announced $s: item $n -> $pane"
