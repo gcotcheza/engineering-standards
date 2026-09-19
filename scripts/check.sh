@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The repo's own gate — cheapest checks first (T3):
+# The repo's own gate. NOT cheapest-first (T3): step 3 is the slowest at ~4.8s
+# and four cheaper steps follow it. Reordering is its own backlog item.
 #   1) bash -n on every tracked .sh file
 #   2) shellcheck, style severity, in the pinned image — a missing image is a
 #      loud failure here, never a silent skip (C9)
