@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-19 — S7: nothing is deleted in bulk until its read-only twin has run (VERSION 2026-09-19.2)
+Ghie, on being handed a `docker volume prune` line to type: **"Make this fleetwide, very important."**
+
+The near miss, found by the personal-vps session: a prune offered as finished gate leftovers would also
+have taken a live app stack's named database volume. Docker counts a **torn-down** stack's named volume
+as dangling — `compose down` removes the containers that held it, and nothing then holds the volume — so
+`docker volume prune --all` proposes data while reading as a cleanup. An "are you sure?" and a dry run
+caught it. That volume turned out to be empty; on a stack that had ever run it would have been data with
+no backup. Reproduce the shape, read-only, before trusting any count:
+`docker volume ls -f dangling=true --format '{{.Name}}' | grep -vcE '^[0-9a-f]{64}$'` — on 2026-09-19 that
+is 56 named volumes, including the database and search volumes of six gate and review stacks.
+
+The rule's second half is not about Docker: **a refusal by a permission layer is never re-routed to a
+person without the preview and the count.** A layer refusing a destructive command is a decision, and
+handing the same line to someone else walks around it.
+
+**VERSION takes a serial** — a date alone cannot distinguish two changes made on one day, and a project
+vendoring between them reads DIVERGED ("local edit re-stamped?") rather than STALE. Two things follow:
+`scripts/fleet-versions.sh` validated the canonical VERSION as a strict date and would have refused to
+report on any project at all (it now accepts `YYYY-MM-DD[.N]`, with a test for each), and every project's
+drift test asserts the same shape, so **each adoption or bump PR widens its own regex** — ROLLOUT.md
+step 4 says so. The invariant the serial trades into — every change to the body moves VERSION — is
+checked by review until a gate step enforces it; `docs/DECISIONS.md` records both.
+
 ## 2026-09-19 — three rules stop claiming more than they check; the gate obeys T3 (VERSION unchanged)
 From the audit of claims nobody had exercised (fleet backlog 83/87), which hunted statements the system
 makes about itself that nobody proved by running them. C10 credited "static analysis" with finding dead
@@ -18,6 +42,7 @@ reaches STALE only when the declared version differs, so a project that vendored
 merge and this one reads DIVERGED — "local edit re-stamped?" — when it has done nothing wrong. Today's
 five adopters all declare `2026-08-23` and correctly read STALE. Land this before the next adoption, and
 no project ever sits in the window.
+
 
 ## 2026-09-19 — a gate must not build the image production runs (new rule T9; VERSION moves to 2026-09-19)
 Backlog 80, found by the personal-vps session reviewing Memento #99: Memento's live container was

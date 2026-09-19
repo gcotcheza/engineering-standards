@@ -4,7 +4,7 @@ One engineering standard for a small fleet of production web apps — Laravel, S
 a couple of static sites — built and maintained by one person with an AI-assisted
 workflow, where most of the code is written by AI sessions and reviewed before it ships.
 
-`ENGINEERING-STANDARDS.md` is the standard itself: 37 rules in four groups (Code, Tests,
+`ENGINEERING-STANDARDS.md` is the standard itself: 38 rules in four groups (Code, Tests,
 Security & privacy, Workflow). Each rule is stated three ways — **the rule**, *why it
 exists*, and **how it is checked** — on the principle that a rule nothing checks is a
 preference, and preferences drift.
