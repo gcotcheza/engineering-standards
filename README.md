@@ -50,9 +50,11 @@ Taking an update is: copy the files, run the project's own deploy test, open the
 The standards `VERSION` is **not** bumped for a library change: the library carries its own.
 
 **The gate ledger.** The EXIT trap is what records a run, and a trap that fires on a kill sees
-`$?` from the last command that finished, not from the suite. So a gate script sets
-`GATE_SUITE_PASSED=1` in its own shell — never exported — immediately after its suite returns 0;
-without that flag an rc of 0 is recorded as a failure and says so on stderr. Reading is
+`$?` from the last command that finished, not from the suite. Sourcing `ledger.sh` discards
+any `GATE_SUITE_PASSED` inherited from the environment, so an operator's `export` or a CI
+wrapper's cannot fake a pass; a gate script must set `GATE_SUITE_PASSED=1` itself, in its own
+shell, immediately after its suite returns 0. Without that flag an rc of 0 is recorded as a
+failure and says so on stderr. Reading is
 newest-wins: the last line for a (sha, kind) decides, so a later red overrides an earlier green
 and a genuine re-run's green overrides an earlier red.
 

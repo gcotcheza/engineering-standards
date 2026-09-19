@@ -154,6 +154,9 @@ run_lib() {
     else
         repoenv="DEPLOY_GH_REPO=${REPO_OVERRIDE:-gcotcheza/fixture}"
     fi
+    # Simulates an operator's `export GATE_SUITE_PASSED=1` (or a CI wrapper's) already
+    # present in the environment BEFORE driver.sh sources ledger.sh.
+    suiteenv="${SUITE_PASSED_ENV:+GATE_SUITE_PASSED=${SUITE_PASSED_ENV}}"
     ARGVFILE="${CASE}/gh-argv.log"
     # shellcheck disable=SC2086  # repoenv is empty or one NAME=value; "" would be env's command
     OUT="$(env \
@@ -172,6 +175,7 @@ run_lib() {
         DEPLOY_HEAVY="${BIN}/heavy-work" \
         DEPLOY_LEDGER="${LEDGER}" \
         ${repoenv} \
+        ${suiteenv} \
         "${logenv}" \
         bash "${CASE}/lib/driver.sh" 2>&1)"
     LOGFILE="$(find "${LOGS}" "${CASE}/logroot" -name '*.log' -printf '%T@ %p\n' 2>/dev/null \
@@ -181,6 +185,7 @@ run_lib() {
     EXTRA=''
     LOG_DIR_UNSET=''
     REPO_OVERRIDE=''
+    SUITE_PASSED_ENV=''
 }
 
 BY_HAND=''
@@ -188,6 +193,7 @@ GH_FAIL=''
 EXTRA=''
 LOG_DIR_UNSET=''
 REPO_OVERRIDE=''
+SUITE_PASSED_ENV=''
 
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
@@ -393,6 +399,15 @@ run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_rec
 matches 'a non-zero rc is written unchanged' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 7 -$"
 absent 'and the flag is never mentioned for it' "${OUT}" 'GATE_SUITE_PASSED'
+
+fixture ledger-env-exported-before-source
+WRITTEN="${CASE}/written"
+SUITE_PASSED_ENV=1
+run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3"
+contains 'an operator export inherited before sourcing is discarded, not honoured' "${OUT}" \
+    'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
+matches 'and it is written as a failure' "$(tail -1 "${WRITTEN}")" \
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 1 /tmp/ci\.log$"
 
 # --- 5. pre-flight ----------------------------------------------------------------
 fixture preflight-clean

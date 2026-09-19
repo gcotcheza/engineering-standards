@@ -4,15 +4,16 @@
 2026-09-19 05:58Z Fineprint's `scripts/e2e.sh` was killed while its stack was starting. The
 EXIT trap read `$?` from the last command that had finished — 0 — and wrote a green `e2e` line
 for that head; `scripts/ci.sh`'s cleanup has the same shape. `gate_ledger_record` now writes
-rc 0 only when the gate script has set `GATE_SUITE_PASSED=1` after its suite returned 0 — a
-plain shell variable in the trap's own shell, never exported, so no child gate inherits its
-parent's green. Without the flag an rc of 0 is written as 1, loudly: `gate-ledger: rc 0 without
+rc 0 only when the gate script has set `GATE_SUITE_PASSED=1` after its suite returned 0.
+Sourcing `ledger.sh` now `unset`s `GATE_SUITE_PASSED` at the top level, so an operator's
+`export GATE_SUITE_PASSED=1` (or a CI wrapper's) is discarded rather than honoured — only the
+gate script's own shell, set after its own suite, counts. Without the flag an rc of 0 is written as 1, loudly: `gate-ledger: rc 0 without
 GATE_SUITE_PASSED — the run did not finish; recorded as a failure` on stderr. A non-zero rc is
 unchanged. The reader is now newest-wins — the last line for a (sha, kind) decides, so a later
 red overrides an earlier green and a re-run's green overrides an earlier red; the old awk took
 any green line, so one false green vouched for a head forever. `scripts/check.sh` sets the flag
-once its four steps have run. `scripts/lib/deploy/test.sh` gains six groups (flag, no flag,
-non-zero rc, green→red, red→green, and 05:58Z's incident end to end); each was proved red once
+once its four steps have run. `scripts/lib/deploy/test.sh` gains seven groups (flag, no flag,
+non-zero rc, green→red, red→green, an inherited env export discarded at source time, and 05:58Z's incident end to end); each was proved red once
 against a mutated copy of the library. `scripts/fleet-versions-test.sh` reads the deploy-lib
 VERSION instead of hardcoding it. deploy-lib VERSION is 2026-09-19, which marks Fineprint,
 Reflection and Scribly STALE until they re-vendor; Fineprint's `ci.sh` and `e2e.sh` set the

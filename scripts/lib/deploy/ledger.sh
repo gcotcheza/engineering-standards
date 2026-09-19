@@ -1,9 +1,11 @@
-# fleet-deploy-lib 2026-09-19 sha256:3a108fde1ced1a9712d0db8996ffbf50825cc78339044343704f8ad97386f073
+# fleet-deploy-lib 2026-09-19 sha256:c095ee77ccab85843412fdd54e6139a52ded990df2a01e8ba71281b5077ef63c
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and a head that is not in it green is refused. GATE_LEDGER_GIT is unquoted on purpose.
-# The EXIT trap records; the gate script sets GATE_SUITE_PASSED=1 in its own shell right after
-# the suite returns 0 — never exported, so no child gate inherits its parent's green.
+# The EXIT trap records; sourcing this file discards any inherited GATE_SUITE_PASSED.
+# The gate script sets it itself, in its own shell, right after its suite returns 0.
+
+unset GATE_SUITE_PASSED
 
 gate_ledger_sha() {
     local git=${GATE_LEDGER_GIT:-git} sha
