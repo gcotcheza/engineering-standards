@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-19 — a busy pane's queued line no longer looks undelivered (tooling only; the standard is unchanged and VERSION is not bumped)
+`scripts/queue-start.sh` borrowed its delivery transport from merge-notify, including the
+verified-Enter loop that expects the input row to go empty. When the target session is mid-turn,
+Claude Code queues a typed line instead of clearing the row — the sentence still arrives at the
+next turn boundary, but the loop saw the row non-empty after 3 Enters, logged it as not
+delivered, and recorded nothing in the state file, so the next tick would type the same sentence
+again. `deliver()` now checks, after the Enter tries, whether the row still holds OUR sentence
+(the existing 10-char-prefix check) with no permission dialog on screen; if so it logs
+`queued in a busy pane <p>: <session> item N (the line is consumed at its next turn)` and returns
+success, so the caller records the item like a normal delivery. A row holding something else, or
+a dialog on screen, keeps the old behaviour unchanged. `merge-notify` is untouched.
+
 ## 2026-09-19 — queued work starts itself under a budget (tooling only; the standard is unchanged and VERSION is not bumped)
 `scripts/fleet-budget.sh` answers one question in one line: `ok <numbers>` or `hold <reason>`.
 It reads the three meters the CLI's own `/usage` shows, from the endpoint the CLI uses
