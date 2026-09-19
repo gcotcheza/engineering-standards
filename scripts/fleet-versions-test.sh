@@ -121,6 +121,27 @@ matches 'case 7: the existing (docs) line still prints' "${OUT}" 'ok +p7 +\(2026
 matches 'case 7: and the new deploy-lib line prints alongside it' "${OUT}" "ok +p7 +\(deploy-lib ${LIB_VERSION}\)"
 equals  'case 7: exit code' "${RC}" 0
 
+# --- 8. a canonical VERSION carrying a serial is accepted, not a fatal ---------
+# The date-only validator made a second change in one day unreportable: every
+# project vanished behind "canonical VERSION is not a date" (exit 2).
+mkdir -p "${ROOT}/p8/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p8/scripts/lib/deploy/"
+: >"${ROOT}/p8/scripts/deploy.sh"
+add_docs_ok "${ROOT}/p8"
+printf '2026-09-18.2\n' >"${CANON}/VERSION"
+printf '<!-- standards-version: 2026-09-18.2 · sha256: %s -->\n' "${STANDARDS_HASH}" >"${ROOT}/p8/docs/STANDARDS.md"
+cat "${CANON}/ENGINEERING-STANDARDS.md" >>"${ROOT}/p8/docs/STANDARDS.md"
+run p8
+matches 'case 8: a serial canonical version reports ok' "${OUT}" 'ok +p8 +\(2026-09-18\.2\)'
+equals  'case 8: exit code' "${RC}" 0
+
+# --- 9. a canonical VERSION that is neither still refuses to report ------------
+printf 'tuesday\n' >"${CANON}/VERSION"
+run p8
+matches 'case 9: a malformed canonical version is fatal' "${OUT}" "canonical VERSION is not a date: 'tuesday'"
+equals  'case 9: exit code' "${RC}" 2
+printf '2026-09-18\n' >"${CANON}/VERSION"
+
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'
     exit 0

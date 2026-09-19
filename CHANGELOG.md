@@ -1,24 +1,28 @@
 # Changelog
 
 ## 2026-09-19 — S7: nothing is deleted in bulk until its read-only twin has run (VERSION 2026-09-19.2)
-Ghie, on being handed a `docker volume prune --all` to type: **"Make this fleetwide, very important."**
+Ghie, on being handed a `docker volume prune` line to type: **"Make this fleetwide, very important."**
 
-The near miss, found by the personal-vps session: a prune offered as "19 GB of finished gate leftovers"
-would also have taken `ghie-writes_sail-mysql`, because Docker counts a **stopped stack's named volume**
-as dangling — 56 unnamed volumes and one named one. An "are you sure?" and a dry run caught it. That
-volume turned out to be empty, so nothing was lost; on a stack that had ever run it would have been data
-with no backup. The corrected line selects finished lane volumes positively, by name.
+The near miss, found by the personal-vps session: a prune offered as finished gate leftovers would also
+have taken a live app stack's named database volume. Docker counts a **torn-down** stack's named volume
+as dangling — `compose down` removes the containers that held it, and nothing then holds the volume — so
+`docker volume prune --all` proposes data while reading as a cleanup. An "are you sure?" and a dry run
+caught it. That volume turned out to be empty; on a stack that had ever run it would have been data with
+no backup. Reproduce the shape, read-only, before trusting any count:
+`docker volume ls -f dangling=true --format '{{.Name}}' | grep -vcE '^[0-9a-f]{64}$'` — on 2026-09-19 that
+is 56 named volumes, including the database and search volumes of six gate and review stacks.
 
-The rule has a second half that is not about Docker: **a denial never becomes "type this yourself"
-without the preview and the number.** A permission layer refusing a destructive command is a decision,
-and handing the same command to a person re-routes around it — which is the shape that put a live
-volume in front of the one person whose "yes" nobody double-checks.
+The rule's second half is not about Docker: **a refusal by a permission layer is never re-routed to a
+person without the preview and the count.** A layer refusing a destructive command is a decision, and
+handing the same line to someone else walks around it.
 
-`docs/DECISIONS.md` records what checks S7 today (review, and the preview line in any hand-over) and the
-two mechanical halves that are owed but deliberately **not** credited in the clause until they run.
-
-VERSION takes a serial: a date alone cannot distinguish two changes made on one day, and a project that
-vendored between them would be reported as DIVERGED rather than STALE. See `docs/DECISIONS.md`.
+**VERSION takes a serial** — a date alone cannot distinguish two changes made on one day, and a project
+vendoring between them reads DIVERGED ("local edit re-stamped?") rather than STALE. Two things follow:
+`scripts/fleet-versions.sh` validated the canonical VERSION as a strict date and would have refused to
+report on any project at all (it now accepts `YYYY-MM-DD[.N]`, with a test for each), and every project's
+drift test asserts the same shape, so **each adoption or bump PR widens its own regex** — ROLLOUT.md
+step 4 says so. The invariant the serial trades into — every change to the body moves VERSION — is
+checked by review until a gate step enforces it; `docs/DECISIONS.md` records both.
 
 ## 2026-09-19 — three rules stop claiming more than they check; the gate obeys T3 (VERSION unchanged)
 From the audit of claims nobody had exercised (fleet backlog 83/87), which hunted statements the system

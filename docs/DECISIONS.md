@@ -72,6 +72,16 @@ because Docker counts a stopped stack's named volume as dangling. A dry run caug
 
 Two mechanical halves are owed and are **not** credited in the rule until they run: the
 fleet backlog's lint refusing an item whose code block carries a destructive line with no
-preview line before it, and the same check over the deploy runbooks in
-`.claude/commands/`. Crediting a check that does not exist is the failure this repository
-spent the day removing from three other rules; the clause will name them once they do.
+preview line before it, and the same check over the deploy runbooks in `.claude/commands/`.
+Crediting a check that does not exist is the failure the 2026-09-19 entry in `CHANGELOG.md`
+records removing from three other rules; the clause will name these once they run.
+
+## Every change to the standards body must move VERSION (2026-09-19)
+
+The serial replaces one invariant with another. "One change per day" used to be enforced by
+the date itself; "every change to the body moves VERSION" is enforced by nobody. If a body
+change lands without a bump, a project that vendors the new text declares the current version
+with a body that matches canonical — reported `ok` — while another project on the *previous*
+body also declares that version and is reported DIVERGED, accused of a local edit it never
+made. Until a gate step compares `ENGINEERING-STANDARDS.md` against `origin/main` and fails
+when VERSION has not moved, this is checked by review of every PR that touches the body.
