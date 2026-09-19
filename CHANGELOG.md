@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-19 — deploy scripts find their own helpers (docs only; the standard is unchanged and VERSION is not bumped)
+Backlog 76, found by the orbit session landing its own PR #89 today: a project's
+`scripts/deploy.sh` that resolves `docs-only.sh` and `verify.sh` through `"$ROOT/scripts/…"`
+cannot land itself — on a first deploy those helpers are not on the box yet, so the call exits
+127 and the first landing had to be done by hand instead. The vendored `scripts/lib/deploy/`
+files were already loaded the right way, from the script's own directory, not `$ROOT`'s. README:
+"A deploy script finds its helpers in its own directory".
+
 ## 2026-09-19 — a busy pane's queued line no longer looks undelivered (tooling only; the standard is unchanged and VERSION is not bumped)
 `scripts/queue-start.sh` borrowed its delivery transport from merge-notify, including the
 verified-Enter loop that expects the input row to go empty. When the target session is mid-turn,
