@@ -15,8 +15,10 @@ any green line, so one false green vouched for a head forever. `scripts/check.sh
 once its four steps have run. `scripts/lib/deploy/test.sh` gains seven groups (flag, no flag,
 non-zero rc, green→red, red→green, an inherited env export discarded at source time, and 05:58Z's incident end to end); each was proved red once
 against a mutated copy of the library. `scripts/fleet-versions-test.sh` reads the deploy-lib
-VERSION instead of hardcoding it. deploy-lib VERSION is 2026-09-19, which marks Fineprint,
-Reflection and Scribly STALE until they re-vendor; Fineprint's `ci.sh` and `e2e.sh` set the
+VERSION instead of hardcoding it. deploy-lib VERSION is 2026-09-19, and `ledger.sh` changed
+again in this same version, so `fleet-versions.sh`'s byte-for-byte file comparison catches
+Fineprint, Reflection and Scribly's vendored copies first: they report DRIFTED, not STALE,
+until they re-vendor — the VERSION comparison is never reached. Fineprint's `ci.sh` and `e2e.sh` set the
 flag after their suites at the same time. README: "The gate ledger".
 
 ## 2026-09-18 — repo gate + deploy-lib drift check (tooling only; the standard is unchanged and VERSION is not bumped)
