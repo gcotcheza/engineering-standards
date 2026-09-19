@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-09-19 — a gate must not build the image production runs (new rule T9; VERSION moves to 2026-09-19)
+Backlog 80, found by the personal-vps session reviewing Memento #99 and confirmed against the
+running containers: `docker inspect --format '{{.Name}} {{.Config.Image}}' memento-app-1 orbit-app-1`
+answers `memento/app:latest` and `orbit/app:latest` — the tags those projects' browser-gate compose
+files build. A gate run on any branch therefore overwrites the tag production is recreated from, and
+Memento's live container came up carrying the `gd` and `exif` extensions that only an unmerged
+branch builds.
+
+T9 has two halves: a gate's image tag is separate and disposable, and a deploy builds the production
+tag itself from the merged tree and proves the running container by image id rather than by tag.
+`scripts/gate-image-tags.sh <project-root>` is the first half's check — compose files beside the
+root split into gate ones (`*e2e*`, `*ci*`) and production ones, `${VAR:-default}` resolved to its
+default, and a failure naming the file and line when one BUILT tag is on both sides. A pinned
+third-party image (`postgres:18-alpine`) on both sides is not a finding: only a tag something here
+builds can be overwritten. A project with no built image at all prints nothing and exits 0 — absence
+is not a fault. `scripts/gate-image-tags-test.sh` drives it from fixtures in a temp dir: a shared
+tag, separate tags, a resolved `${CI_APP_IMAGE:-x/app:ci}`, a default that IS the production tag, a
+gate that only runs the tag it did not build, a `${VAR:?}` with no default, a bind-mount project and
+an empty directory. The offender condition and the default-resolver were each mutated once against a
+scratch copy and the test went red (8 checks, then 3). The gate grew a seventh step.
+
+Where the fleet stands as this lands, from running the check: Memento fails (`docker-compose.e2e.yml:65`
+against `docker-compose.yml:76` and `:121`) and Orbit fails on three production services
+(`docker-compose.e2e.yml:67` against `:56`, `:99`, `:149`); KidsQuest (`${CI_APP_IMAGE:-kidsquest/app:ci}`),
+Fineprint (`fineprint/app:ci-<project>`) and Health Tracker (`health-tracker/app:ci`) are already
+clean; Scribly and Reflection bind-mount PHP and build no app image, so the check is silent for them.
+The two fixes belong to those projects' own pull requests. ROLLOUT.md carries the per-project status.
+
+This entry changes the standard, so VERSION moves to 2026-09-19 — every vendored `docs/STANDARDS.md`
+is STALE to `scripts/fleet-versions.sh` until its project takes the bump. README: the rule count,
+"The gate", and `scripts/gate-image-tags.sh`.
+
 ## 2026-09-19 — deploy scripts find their own helpers (docs only; the standard is unchanged and VERSION is not bumped)
 Backlog 76, found by the orbit session landing its own PR #89 today: a project's
 `scripts/deploy.sh` that resolves `docs-only.sh` and `verify.sh` through `"$ROOT/scripts/…"`

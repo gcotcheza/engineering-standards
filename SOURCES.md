@@ -37,6 +37,7 @@ shared memory (the owner's standing instructions to the AI sessions).
 | T6 Browser E2E in-repo, throwaway stack | The fleet's shared memory (browser-E2E standard); the in-repo `e2e/` directories of three projects |
 | T7 E2E resource caps | The fleet's shared memory (browser-E2E standard: three mandatory caps, "find it, don't assume"); the `playwright.config.js` worker limits of three projects and the `--memory=2g` flag on the container the browsers actually run in |
 | T8 Accessibility baseline | A Laravel project's `docs/DECISIONS.md`: real `<button>`s "for the same keyboard-reachability reason"; a 44px touch target via `::after` where "the visible pill stays 22px"; hand-rolled focus traps where the opener holds a reference and takes focus back; re-anchoring focus past an unmounted control; a change that "would have closed the last keyboard path into it"; plus `aria-current` and `aria-describedby` usage in its components, and the viewport matrix asserted by a Laravel/Livewire project |
+| T9 A gate never builds the production tag | Two Laravel projects already keep them apart — `${CI_APP_IMAGE:-<app>/app:ci}` in the gate compose file against `<app>/app:latest` in production — and a third builds a per-worktree `ci-<project>` tag; written down after a Symfony project's live container was recreated from a `:latest` that its own browser gate had overwritten on an unmerged branch |
 
 ## Security & privacy
 

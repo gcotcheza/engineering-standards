@@ -60,3 +60,21 @@ Then verify it the way rule W9 asks — start a headless session from a subdirec
 - **Who owns the canonical file.** One repo, one reviewer, changes by PR — otherwise the vendored copies will disagree within a month, which is exactly the failure this whole exercise exists to prevent.
 - **Where the floor lives.** Recommended: a project-level `CLAUDE.md` symlink in the directory the non-project sessions start in, not a user-level rule. A user-level `~/.claude/rules/` file is one line to add and remove, but it loads in every session on the machine, and after the rollout that doubled the standard in every project session (measured at roughly 3.5k tokens re-read per call). Either way it is a floor and never the whole answer — subagents are not guaranteed to receive it.
 - **What a project does when it cannot meet a rule yet.** Recommended: an `## Exceptions` block in its own `CLAUDE.md`, each line naming the rule, the reason and what would have to be true to drop it. Silence must stop being an option — it is what conflicts 6 and 7 in `SOURCES.md` are made of.
+
+## T9 — where each project stands
+
+A rule that needs a change in several repositories needs a status, not a schedule. `scripts/gate-image-tags.sh <project-root>` is the check; run from the canonical clone against each project root — the way `scripts/fleet-versions.sh` is — this is what it answers on 2026-09-19:
+
+| Project | Gate compose tag | Production compose tag | Status |
+|---|---|---|---|
+| Memento | `memento/app:latest` (`docker-compose.e2e.yml:65`) | `memento/app:latest` (`docker-compose.yml:76`, `:121`) | **to fix** — one tag, both sides |
+| Orbit | `orbit/app:latest` (`docker-compose.e2e.yml:67`) | `orbit/app:latest` (`docker-compose.yml:56`, `:99`, `:149`) | **to fix** — three production services on the gate's tag |
+| KidsQuest | `${CI_APP_IMAGE:-kidsquest/app:ci}` | `kidsquest/app` | clean |
+| Fineprint | `${CI_APP_IMAGE:?…}`, set to `fineprint/app:ci-<project>` | `fineprint/app:latest` | clean |
+| Health Tracker | `${CI_APP_IMAGE:-health-tracker/app:ci}` | `health-tracker/app:latest`, `health-tracker/app:staging` | clean |
+| Scribly, Reflection | — | — | not applicable — PHP is bind-mounted and no app image is built |
+| Ghie Writes | — | Sail's local dev image | not applicable — no gate compose file to share a tag with |
+
+The two fixes are each project's own pull request, not this repo's: the gate compose file takes a tag of its own (`<app>/app:ci`, or `${CI_APP_IMAGE:-<app>/app:ci}` so a worktree can hold one per branch), and the project's gate calls the check. Until then the standing risk is the one that has already happened once — a gate run on any branch leaves production one `up -d` away from a container built from unmerged code.
+
+**How a project runs it.** From the canonical clone, not a vendored copy: the check reads only the compose files it is pointed at, so there is no project state to drift and nothing to re-stamp — unlike `scripts/lib/deploy/`, which a deploy script must source. A project whose gate must run without the canonical clone present vendors it like any other script and says so in its `CLAUDE.md`.
