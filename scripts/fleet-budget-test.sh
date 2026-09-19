@@ -73,6 +73,24 @@ printf 'WEEK_ALL_MAX=90\n' >"${WORK}/conf"
 meter 10 67 10; run
 matches 'case 5: a conf cap of 90 makes 67% ok' "${OUT}" '^ok 5h 10%/50 week-all 67%/90 week-fable 10%/60$'
 equals  'case 5: exit code' "${RC}" 0
+
+# --- 5b. a value written with spaces is read, not silently dropped -------------
+printf 'WEEK_ALL_MAX = 90\n' >"${WORK}/conf"
+meter 10 67 10; run
+matches 'case 5b: WEEK_ALL_MAX = 90 (spaces) is read' "${OUT}" '^ok 5h 10%/50 week-all 67%/90 week-fable 10%/60$'
+equals  'case 5b: exit code' "${RC}" 0
+
+# --- 5c. a value that is not a number -> hold, never the looser default --------
+printf 'WEEK_ALL_MAX=sixty\n' >"${WORK}/conf"
+meter 10 67 10; run
+equals  'case 5c: an unparseable conf value holds' "${OUT}" 'hold conf unreadable: WEEK_ALL_MAX'
+equals  'case 5c: exit code' "${RC}" 1
+
+# --- 5d. a value outside 0-100 -> hold -----------------------------------------
+printf 'FIVE_HOUR_MAX=1000\n' >"${WORK}/conf"
+meter 10 10 10; run
+equals  'case 5d: a conf value over 100 holds' "${OUT}" 'hold conf unreadable: FIVE_HOUR_MAX'
+equals  'case 5d: exit code' "${RC}" 1
 : >"${WORK}/conf"
 
 # --- 6. no Fable meter in the response -> unreadable, hold ---------------------

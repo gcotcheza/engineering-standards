@@ -32,12 +32,16 @@ num(){ [[ "${1:-}" =~ ^[0-9]+(\.[0-9]+)?$ ]]; }
 gt(){ awk -v a="$1" -v b="$2" 'BEGIN{exit !(a>b)}'; }
 gte(){ awk -v a="$1" -v b="$2" 'BEGIN{exit !(a>=b)}'; }
 
+# A key that is present but unparseable returns 1: the caller holds rather than
+# quietly falling back to the looser default.
 conf_get(){
-    local v=''
-    if [ -r "$CONF" ]; then
-        v="$(grep -aoE "^[[:space:]]*$1=[0-9]+" "$CONF" 2>/dev/null | tail -1 | cut -d= -f2)"
-    fi
-    if [ -n "$v" ]; then printf '%s' "$v"; else printf '%s' "$2"; fi
+    local raw v
+    [ -r "$CONF" ] || { printf '%s' "$2"; return 0; }
+    raw="$(grep -aE "^[[:space:]]*$1[[:space:]]*=" "$CONF" 2>/dev/null | tail -1)"
+    [ -n "$raw" ] || { printf '%s' "$2"; return 0; }
+    v="$(printf '%s' "$raw" | sed -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//; s/[[:space:]]+\$//")"
+    [[ "$v" =~ ^[0-9]+$ ]] && [ "$v" -le 100 ] || return 1
+    printf '%s' "$v"
 }
 
 # An unreadable capacity reading is a hold, never a zero (heavy-work's rule).
@@ -128,9 +132,9 @@ print("%g %g %g" % (fh, wa, wf))
 
 main(){
     local five_max week_max fable_max fh wa wf pcts numbers
-    five_max="$(conf_get FIVE_HOUR_MAX 50)"
-    week_max="$(conf_get WEEK_ALL_MAX 60)"
-    fable_max="$(conf_get WEEK_FABLE_MAX 60)"
+    five_max="$(conf_get FIVE_HOUR_MAX 50)" || hold "conf unreadable: FIVE_HOUR_MAX"
+    week_max="$(conf_get WEEK_ALL_MAX 60)" || hold "conf unreadable: WEEK_ALL_MAX"
+    fable_max="$(conf_get WEEK_FABLE_MAX 60)" || hold "conf unreadable: WEEK_FABLE_MAX"
     capacity
     meter_to_file
     pcts="$(meter_pcts)" || hold "meter unreadable (no utilization numbers in the response)"
