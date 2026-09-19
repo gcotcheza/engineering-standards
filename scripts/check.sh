@@ -101,5 +101,8 @@ step_4() {
 
 for n in 1 2 3 4; do run_step "${n}"; done
 
+# shellcheck disable=SC2034  # the EXIT trap's gate_ledger_record reads it
+GATE_SUITE_PASSED=1
+
 printf '=== GATE OK ===\n'
 exit 0

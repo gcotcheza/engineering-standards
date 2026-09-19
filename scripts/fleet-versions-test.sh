@@ -29,6 +29,7 @@ mkdir -p "${CANON}/scripts/lib/deploy" "${ROOT}"
 
 # --- 0. the canonical fake: a copy of the clone's scripts/lib/deploy -----------
 cp "${CANON_SRC}"/*.sh "${CANON_SRC}/VERSION" "${CANON}/scripts/lib/deploy/"
+LIB_VERSION="$(head -1 "${CANON_SRC}/VERSION")"
 printf 'fake canonical standards\n' >"${CANON}/ENGINEERING-STANDARDS.md"
 printf '2026-09-18\n' >"${CANON}/VERSION"
 STANDARDS_HASH="$(sha256sum "${CANON}/ENGINEERING-STANDARDS.md" | cut -d' ' -f1)"
@@ -55,7 +56,7 @@ cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p1/scripts/lib/deploy/"
 : >"${ROOT}/p1/scripts/deploy.sh"
 add_docs_ok "${ROOT}/p1"
 run p1
-matches 'case 1: byte-identical copy reports ok' "${OUT}" 'ok +p1 +\(deploy-lib 2026-09-18\)'
+matches 'case 1: byte-identical copy reports ok' "${OUT}" "ok +p1 +\(deploy-lib ${LIB_VERSION}\)"
 equals  'case 1: exit code' "${RC}" 0
 
 # --- 2. one body byte changed, header NOT re-stamped -> DRIFTED ----------------
@@ -77,7 +78,7 @@ f="${ROOT}/p3/scripts/lib/deploy/resolve.sh"
 tail -n +2 "${f}" >"${f}.body"
 printf '# one extra body byte\n' >>"${f}.body"
 newhash="$(sha256sum "${f}.body" | cut -d' ' -f1)"
-{ printf '# fleet-deploy-lib 2026-09-18 sha256:%s\n' "${newhash}"; cat "${f}.body"; } >"${f}"
+{ printf '# fleet-deploy-lib %s sha256:%s\n' "${LIB_VERSION}" "${newhash}"; cat "${f}.body"; } >"${f}"
 rm -f "${f}.body"
 : >"${ROOT}/p3/scripts/deploy.sh"
 add_docs_ok "${ROOT}/p3"
@@ -92,7 +93,7 @@ printf '2020-01-01\n' >"${ROOT}/p4/scripts/lib/deploy/VERSION"
 : >"${ROOT}/p4/scripts/deploy.sh"
 add_docs_ok "${ROOT}/p4"
 run p4
-matches "case 4: a changed VERSION file reports STALE" "${OUT}" "STALE +p4 +\\(VERSION is '2020-01-01', canonical is '2026-09-18'\\)"
+matches "case 4: a changed VERSION file reports STALE" "${OUT}" "STALE +p4 +\\(VERSION is '2020-01-01', canonical is '${LIB_VERSION}'\\)"
 equals  'case 4: exit code' "${RC}" 1
 
 # --- 5. deploy.sh present, no lib dir -> MISSING (failure) --------------------
@@ -117,7 +118,7 @@ cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p7/scripts/lib/deploy/"
 add_docs_ok "${ROOT}/p7"
 run p7
 matches 'case 7: the existing (docs) line still prints' "${OUT}" 'ok +p7 +\(2026-09-18\)'
-matches 'case 7: and the new deploy-lib line prints alongside it' "${OUT}" 'ok +p7 +\(deploy-lib 2026-09-18\)'
+matches 'case 7: and the new deploy-lib line prints alongside it' "${OUT}" "ok +p7 +\(deploy-lib ${LIB_VERSION}\)"
 equals  'case 7: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then

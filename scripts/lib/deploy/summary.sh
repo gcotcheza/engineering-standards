@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-09-18 sha256:b1073ff2ca5ad5f255b2dbe7fab379c8435deb4b7a2151c95544f1103e659368
+# fleet-deploy-lib 2026-09-19 sha256:b1073ff2ca5ad5f255b2dbe7fab379c8435deb4b7a2151c95544f1103e659368
 # shellcheck shell=bash
 # say prints one summary line on stdout and in the log; detail goes to the log alone.
 # The caller sets ROOT, PR, BEFORE and GATED before deploy_log_open opens fd 3.

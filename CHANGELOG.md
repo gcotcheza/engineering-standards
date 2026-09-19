@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-19 — the gate ledger cannot record green for a run that did not finish (tooling only; the standard is unchanged and VERSION is not bumped)
+2026-09-19 05:58Z Fineprint's `scripts/e2e.sh` was killed while its stack was starting. The
+EXIT trap read `$?` from the last command that had finished — 0 — and wrote a green `e2e` line
+for that head; `scripts/ci.sh`'s cleanup has the same shape. `gate_ledger_record` now writes
+rc 0 only when the gate script has set `GATE_SUITE_PASSED=1` after its suite returned 0.
+Sourcing `ledger.sh` now `unset`s `GATE_SUITE_PASSED` at the top level, so an operator's
+`export GATE_SUITE_PASSED=1` (or a CI wrapper's) is discarded rather than honoured — only the
+gate script's own shell, set after its own suite, counts. Without the flag an rc of 0 is written as 1, loudly: `gate-ledger: rc 0 without
+GATE_SUITE_PASSED — the run did not finish; recorded as a failure` on stderr. A non-zero rc is
+unchanged. The reader is now newest-wins — the last line for a (sha, kind) decides, so a later
+red overrides an earlier green and a re-run's green overrides an earlier red; the old awk took
+any green line, so one false green vouched for a head forever. `scripts/check.sh` sets the flag
+once its four steps have run. `scripts/lib/deploy/test.sh` gains eight groups (flag, no flag,
+non-zero rc, green→red, red→green, append order deciding over an out-of-order timestamp, an
+inherited env export discarded at source time, and 05:58Z's incident end to end); each was proved red once
+against a mutated copy of the library. `scripts/fleet-versions-test.sh` reads the deploy-lib
+VERSION instead of hardcoding it. deploy-lib VERSION is 2026-09-19, and `ledger.sh` changed
+again in this same version, so `fleet-versions.sh`'s byte-for-byte file comparison catches
+Fineprint, Reflection and Scribly's vendored copies first: they report DRIFTED, not STALE,
+until they re-vendor — the VERSION comparison is never reached. Fineprint's `ci.sh` and `e2e.sh` set the
+flag after their suites at the same time. README: "The gate ledger".
+
 ## 2026-09-18 — repo gate + deploy-lib drift check (tooling only; the standard is unchanged and VERSION is not bumped)
 `scripts/check.sh` — this repo's own pre-merge gate: `bash -n` on every tracked script,
 shellcheck (`koalaman/shellcheck:v0.10.0`, style severity, no `-x` — a missing image fails

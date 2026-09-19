@@ -154,7 +154,11 @@ run_lib() {
     else
         repoenv="DEPLOY_GH_REPO=${REPO_OVERRIDE:-gcotcheza/fixture}"
     fi
+    # Simulates an operator's `export GATE_SUITE_PASSED=1` (or a CI wrapper's) already
+    # present in the environment BEFORE driver.sh sources ledger.sh.
+    suiteenv="${SUITE_PASSED_ENV:+GATE_SUITE_PASSED=${SUITE_PASSED_ENV}}"
     ARGVFILE="${CASE}/gh-argv.log"
+    # shellcheck disable=SC2086  # repoenv is empty or one NAME=value; "" would be env's command
     OUT="$(env \
         PATH="${BIN}:${PATH}" \
         FAKE_GH_JSON="${CASE}/gh.json" \
@@ -171,6 +175,7 @@ run_lib() {
         DEPLOY_HEAVY="${BIN}/heavy-work" \
         DEPLOY_LEDGER="${LEDGER}" \
         ${repoenv} \
+        ${suiteenv} \
         "${logenv}" \
         bash "${CASE}/lib/driver.sh" 2>&1)"
     LOGFILE="$(find "${LOGS}" "${CASE}/logroot" -name '*.log' -printf '%T@ %p\n' 2>/dev/null \
@@ -180,6 +185,7 @@ run_lib() {
     EXTRA=''
     LOG_DIR_UNSET=''
     REPO_OVERRIDE=''
+    SUITE_PASSED_ENV=''
 }
 
 BY_HAND=''
@@ -187,6 +193,7 @@ GH_FAIL=''
 EXTRA=''
 LOG_DIR_UNSET=''
 REPO_OVERRIDE=''
+SUITE_PASSED_ENV=''
 
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
@@ -328,10 +335,44 @@ contains '--gated-by-hand says so out loud' "${OUT}" \
     "GATED BY HAND: the ledger was not read. #73 deploys on a human's word — transition and rescue only."
 contains 'and by hand is what DONE will record' "${OUT}" 'GATED_IS by hand'
 
+fixture ledger-green-then-red
+printf '%s ci 2026-09-18T20:00:00Z 0 -\n%s ci 2026-09-18T22:00:00Z 1 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' \
+    "${HEAD_SHA}" "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
+run_lib 'resolve; gated'
+contains 'a later red overrides an earlier green' "${OUT}" \
+    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7}: gate that head, then deploy."
+
+fixture ledger-red-then-green
+printf '%s ci 2026-09-18T20:00:00Z 1 -\n%s ci 2026-09-18T22:00:00Z 0 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' \
+    "${HEAD_SHA}" "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
+run_lib 'resolve; gated'
+contains 'a later green overrides an earlier red, which is a genuine re-run' "${OUT}" \
+    "GATED ${HEAD_SHA:0:7} ci and e2e both green in ${LEDGER}"
+
+# "Newest wins" is append order, not the timestamp column: the second line here
+# carries the EARLIER clock time but is appended after the first, and it alone decides.
+fixture ledger-append-order-not-timestamp
+printf '%s ci 2026-09-19T22:00:00Z 0 -\n%s ci 2026-09-18T20:00:00Z 1 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' \
+    "${HEAD_SHA}" "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
+run_lib 'resolve; gated'
+contains 'the later-appended line decides even though its own timestamp is earlier' "${OUT}" \
+    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7}: gate that head, then deploy."
+
+# 2026-09-19: a killed e2e recorded rc 0 over a head that was already green, and the
+# reader took any green. Both halves of that are proved here, together.
+fixture killed-run-regression
+printf '%s ci 2026-09-19T05:00:00Z 0 -\n%s e2e 2026-09-19T05:30:00Z 0 -\n' \
+    "${LIVE_SHA}" "${LIVE_SHA}" >"${LEDGER}"
+run_lib "GATE_LEDGER=${LEDGER} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record e2e 0 - >&3 2>&3; HEAD_SHA=${LIVE_SHA}; gated"
+contains 'the killed run is recorded as a failure' "${OUT}" \
+    'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
+contains 'and the head it was green on before is no longer gated' "${OUT}" \
+    "REFUSED: the ledger holds no green e2e for ${LIVE_SHA:0:7}: gate that head, then deploy."
+
 # --- 4. the ledger writer --------------------------------------------------------
 fixture ledger-writer
 WRITTEN="${CASE}/written"
-run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 /tmp/ci.log >&3"
+run_lib "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 /tmp/ci.log >&3"
 contains 'the writer says where it wrote' "${OUT}" "gate-ledger: ${LIVE_SHA:0:7} ci rc=0 -> ${WRITTEN}"
 matches 'the ledger line is <sha> <kind> <utc> <rc> <log>' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA} ci [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z 0 /tmp/ci\.log$"
@@ -344,6 +385,38 @@ fixture ledger-unwritable
 run_lib "GATE_LEDGER=/proc/nope/ledger GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 - >&3 2>&3; printf 'STILL HERE\n' >&3"
 contains 'a ledger it cannot write is said out loud' "${OUT}" 'is NOT recorded'
 contains 'and the gate carries on regardless' "${OUT}" 'STILL HERE'
+
+fixture ledger-writer-flag
+WRITTEN="${CASE}/written"
+run_lib "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3"
+contains 'rc 0 with GATE_SUITE_PASSED is recorded green' "${OUT}" \
+    "gate-ledger: ${LIVE_SHA:0:7} ci rc=0 -> ${WRITTEN}"
+matches 'and the line it writes says rc 0' "$(tail -1 "${WRITTEN}")" \
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 0 /tmp/ci\.log$"
+
+fixture ledger-writer-no-flag
+WRITTEN="${CASE}/written"
+run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record e2e 0 - >&3 2>&3"
+contains 'rc 0 without the flag says the run did not finish' "${OUT}" \
+    'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
+matches 'and a failure is what it writes' "$(tail -1 "${WRITTEN}")" \
+    "^${LIVE_SHA} e2e [0-9-]+T[0-9:]+Z 1 -$"
+
+fixture ledger-writer-nonzero
+WRITTEN="${CASE}/written"
+run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 7 - >&3 2>&3"
+matches 'a non-zero rc is written unchanged' "$(tail -1 "${WRITTEN}")" \
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 7 -$"
+absent 'and the flag is never mentioned for it' "${OUT}" 'GATE_SUITE_PASSED'
+
+fixture ledger-env-exported-before-source
+WRITTEN="${CASE}/written"
+SUITE_PASSED_ENV=1
+run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3"
+contains 'an operator export inherited before sourcing is discarded, not honoured' "${OUT}" \
+    'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
+matches 'and it is written as a failure' "$(tail -1 "${WRITTEN}")" \
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 1 /tmp/ci\.log$"
 
 # --- 5. pre-flight ----------------------------------------------------------------
 fixture preflight-clean
