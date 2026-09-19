@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-19 — queued work starts itself under a budget (tooling only; the standard is unchanged and VERSION is not bumped)
+`scripts/fleet-budget.sh` answers one question in one line: `ok <numbers>` or `hold <reason>`.
+It reads the three meters the CLI's own `/usage` shows, from the endpoint the CLI uses
+(`/api/oauth/usage`) with root's OAuth token, and holds when any meter is at or above its cap
+(`FIVE_HOUR_MAX=50 WEEK_ALL_MAX=60 WEEK_FABLE_MAX=60`, overridable in `/root/fleet-budget.conf`),
+when the box is over a capacity red line (load15 above the core count, under 1500 MB available,
+memory `full avg300` above 10), or when anything is unreadable — a token that is missing or
+expired, a 401, an unreadable `/proc` value. Unreadable is never coerced to zero. The response
+is cached for ten minutes at mode 600; the token is never printed, logged or written anywhere.
+
+`scripts/queue-start.sh` is the half-hourly tick that turns a green budget into work starting.
+For each session in `/root/backlog-owners` it types one marked sentence into that session's pane
+with merge-notify's transport and its safety (dialog defer, stranded-line handling, verified
+Enter). A session is idle only if it keeps a registry file and that file is empty, no
+`<app>-deploy-*` unit is active for an app it owns, and heavy-work holds no slot for it; a
+missing registry means not idle, so a session opts in by keeping one. There is no walk-down:
+only a session's top queued item is ever announced, and if that item is held or was announced
+within 24 h the tick says nothing for that session.
+
+`scripts/backlog-owners-lint.py` is red when a queued item has no owner, when an owners line
+names an unknown session or an item that is not in the backlog, or when a line is malformed.
+
+The gate grew two steps: `scripts/fleet-budget-test.sh` (5) and `scripts/queue-start-test.sh` (6).
+Both are fakes only — a fake meter JSON, fake `/proc` files, a fake backlog, owners, registries,
+budget script, `systemctl` and `heavy-work`. No network, no credentials, no tmux, no delivery.
+
 ## 2026-09-19 — the gate ledger cannot record green for a run that did not finish (tooling only; the standard is unchanged and VERSION is not bumped)
 2026-09-19 05:58Z Fineprint's `scripts/e2e.sh` was killed while its stack was starting. The
 EXIT trap read `$?` from the last command that had finished — 0 — and wrote a green `e2e` line

@@ -70,3 +70,16 @@ them. Rule W3 says only Ghie merges: Ghie is the fleet's owner and sole merger, 
 rule reads as "the person who reviewed the change is the person who ships it".
 
 **Licence.** Documentation CC BY 4.0, `scripts/` MIT. See `LICENSE`.
+
+`scripts/queue-start.sh` starts queued backlog work without anyone watching for the moment to
+start it. Every half hour it asks `scripts/fleet-budget.sh` whether there is headroom — the
+three meters from the CLI's own usage endpoint against the caps in `/root/fleet-budget.conf`
+(`FIVE_HOUR_MAX`, `WEEK_ALL_MAX`, `WEEK_FABLE_MAX`, defaults 50/60/60), plus the box's capacity —
+and on `ok` it types one sentence into the pane of each idle session that owns a queued item:
+`[queue-start automation] budget ok (<numbers>): next queued item for <session> is <N> — <title>.
+Start it by your rules, or mark it hold in /root/backlog-owners.` Anything unreadable is a hold.
+Ownership and priority live in `/root/backlog-owners` (`<item> <session> [hold]`, order =
+priority), checked by `scripts/backlog-owners-lint.py`. Ghie's cron line, in
+`/etc/cron.d/queue-start`: `*/30 * * * * root /usr/local/sbin/queue-start >>/var/log/queue-start.log 2>&1`,
+with a logrotate stanza beside merge-notify's. `--dry-run` prints the pane and the sentence and
+delivers nothing; `--once <session>` runs one session for real.
