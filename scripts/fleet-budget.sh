@@ -84,13 +84,15 @@ except urllib.error.HTTPError as e:
 except Exception as e:
     print(type(e).__name__); sys.exit(2)
 cache = os.environ['FB_CACHE']
+tmp = cache + '.new'
 old = os.umask(0o177)
 try:
-    with open(cache, 'w') as f:
+    with open(tmp, 'w') as f:
         f.write(body)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, cache)
 finally:
     os.umask(old)
-os.chmod(cache, 0o600)
 print(body)
 PY
     )" || rc=$?

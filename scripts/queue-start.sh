@@ -187,7 +187,10 @@ top_item(){
 
 deduped(){
   local n="$1" s="$2" e now
-  [ -r "$STATE" ] || return 1
+  if [ ! -r "$STATE" ]; then
+    { [ -e "$STATE" ] || [ -L "$STATE" ]; } && log "state file $STATE exists but cannot be read — nothing is deduped this tick"
+    return 1
+  fi
   e="$(awk -v n="$n" -v s="$s" '$1==n && $2==s {v=$3} END{print v+0}' "$STATE" 2>/dev/null)"
   [ "${e:-0}" -gt 0 ] 2>/dev/null || return 1
   now="$(date +%s)"
@@ -252,8 +255,10 @@ main(){
     shift
   done
   paths_ok || return 0
-  mkdir -p "$(dirname "$STATE")" 2>/dev/null
-  [ "$DRY_RUN" = 1 ] || take_lock || return 0
+  if [ "$DRY_RUN" != 1 ]; then
+    mkdir -p "$(dirname "$STATE")" 2>/dev/null
+    take_lock || return 0
+  fi
   if [ ! -r "$OWNERS" ]; then loud "owners file $OWNERS is unreadable — nothing announced"; return 0; fi
   if ! read_queued; then loud "no '## Queued work' items in $BACKLOG — nothing announced"; return 0; fi
   local out rc=0 numbers s

@@ -99,7 +99,7 @@ cp "${WORK}/heavy-status-free" "${WORK}/heavy-status"
 
 run() {
     OUT="$(QS_OWNERS="${WORK}/owners" QS_BACKLOG="${WORK}/backlog.md" \
-        QS_STATE="${WORK}/state" QS_REGISTRY_DIR="${WORK}/reg" \
+        QS_STATE="${STATE_FILE:-${WORK}/state}" QS_REGISTRY_DIR="${WORK}/reg" \
         QS_BUDGET_SH="${WORK}/budget" QS_APP_OWNERS="${WORK}/app-owners" \
         QS_SYSTEMCTL="${SYSTEMCTL_BIN:-${WORK}/systemctl}" \
         QS_HEAVY_WORK="${HEAVY_BIN:-${WORK}/heavy-work}" \
@@ -230,6 +230,16 @@ run --dry-run
 matches 'case 10b: parked lines are skipped by name' "${OUT}" 'skip the parked lines: they name no session'
 lacks   'case 10b: and are never called an unknown session' "${OUT}" 'unknown session [hold]'
 sed -i '/^33 hold$/d' "${WORK}/owners"
+
+# --- 10c. a dry run creates neither the state file nor its directory ----------
+STATE_FILE="${WORK}/nodir/state" run --dry-run
+equals 'case 10c: a dry run creates no state directory' "$( [ -e "${WORK}/nodir" ] && echo yes || echo no)" no
+
+# --- 10d. a state file that exists but cannot be read says so -----------------
+ln -s "${WORK}/nowhere" "${WORK}/dangling"
+STATE_FILE="${WORK}/dangling" run --dry-run
+matches 'case 10d: an unreadable state file is logged' "${OUT}" 'state file .*dangling exists but cannot be read'
+rm -f "${WORK}/dangling"
 
 # --- 11. the owners lint ------------------------------------------------------
 lint() { LOUT="$("${LINT}" "${WORK}/backlog.md" "$1" 2>&1)"; LRC=$?; }

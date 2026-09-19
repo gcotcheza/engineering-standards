@@ -8,7 +8,7 @@
 #   5) scripts/fleet-budget-test.sh, the budget gate's own test
 #   6) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
 #
-#   scripts/check.sh            all four steps; records a FULL run to the fleet ledger
+#   scripts/check.sh            all six steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
 #                                so nothing is recorded (the ledger only hears
 #                                about a full gate run)
