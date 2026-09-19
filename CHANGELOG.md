@@ -1,34 +1,23 @@
 # Changelog
 
 ## 2026-09-19 — three rules stop claiming more than they check; the gate obeys T3 (VERSION unchanged)
-From the audit of claims nobody had exercised (fleet backlog 83/87). The class hunted was a statement
-the system makes about itself that nobody proved by running it, and three of these rules were in it.
+From the audit of claims nobody had exercised (fleet backlog 83/87), which hunted statements the system
+makes about itself that nobody proved by running them. C10 credited "static analysis" with finding dead
+code most of it cannot see; S6 claimed every gate refuses a deployed checkout, when two of five isolate
+their writes instead, deliberately; C7 named a project, in a public repository. What each rule now says,
+and why both S6 shapes are legitimate, is in `docs/DECISIONS.md`.
 
-**C10** credited "static analysis" with finding dead code. PHPStan finds unused *private* members only;
-an unused public method or an orphaned front-end module is invisible to it unless a project has wired
-the extra tooling, and four of the fleet's projects have not. The clause now says review, and says what
-static analysis does and does not see. Wiring the extension remains the better fix where a project can
-afford it — what is not acceptable is a rule that reads as though the tooling is already there.
+The gate itself broke T3: `scripts/check.sh` ran its slowest step third with four cheaper ones behind it.
+The seven steps were timed individually and renumbered cheapest-first; the measurement, and the caveat
+that steps 4 and 5 sit inside run-to-run noise, are in `docs/DECISIONS.md` — which now exists, because
+the repo kept its long-form why in the README while W7 tells every project to keep the file.
 
-**S6** said every gate "refuses to run in a deployed checkout". Three of five do. Two isolate their
-writes from it instead, deliberately, because their gate runs in overlay mode — a legitimate second
-shape the rule had no words for, so a project doing the right thing read as non-compliant. Both shapes
-are now named, and a project says in its `CLAUDE.md` which it is.
-
-**C7** named a project as its example of a wired boundary tool. This repository is public; the rules
-carry tools and shapes, never project names.
-
-**The gate itself broke T3.** `scripts/check.sh` ran its slowest step (the deploy library's tests,
-4.74s) third, with four cheaper steps behind it — the header said so honestly and called reordering a
-backlog item. The seven steps were timed individually (0.03, 0.30, 0.32, 1.27, 1.75, 2.08, 4.74s) and
-renumbered in that order. The numbers are in the header and in `docs/DECISIONS.md`: re-measure before
-reordering again.
-
-**`docs/DECISIONS.md` now exists.** The repo kept its long-form why in the README and pointed a code
-comment at a `docs/DECISIONS.md` it did not have, while W7 tells every project to keep one. It does now.
-
-VERSION does not move: the rules' meaning is unchanged, and the vendored copies' sha256 is what tells a
-project its text is out of date.
+**VERSION does not move, and there is a window to know about.** VERSION is a date, and PR #9 moved it to
+`2026-09-19` earlier today, so two different bodies now carry that string. `scripts/fleet-versions.sh`
+reaches STALE only when the declared version differs, so a project that vendored the text *between* #9's
+merge and this one reads DIVERGED — "local edit re-stamped?" — when it has done nothing wrong. Today's
+five adopters all declare `2026-08-23` and correctly read STALE. Land this before the next adoption, and
+no project ever sits in the window.
 
 ## 2026-09-19 — a gate must not build the image production runs (new rule T9; VERSION moves to 2026-09-19)
 Backlog 80, found by the personal-vps session reviewing Memento #99: Memento's live container was

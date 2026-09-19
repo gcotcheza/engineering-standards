@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The repo's own gate. Cheapest first (T3), in the order measured 2026-09-19
-# (0.03s, 0.30s, 0.32s, 1.27s, 1.75s, 2.08s, 4.74s) — re-measure before reordering.
+# The repo's own gate. Cheapest first (T3), in measured cost order — the measurement
+# and the caveat on steps 4 and 5 are in docs/DECISIONS.md. Re-measure before reordering.
 #   1) bash -n on every tracked .sh file
 #   2) scripts/fleet-versions-test.sh, the fleet check's own test
 #   3) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test

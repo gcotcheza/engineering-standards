@@ -25,28 +25,32 @@ run can never be what changed the library a project is about to install.
 
 ## The gate's step order is a measurement, not a guess (2026-09-19)
 
-T3 asks for the cheapest checks first, and this gate did not obey its own rule:
-the slowest step ran third and four cheaper ones followed it. The steps were timed
-individually — 0.03s, 0.30s, 0.32s, 1.27s, 1.75s, 2.08s, 4.74s — and renumbered in
-that order. Re-measure before reordering again; the numbers move as the tests grow.
+T3 asks for the cheapest checks first, and this gate did not obey its own rule: the slowest
+step ran third and four cheaper ones followed it. The steps were timed individually and
+renumbered in that order:
 
-## Three rules stopped claiming more than they check (2026-09-19)
+| step | check | seconds |
+|---|---|---|
+| 1 | `bash -n` | 0.03 |
+| 2 | `fleet-versions-test.sh` | 0.30 |
+| 3 | `gate-image-tags-test.sh` | 0.32 |
+| 4 | `fleet-budget-test.sh` | 1.27 |
+| 5 | shellcheck | 1.75 |
+| 6 | `queue-start-test.sh` | 2.08 |
+| 7 | `scripts/lib/deploy/test.sh` | 4.74 |
 
-An audit of claims nobody had exercised found three of these rules crediting a check
-that does not exist or does not reach:
+Steps 4 and 5 are within run-to-run noise of each other and swapped places on one of the
+review's repetitions; their order carries no meaning. The gaps that do are 1 ≪ 2,3 < {4,5} <
+6 < 7. Re-measure before reordering again — these numbers rot as the tests grow.
 
-- **C10** credited "static analysis" with finding dead code. PHPStan finds unused
-  *private* members only; an unused public method or an orphaned front-end module is
-  invisible to it unless a project has wired the extra tooling. Four of the fleet's
-  projects could not perform the check the rule claimed. The clause now says review,
-  and says what static analysis does and does not see.
-- **S6** said every gate "refuses to run in a deployed checkout". Three of five do.
-  The other two isolate their writes from it instead, by design, because their gate
-  runs in overlay mode. Both are legitimate; the rule now names the two shapes and
-  asks each project to say which it is.
-- **C7** named a project as the example of a wired boundary tool. This repository is
-  public, so the rules carry no project names: the clause now names the tool.
+## Three rules describe the check that happens, not the one we wish happened (2026-09-19)
 
-The alternative for C10 — wiring an unused-public extension everywhere — remains open
-and is the better fix where a project can afford it. What is not acceptable is a rule
-that reads as though the tooling is already there.
+- **C10** names PHPStan and ESLint and what each does not reach, rather than crediting
+  "static analysis" with finding dead code most of it cannot see. Wiring an unused-public
+  extension is the better fix where a project can afford it; until it is wired, the rule is
+  checked by review and says so.
+- **S6** recognises two shapes: a gate that refuses to run in a deployed checkout, and a gate
+  that isolates its writes from one because it runs in overlay mode. Both are legitimate, and
+  a project's `CLAUDE.md` must say in words which one it is — the rule was written as though
+  only the first existed, so a project doing the right thing read as non-compliant.
+- **C7** names the tool, not a project: this repository is public.
