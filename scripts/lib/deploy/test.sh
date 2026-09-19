@@ -78,6 +78,11 @@ SH
 write_fakes() {
     cat >"${BIN}/gh" <<'SH'
 #!/bin/sh
+[ -n "${FAKE_GH_ARGV_LOG:-}" ] && printf '%s\n' "$*" >>"${FAKE_GH_ARGV_LOG}"
+case " $* " in
+    *' -R '*) : ;;
+    *) echo 'gh: no repository resolved (use -R owner/repo)' >&2; exit 1 ;;
+esac
 [ -n "${FAKE_GH_FAIL:-}" ] && { echo 'gh: no such pull request' >&2; exit 1; }
 cat "${FAKE_GH_JSON}"
 SH
@@ -138,16 +143,23 @@ fixture() {
 }
 
 run_lib() {
-    local logenv
+    local logenv repoenv
     if [ -n "${LOG_DIR_UNSET:-}" ]; then
         logenv="DEPLOY_LOG_ROOT=${CASE}/logroot"
     else
         logenv="DEPLOY_LOG_DIR=${LOGS}"
     fi
+    if [ "${REPO_OVERRIDE:-DEFAULT}" = 'NONE' ]; then
+        repoenv=''
+    else
+        repoenv="DEPLOY_GH_REPO=${REPO_OVERRIDE:-gcotcheza/fixture}"
+    fi
+    ARGVFILE="${CASE}/gh-argv.log"
     OUT="$(env \
         PATH="${BIN}:${PATH}" \
         FAKE_GH_JSON="${CASE}/gh.json" \
         FAKE_GH_FAIL="${GH_FAIL:-}" \
+        FAKE_GH_ARGV_LOG="${ARGVFILE}" \
         FAKE_PR="${PR_NUMBER}" \
         FAKE_BY_HAND="${BY_HAND:-0}" \
         FAKE_BEFORE="${LIVE_SHORT}" \
@@ -158,6 +170,7 @@ run_lib() {
         DEPLOY_GH="${BIN}/gh" \
         DEPLOY_HEAVY="${BIN}/heavy-work" \
         DEPLOY_LEDGER="${LEDGER}" \
+        ${repoenv} \
         "${logenv}" \
         bash "${CASE}/lib/driver.sh" 2>&1)"
     LOGFILE="$(find "${LOGS}" "${CASE}/logroot" -name '*.log' -printf '%T@ %p\n' 2>/dev/null \
@@ -166,12 +179,14 @@ run_lib() {
     GH_FAIL=''
     EXTRA=''
     LOG_DIR_UNSET=''
+    REPO_OVERRIDE=''
 }
 
 BY_HAND=''
 GH_FAIL=''
 EXTRA=''
 LOG_DIR_UNSET=''
+REPO_OVERRIDE=''
 
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
@@ -181,6 +196,54 @@ for f in summary resolve ledger preflight; do
     body="$(tail -n +2 "${LIB_DIR}/${f}.sh" | sha256sum | cut -d' ' -f1)"
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
 done
+
+# --- 1b. -R: the fake rejects a missing repo; gh_repo parses the three URL forms;
+#            DEPLOY_GH_REPO overrides; an unparsable origin refuses before any gh call ---
+fixture fake-gh-strict
+run_lib 'out=$("$GH" pr view 73 --json state 2>&1); rc=$?; printf "RC=%s MSG=%s\n" "$rc" "$out" >&3'
+contains 'the fake gh itself rejects a call with no -R' "${OUT}" \
+    'RC=1 MSG=gh: no repository resolved (use -R owner/repo)'
+
+fixture gh-repo-scp
+git_at remote set-url origin 'git@github.com:gcotcheza/x.git'
+run_lib 'printf "REPO_IS %s\n" "$(gh_repo)" >&3'
+contains 'scp-style origin (git@github.com:owner/repo.git) parses' "${OUT}" 'REPO_IS gcotcheza/x'
+
+fixture gh-repo-ssh
+git_at remote set-url origin 'ssh://git@github.com/gcotcheza/x.git'
+run_lib 'printf "REPO_IS %s\n" "$(gh_repo)" >&3'
+contains 'ssh:// origin parses' "${OUT}" 'REPO_IS gcotcheza/x'
+
+fixture gh-repo-https-nogit
+git_at remote set-url origin 'https://github.com/gcotcheza/x'
+run_lib 'printf "REPO_IS %s\n" "$(gh_repo)" >&3'
+contains 'https origin without .git parses' "${OUT}" 'REPO_IS gcotcheza/x'
+
+fixture gh-repo-https-git
+git_at remote set-url origin 'https://github.com/gcotcheza/x.git'
+run_lib 'printf "REPO_IS %s\n" "$(gh_repo)" >&3'
+contains 'https origin with .git parses' "${OUT}" 'REPO_IS gcotcheza/x'
+
+fixture gh-repo-resolve-passes-R
+run_lib 'resolve'
+contains 'resolve passes -R through to gh' "$(cat "${ARGVFILE}")" '-R gcotcheza/fixture'
+contains 'and still resolves' "${OUT}" \
+    "RESOLVED #73 head ${HEAD_SHA:0:7} merge ${MERGE_SHA:0:7} is origin/main, trees identical"
+
+fixture gh-repo-override-wins
+REPO_OVERRIDE='gcotcheza/override-wins'
+run_lib 'resolve'
+contains 'DEPLOY_GH_REPO overrides origin (which here is unparsable)' "$(cat "${ARGVFILE}")" \
+    '-R gcotcheza/override-wins'
+contains 'and resolve still succeeds' "${OUT}" \
+    "RESOLVED #73 head ${HEAD_SHA:0:7} merge ${MERGE_SHA:0:7} is origin/main, trees identical"
+
+fixture gh-repo-unparsable
+REPO_OVERRIDE='NONE'
+run_lib 'resolve'
+contains 'an unparsable origin is refused before any gh call' "${OUT}" \
+    "REFUSED: origin's URL (${CASE}/origin.git) does not name a GitHub repository; set DEPLOY_GH_REPO."
+absent 'no gh call was made' "$(cat "${ARGVFILE}" 2>/dev/null)" 'pr view'
 
 # --- 2. resolve ----------------------------------------------------------------
 fixture resolved
