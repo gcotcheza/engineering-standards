@@ -10,7 +10,8 @@
 #
 # Idle means: the session keeps a registry file AND it is empty, no deploy unit
 # is active for one of its apps, and heavy-work holds no slot for it. A missing
-# registry is not idle — a session opts in by keeping one. No walk-down: only
+# registry is not idle — a session opts in by keeping one, and a tool that
+# cannot be asked (systemctl, heavy-work) counts as busy. No walk-down: only
 # the session's top queued item is ever announced; held or already announced
 # within 24 h means silence, never the next item down.
 #
@@ -141,7 +142,7 @@ queued_title(){ awk -v n="$1" '$1==n {$1=""; sub(/^ /,""); print; exit}' "$QUEUE
 # `heavy-work --status` prints `  last: ...` lines from the finished job while it
 # is free; those are history, never a held slot.
 busy_reason(){
-  local s="$1" reg pane app apane rest out
+  local s="$1" reg pane app apane rest out rc
   reg="$REG_DIR/$s-workers.active"
   if [ ! -f "$reg" ] || [ ! -r "$reg" ]; then printf 'no readable registry file %s' "$reg"; return 0; fi
   [ -s "$reg" ] && { printf 'a builder is listed in %s' "$reg"; return 0; }
@@ -150,13 +151,16 @@ busy_reason(){
   while read -r app apane rest || [ -n "${app:-}" ]; do
     case "$app" in ''|'#'*) continue ;; esac
     [ "$apane" = "$pane" ] || continue
-    out="$("$SYSTEMCTL" list-units --type=service --state=active --no-legend "$app-deploy-*" 2>/dev/null)"
+    rc=0
+    out="$("$SYSTEMCTL" list-units --type=service --state=active --no-legend "$app-deploy-*" 2>/dev/null)" || rc=$?
+    if [ "$rc" -ne 0 ]; then printf 'systemctl could not be asked about %s (exit %s)' "$app" "$rc"; return 0; fi
     [ -n "$out" ] && { printf 'a deploy unit is active for %s' "$app"; return 0; }
   done <"$APP_OWNERS"
-  if [ -x "$HEAVY" ]; then
-    if "$HEAVY" --status 2>/dev/null | grep -v '^[[:space:]]*last:' | grep -qE "(^|[[:space:]])session=$s([[:space:]]|$)"; then
-      printf 'heavy-work holds a slot for %s' "$s"; return 0
-    fi
+  rc=0
+  out="$("$HEAVY" --status 2>/dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ]; then printf 'heavy-work could not be asked (exit %s)' "$rc"; return 0; fi
+  if printf '%s\n' "$out" | grep -v '^[[:space:]]*last:' | grep -qE "(^|[[:space:]])session=$s([[:space:]]|$)"; then
+    printf 'heavy-work holds a slot for %s' "$s"; return 0
   fi
   return 0
 }

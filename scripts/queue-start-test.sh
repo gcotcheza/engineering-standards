@@ -57,16 +57,20 @@ printf 'ok 5h 10%%/50 week-all 20%%/60 week-fable 30%%/60\n' >"${WORK}/budget-ou
 
 cat >"${WORK}/systemctl" <<'SH'
 #!/usr/bin/env bash
-[ -f "$(dirname "$0")/deploy-active" ] || exit 0
-for a in "$@"; do case "$a" in *-deploy-*) grep -F "${a%-\*}" "$(dirname "$0")/deploy-active" >/dev/null && echo "${a%\*}1234.service loaded active running deploy" ;; esac; done
+d="$(dirname "$0")"
+rc="$(cat "$d/systemctl-rc" 2>/dev/null || echo 0)"
+[ "$rc" = 0 ] || exit "$rc"
+[ -f "$d/deploy-active" ] || exit 0
+for a in "$@"; do case "$a" in *-deploy-*) grep -F "${a%-\*}" "$d/deploy-active" >/dev/null && echo "${a%\*}1234.service loaded active running deploy" ;; esac; done
 exit 0
 SH
 
 cat >"${WORK}/heavy-work" <<'SH'
 #!/usr/bin/env bash
 d="$(dirname "$0")"
-[ "${1:-}" = --status ] && cat "$d/heavy-status" 2>/dev/null
-exit 0
+[ "${1:-}" = --status ] || exit 2
+cat "$d/heavy-status" 2>/dev/null
+exit "$(cat "$d/heavy-rc" 2>/dev/null || echo 0)"
 SH
 chmod 755 "${WORK}/budget" "${WORK}/systemctl" "${WORK}/heavy-work"
 
@@ -88,7 +92,8 @@ run() {
     OUT="$(QS_OWNERS="${WORK}/owners" QS_BACKLOG="${WORK}/backlog.md" \
         QS_STATE="${WORK}/state" QS_REGISTRY_DIR="${WORK}/reg" \
         QS_BUDGET_SH="${WORK}/budget" QS_APP_OWNERS="${WORK}/app-owners" \
-        QS_SYSTEMCTL="${WORK}/systemctl" QS_HEAVY_WORK="${WORK}/heavy-work" \
+        QS_SYSTEMCTL="${SYSTEMCTL_BIN:-${WORK}/systemctl}" \
+        QS_HEAVY_WORK="${HEAVY_BIN:-${WORK}/heavy-work}" \
         QS_LOCK="${WORK}/lock" QS_ALLOW_ANY_PATH=1 \
         "${CHECK}" "$@" 2>&1)"
     RC=$?
@@ -126,6 +131,15 @@ matches 'case 4: an active deploy unit skips the session' "${OUT}" 'skip advisor
 lacks   'case 4: and nothing is said to it' "${OUT}" "${SENT_A}"
 rm -f "${WORK}/deploy-active"
 
+SYSTEMCTL_BIN="${WORK}/no-such-systemctl" run --dry-run
+matches 'case 4f: a missing systemctl is busy, not idle' "${OUT}" 'skip advisor: systemctl could not be asked about ghiecode \(exit 127\)'
+lacks   'case 4f: and nothing is said to it' "${OUT}" "${SENT_A}"
+
+printf '7\n' >"${WORK}/systemctl-rc"
+run --dry-run
+matches 'case 4g: a failing systemctl is busy, not idle' "${OUT}" 'skip advisor: systemctl could not be asked about ghiecode \(exit 7\)'
+rm -f "${WORK}/systemctl-rc"
+
 # --- 5. heavy-work: the real HELD form skips, the real free form does not ------
 cat >"${WORK}/heavy-status" <<'ST'
 HELD, 2 queued behind:
@@ -145,6 +159,16 @@ cp "${WORK}/heavy-status-free" "${WORK}/heavy-status"
 run --dry-run
 contains 'case 5b: `free` plus `last: session=advisor` is not a held slot' "${OUT}" "${SENT_A}"
 lacks    'case 5b: and the session is not called busy' "${OUT}" 'skip advisor: heavy-work holds a slot'
+
+printf '3\n' >"${WORK}/heavy-rc"
+run --dry-run
+matches 'case 5c: a failing heavy-work is busy, not idle' "${OUT}" 'skip advisor: heavy-work could not be asked \(exit 3\)'
+lacks   'case 5c: and nothing is said to it' "${OUT}" "${SENT_A}"
+rm -f "${WORK}/heavy-rc"
+
+HEAVY_BIN="${WORK}/no-such-heavy-work" run --dry-run
+matches 'case 5d: a missing heavy-work is busy, not idle' "${OUT}" 'skip advisor: heavy-work could not be asked \(exit 127\)'
+lacks   'case 5d: and nothing is said to it' "${OUT}" "${SENT_A}"
 
 # --- 6. the top item announced within 24h -> silence, NEVER the next one down -
 printf '71 advisor %s\n' "$(date +%s)" >"${WORK}/state"
