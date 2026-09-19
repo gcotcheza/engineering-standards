@@ -54,3 +54,24 @@ review's repetitions; their order carries no meaning. The gaps that do are 1 ≪
   a project's `CLAUDE.md` must say in words which one it is — the rule was written as though
   only the first existed, so a project doing the right thing read as non-compliant.
 - **C7** names the tool, not a project: this repository is public.
+
+## VERSION is a date, plus a serial when a day carries more than one change (2026-09-19)
+
+Two changes landed on 2026-09-19, and a date alone cannot tell them apart: a project
+that vendored the text between them would declare the current version with a body that
+differs from canonical, which `scripts/fleet-versions.sh` reports as DIVERGED — "local
+edit re-stamped?" — accusing an honest adopter. VERSION therefore takes a `.N` suffix
+from the second change of a day onward (`2026-09-19.2`). The header regex already
+accepts any non-space token, so nothing else changes.
+
+## S7 is checked by review today, and by two tools that do not exist yet (2026-09-19)
+
+The rule arrived from a near miss: a `docker volume prune --all` handed to the owner to
+type would have removed a stopped stack's named volume along with 56 unnamed ones,
+because Docker counts a stopped stack's named volume as dangling. A dry run caught it.
+
+Two mechanical halves are owed and are **not** credited in the rule until they run: the
+fleet backlog's lint refusing an item whose code block carries a destructive line with no
+preview line before it, and the same check over the deploy runbooks in
+`.claude/commands/`. Crediting a check that does not exist is the failure this repository
+spent the day removing from three other rules; the clause will name them once they do.

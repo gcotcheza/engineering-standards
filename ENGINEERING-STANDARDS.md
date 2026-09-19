@@ -80,6 +80,8 @@ checked** — because a rule nothing checks is a preference, and preferences dri
 
 **S6. Production checkouts are not workspaces.** Several of these trees are bind-mounted into running containers: editing, branching or building there changes the live site instantly. — *checked by:* work in a git worktree or a private clone; a project's gate either **refuses** to run in a deployed checkout or **isolates its writes** from one (an overlay-mode gate does the second deliberately). Its `CLAUDE.md` must say which of the two it is, in words — a flag name in a command line is not an answer. Whichever it does, that guard is never worked around.
 
+**S7. Nothing is deleted in bulk until its read-only twin has been run and its count read out.** A filter that reads as "unused" is not one: Docker counts a stopped stack's named volume as dangling, so `prune` routinely proposes data. Select what you mean positively — by name, by label — and let the preview be what decides. — *checked by:* review of the command pair; and a destructive line handed to someone else to type carries the preview command and the number it printed, so a refusal by one person's permission layer never becomes "type this yourself" without it.
+
 ---
 
 ## Workflow

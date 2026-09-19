@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-09-19 — S7: nothing is deleted in bulk until its read-only twin has run (VERSION 2026-09-19.2)
+Ghie, on being handed a `docker volume prune --all` to type: **"Make this fleetwide, very important."**
+
+The near miss, found by the personal-vps session: a prune offered as "19 GB of finished gate leftovers"
+would also have taken `ghie-writes_sail-mysql`, because Docker counts a **stopped stack's named volume**
+as dangling — 56 unnamed volumes and one named one. An "are you sure?" and a dry run caught it. That
+volume turned out to be empty, so nothing was lost; on a stack that had ever run it would have been data
+with no backup. The corrected line selects finished lane volumes positively, by name.
+
+The rule has a second half that is not about Docker: **a denial never becomes "type this yourself"
+without the preview and the number.** A permission layer refusing a destructive command is a decision,
+and handing the same command to a person re-routes around it — which is the shape that put a live
+volume in front of the one person whose "yes" nobody double-checks.
+
+`docs/DECISIONS.md` records what checks S7 today (review, and the preview line in any hand-over) and the
+two mechanical halves that are owed but deliberately **not** credited in the clause until they run.
+
+VERSION takes a serial: a date alone cannot distinguish two changes made on one day, and a project that
+vendored between them would be reported as DIVERGED rather than STALE. See `docs/DECISIONS.md`.
+
 ## 2026-09-19 — three rules stop claiming more than they check; the gate obeys T3 (VERSION unchanged)
 From the audit of claims nobody had exercised (fleet backlog 83/87), which hunted statements the system
 makes about itself that nobody proved by running them. C10 credited "static analysis" with finding dead
@@ -18,6 +38,7 @@ reaches STALE only when the declared version differs, so a project that vendored
 merge and this one reads DIVERGED — "local edit re-stamped?" — when it has done nothing wrong. Today's
 five adopters all declare `2026-08-23` and correctly read STALE. Land this before the next adoption, and
 no project ever sits in the window.
+
 
 ## 2026-09-19 — a gate must not build the image production runs (new rule T9; VERSION moves to 2026-09-19)
 Backlog 80, found by the personal-vps session reviewing Memento #99: Memento's live container was
