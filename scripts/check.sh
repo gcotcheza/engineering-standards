@@ -5,8 +5,10 @@
 #      loud failure here, never a silent skip (C9)
 #   3) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh)
 #   4) scripts/fleet-versions-test.sh, the fleet check's own test
+#   5) scripts/fleet-budget-test.sh, the budget gate's own test
+#   6) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
 #
-#   scripts/check.sh            all four steps; records a FULL run to the fleet ledger
+#   scripts/check.sh            all six steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
 #                                so nothing is recorded (the ledger only hears
 #                                about a full gate run)
@@ -34,6 +36,8 @@ step_name() {
         2) printf 'shellcheck' ;;
         3) printf 'deploy-lib test.sh' ;;
         4) printf 'fleet-versions-test.sh' ;;
+        5) printf 'fleet-budget-test.sh' ;;
+        6) printf 'queue-start-test.sh' ;;
     esac
 }
 
@@ -42,8 +46,8 @@ ONLY=0
 case "${1:-}" in
     "") ;;
     --only)
-        case "${2:-}" in 1|2|3|4) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1, 2, 3 or 4)" >&2; exit 2 ;; esac ;;
-    *) echo "usage: check.sh [--only N]  (N is 1, 2, 3 or 4)" >&2; exit 2 ;;
+        case "${2:-}" in 1|2|3|4|5|6) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 6)" >&2; exit 2 ;; esac ;;
+    *) echo "usage: check.sh [--only N]  (N is 1 to 6)" >&2; exit 2 ;;
 esac
 
 # Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
@@ -67,7 +71,7 @@ fail_step() {
 run_step() {
     [ "${FULL_RUN}" -eq 1 ] || [ "${ONLY}" -eq "$1" ] || return 0
     printf -- '--- step %s: %s ---\n' "$1" "$(step_name "$1")"
-    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; esac
+    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; esac
 }
 
 step_1() {
@@ -99,7 +103,15 @@ step_4() {
     "${REPO_ROOT}/scripts/fleet-versions-test.sh" || fail_step 4
 }
 
-for n in 1 2 3 4; do run_step "${n}"; done
+step_5() {
+    "${REPO_ROOT}/scripts/fleet-budget-test.sh" || fail_step 5
+}
+
+step_6() {
+    "${REPO_ROOT}/scripts/queue-start-test.sh" || fail_step 6
+}
+
+for n in 1 2 3 4 5 6; do run_step "${n}"; done
 
 # shellcheck disable=SC2034  # the EXIT trap's gate_ledger_record reads it
 GATE_SUITE_PASSED=1
