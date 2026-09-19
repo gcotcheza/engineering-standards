@@ -138,6 +138,8 @@ read_queued(){
 queued_title(){ awk -v n="$1" '$1==n {$1=""; sub(/^ /,""); print; exit}' "$QUEUED"; }
 
 # A session that keeps no registry file has not opted in: not idle.
+# `heavy-work --status` prints `  last: ...` lines from the finished job while it
+# is free; those are history, never a held slot.
 busy_reason(){
   local s="$1" reg pane app apane rest out
   reg="$REG_DIR/$s-workers.active"
@@ -152,7 +154,7 @@ busy_reason(){
     [ -n "$out" ] && { printf 'a deploy unit is active for %s' "$app"; return 0; }
   done <"$APP_OWNERS"
   if [ -x "$HEAVY" ]; then
-    if "$HEAVY" --status 2>/dev/null | grep -qE "(^|[[:space:]])session=$s([[:space:]]|$)"; then
+    if "$HEAVY" --status 2>/dev/null | grep -v '^[[:space:]]*last:' | grep -qE "(^|[[:space:]])session=$s([[:space:]]|$)"; then
       printf 'heavy-work holds a slot for %s' "$s"; return 0
     fi
   fi

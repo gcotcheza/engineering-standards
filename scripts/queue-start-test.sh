@@ -64,10 +64,21 @@ SH
 
 cat >"${WORK}/heavy-work" <<'SH'
 #!/usr/bin/env bash
-[ "${1:-}" = --status ] && cat "$(dirname "$0")/heavy-status" 2>/dev/null
+d="$(dirname "$0")"
+[ "${1:-}" = --status ] && cat "$d/heavy-status" 2>/dev/null
 exit 0
 SH
 chmod 755 "${WORK}/budget" "${WORK}/systemctl" "${WORK}/heavy-work"
+
+# The real `--status` when both slots are free: the `last:` lines are the job
+# that finished, not a held slot.
+cat >"${WORK}/heavy-status-free" <<'ST'
+free
+  last: label=memento-album-e2e
+  last: session=advisor
+  last: slot=both
+ST
+cp "${WORK}/heavy-status-free" "${WORK}/heavy-status"
 
 : >"${WORK}/reg/advisor-workers.active"
 : >"${WORK}/reg/personal-vps-workers.active"
@@ -115,11 +126,25 @@ matches 'case 4: an active deploy unit skips the session' "${OUT}" 'skip advisor
 lacks   'case 4: and nothing is said to it' "${OUT}" "${SENT_A}"
 rm -f "${WORK}/deploy-active"
 
-# --- 5. heavy-work holding a slot for the session -> skipped ------------------
-printf 'slot 1:\nlabel=gate\nsession=advisor\n' >"${WORK}/heavy-status"
+# --- 5. heavy-work: the real HELD form skips, the real free form does not ------
+cat >"${WORK}/heavy-status" <<'ST'
+HELD, 2 queued behind:
+slot 1:
+  label=orbit-e2e-leaving
+  pid=1354481
+  since=2026-09-19T13:41:56+00:00
+  session=advisor
+  cmd=bash scripts/e2e.sh
+  slot=both
+ST
 run --dry-run
-matches 'case 5: a heavy-work slot skips the session' "${OUT}" 'skip advisor: heavy-work holds a slot'
-rm -f "${WORK}/heavy-status"
+matches 'case 5: the real HELD form skips the session' "${OUT}" 'skip advisor: heavy-work holds a slot'
+lacks   'case 5: and nothing is said to it' "${OUT}" "${SENT_A}"
+
+cp "${WORK}/heavy-status-free" "${WORK}/heavy-status"
+run --dry-run
+contains 'case 5b: `free` plus `last: session=advisor` is not a held slot' "${OUT}" "${SENT_A}"
+lacks    'case 5b: and the session is not called busy' "${OUT}" 'skip advisor: heavy-work holds a slot'
 
 # --- 6. the top item announced within 24h -> silence, NEVER the next one down -
 printf '71 advisor %s\n' "$(date +%s)" >"${WORK}/state"
