@@ -132,6 +132,80 @@ run
 matches 'case 12: unreadable pressure holds' "${OUT}" '^hold capacity unreadable: .*pressure'
 equals  'case 12: exit code' "${RC}" 1
 
+# --- 13. fetch_meter against a local http.server: the 200 path -----------------
+# A dummy token in a fake credentials file. It must never reach the output or
+# the cache, and the assertions below fail if it does.
+printf 'some avg10=0.00 avg60=0.00 avg300=0.00 total=1\nfull avg10=0.00 avg60=0.00 avg300=0.13 total=1\n' >"${WORK}/pressure"
+DUMMY_TOKEN='sk-ant-oat01-DUMMY-FOR-TESTS-never-real-0000'
+printf '{"claudeAiOauth":{"accessToken":"%s","expiresAt":%s000}}\n' "${DUMMY_TOKEN}" "$(( $(date +%s) + 3600 ))" >"${WORK}/fake-creds.json"
+
+cat >"${WORK}/meter-server.py" <<'PY'
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+BODY = open(sys.argv[1], 'rb').read()
+
+
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body, code = (BODY, 200) if self.path == '/meter' else (b'', 401)
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+s = HTTPServer(('127.0.0.1', 0), H)
+print(s.server_address[1], flush=True)
+s.serve_forever()
+PY
+
+meter 10 11 12
+python3 "${WORK}/meter-server.py" "${WORK}/meter.json" >"${WORK}/port" 2>"${WORK}/server.log" &
+SERVER_PID=$!
+trap 'kill "${SERVER_PID}" 2>/dev/null; rm -rf "$WORK"' EXIT
+PORT=''
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    PORT="$(cat "${WORK}/port" 2>/dev/null)"
+    [ -n "${PORT}" ] && break
+    sleep 0.3
+done
+
+fetch() {
+    OUT="$(FLEET_BUDGET_CONF="${WORK}/conf" \
+        FLEET_BUDGET_METER_FILE='' \
+        FLEET_BUDGET_CREDS="${WORK}/fake-creds.json" \
+        FLEET_BUDGET_CACHE="${WORK}/cache.json" \
+        FLEET_BUDGET_ENDPOINT="http://127.0.0.1:${PORT}$1" \
+        FLEET_BUDGET_LOADAVG="${WORK}/loadavg" \
+        FLEET_BUDGET_MEMINFO="${WORK}/meminfo" \
+        FLEET_BUDGET_PRESSURE="${WORK}/pressure" \
+        FLEET_BUDGET_CORES=4 \
+        "${CHECK}" 2>&1)"
+    RC=$?
+}
+
+rm -f "${WORK}/cache.json"
+fetch /meter
+matches 'case 13: a 200 is computed into one ok line' "${OUT}" '^ok 5h 10%/50 week-all 11%/60 week-fable 12%/60$'
+equals  'case 13: exit code' "${RC}" 0
+equals  'case 13: the cache is mode 600' "$(stat -c %a "${WORK}/cache.json" 2>/dev/null)" 600
+equals  'case 13: the token is not in the output' "$(printf '%s' "${OUT}" | grep -cF "${DUMMY_TOKEN}")" 0
+equals  'case 13: the token is not in the cache' "$(grep -cF "${DUMMY_TOKEN}" "${WORK}/cache.json" 2>/dev/null)" 0
+
+# --- 14. the 401 path: hold, exit 1, stale cache untouched ---------------------
+printf 'SENTINEL-not-json\n' >"${WORK}/cache.json"
+touch -d '-2 hours' "${WORK}/cache.json"
+fetch /denied
+equals 'case 14: stdout is exactly the hold line' "${OUT}" 'hold meter unreadable (HTTP 401)'
+equals 'case 14: exit code' "${RC}" 1
+equals 'case 14: the stale cache is untouched' "$(cat "${WORK}/cache.json")" 'SENTINEL-not-json'
+equals 'case 14: the token is not in the output' "$(printf '%s' "${OUT}" | grep -cF "${DUMMY_TOKEN}")" 0
+kill "${SERVER_PID}" 2>/dev/null
+
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-budget-test: all checks passed\n'
     exit 0
