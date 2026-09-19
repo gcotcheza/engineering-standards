@@ -12,8 +12,9 @@ GATE_SUITE_PASSED — the run did not finish; recorded as a failure` on stderr. 
 unchanged. The reader is now newest-wins — the last line for a (sha, kind) decides, so a later
 red overrides an earlier green and a re-run's green overrides an earlier red; the old awk took
 any green line, so one false green vouched for a head forever. `scripts/check.sh` sets the flag
-once its four steps have run. `scripts/lib/deploy/test.sh` gains seven groups (flag, no flag,
-non-zero rc, green→red, red→green, an inherited env export discarded at source time, and 05:58Z's incident end to end); each was proved red once
+once its four steps have run. `scripts/lib/deploy/test.sh` gains eight groups (flag, no flag,
+non-zero rc, green→red, red→green, append order deciding over an out-of-order timestamp, an
+inherited env export discarded at source time, and 05:58Z's incident end to end); each was proved red once
 against a mutated copy of the library. `scripts/fleet-versions-test.sh` reads the deploy-lib
 VERSION instead of hardcoding it. deploy-lib VERSION is 2026-09-19, and `ledger.sh` changed
 again in this same version, so `fleet-versions.sh`'s byte-for-byte file comparison catches

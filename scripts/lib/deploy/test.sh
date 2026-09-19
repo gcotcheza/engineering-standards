@@ -349,6 +349,15 @@ run_lib 'resolve; gated'
 contains 'a later green overrides an earlier red, which is a genuine re-run' "${OUT}" \
     "GATED ${HEAD_SHA:0:7} ci and e2e both green in ${LEDGER}"
 
+# "Newest wins" is append order, not the timestamp column: the second line here
+# carries the EARLIER clock time but is appended after the first, and it alone decides.
+fixture ledger-append-order-not-timestamp
+printf '%s ci 2026-09-19T22:00:00Z 0 -\n%s ci 2026-09-18T20:00:00Z 1 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' \
+    "${HEAD_SHA}" "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
+run_lib 'resolve; gated'
+contains 'the later-appended line decides even though its own timestamp is earlier' "${OUT}" \
+    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7}: gate that head, then deploy."
+
 # 2026-09-19: a killed e2e recorded rc 0 over a head that was already green, and the
 # reader took any green. Both halves of that are proved here, together.
 fixture killed-run-regression
