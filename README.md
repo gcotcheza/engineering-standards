@@ -25,16 +25,17 @@ watchdog's line parser already reads.
 
 ## The gate
 
-`scripts/check.sh` is this repo's own pre-merge gate, cheapest checks first: `bash -n` on
-every tracked script, shellcheck (the pinned image, style severity — a missing image is a
-loud failure, never a skip), then the five fixture-only tests — `scripts/lib/deploy/test.sh`,
-`scripts/fleet-versions-test.sh`, `scripts/fleet-budget-test.sh`, `scripts/queue-start-test.sh`
-and `scripts/gate-image-tags-test.sh`. A full run records to the fleet gate ledger
+`scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script
+first, then the five fixture-only tests and shellcheck (the pinned image, style severity — a
+missing image is a loud failure, never a skip) in measured cost order, cheapest first. The
+order is a measurement, not a list to keep in your head; `scripts/check.sh` prints each step
+with its number and name as it runs. A full run records to the fleet gate ledger
 (`scripts/lib/deploy/ledger.sh`); `scripts/check.sh --only N` runs one step alone and
-records nothing, so debugging a step never pollutes the ledger. This repo carries no
-`docs/DECISIONS.md`; this section is the record of why the gate is shaped this way.
+records nothing, so debugging a step never pollutes the ledger. The long-form why —
+including the measurement behind the step order — is in `docs/DECISIONS.md`, because
+W7 applies to this repository too.
 
-`scripts/gate-image-tags.sh <project-root>` is rule T9's check, and this repo's seventh gate step
+`scripts/gate-image-tags.sh <project-root>` is rule T9's check, and one of this repo's gate steps
 runs its fixtures. Point it at a project root and it names the compose files it read, the image
 values it could not resolve, and any tag that project builds for both its gate and production. It
 never passes in silence, so "nothing is built here" and "I could not tell" cannot be confused.

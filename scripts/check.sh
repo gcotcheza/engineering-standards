@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# The repo's own gate. NOT cheapest-first (T3): step 3 is the slowest at ~4.8s
-# and four cheaper steps follow it. Reordering is its own backlog item.
+# The repo's own gate. Cheapest first (T3), in measured cost order — the measurement
+# and the caveat on steps 4 and 5 are in docs/DECISIONS.md. Re-measure before reordering.
 #   1) bash -n on every tracked .sh file
-#   2) shellcheck, style severity, in the pinned image — a missing image is a
+#   2) scripts/fleet-versions-test.sh, the fleet check's own test
+#   3) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
+#   4) scripts/fleet-budget-test.sh, the budget gate's own test
+#   5) shellcheck, style severity, in the pinned image — a missing image is a
 #      loud failure here, never a silent skip (C9)
-#   3) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh)
-#   4) scripts/fleet-versions-test.sh, the fleet check's own test
-#   5) scripts/fleet-budget-test.sh, the budget gate's own test
 #   6) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
-#   7) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
+#   7) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh)
 #
 #   scripts/check.sh            all seven steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
@@ -35,12 +35,12 @@ GATE_LEDGER_GIT="${GIT}"
 step_name() {
     case "$1" in
         1) printf 'bash -n' ;;
-        2) printf 'shellcheck' ;;
-        3) printf 'deploy-lib test.sh' ;;
-        4) printf 'fleet-versions-test.sh' ;;
-        5) printf 'fleet-budget-test.sh' ;;
+        2) printf 'fleet-versions-test.sh' ;;
+        3) printf 'gate-image-tags-test.sh' ;;
+        4) printf 'fleet-budget-test.sh' ;;
+        5) printf 'shellcheck' ;;
         6) printf 'queue-start-test.sh' ;;
-        7) printf 'gate-image-tags-test.sh' ;;
+        7) printf 'deploy-lib test.sh' ;;
     esac
 }
 
@@ -85,29 +85,29 @@ step_1() {
 }
 
 step_2() {
+    "${REPO_ROOT}/scripts/fleet-versions-test.sh" || fail_step 2
+}
+
+step_3() {
+    "${REPO_ROOT}/scripts/gate-image-tags-test.sh" || fail_step 3
+}
+
+step_4() {
+    "${REPO_ROOT}/scripts/fleet-budget-test.sh" || fail_step 4
+}
+
+step_5() {
     if ! docker image inspect "${SHELLCHECK_IMAGE}" >/dev/null 2>&1; then
         printf 'shellcheck image %s is not present on this box — refusing to treat a missing image as a pass (C9).\n' \
             "${SHELLCHECK_IMAGE}" >&2
-        fail_step 2
+        fail_step 5
     fi
     local files
     files=$("${GIT}" ls-files '*.sh')
     [ -n "${files}" ] || return 0
     # shellcheck disable=SC2086
     docker run --rm --network none -v "${REPO_ROOT}:/mnt:ro" -w /mnt \
-        "${SHELLCHECK_IMAGE}" --severity=style ${files} || fail_step 2
-}
-
-step_3() {
-    "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 3
-}
-
-step_4() {
-    "${REPO_ROOT}/scripts/fleet-versions-test.sh" || fail_step 4
-}
-
-step_5() {
-    "${REPO_ROOT}/scripts/fleet-budget-test.sh" || fail_step 5
+        "${SHELLCHECK_IMAGE}" --severity=style ${files} || fail_step 5
 }
 
 step_6() {
@@ -115,7 +115,7 @@ step_6() {
 }
 
 step_7() {
-    "${REPO_ROOT}/scripts/gate-image-tags-test.sh" || fail_step 7
+    "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 7
 }
 
 for n in 1 2 3 4 5 6 7; do run_step "${n}"; done

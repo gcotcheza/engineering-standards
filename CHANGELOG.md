@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-19 — three rules stop claiming more than they check; the gate obeys T3 (VERSION unchanged)
+From the audit of claims nobody had exercised (fleet backlog 83/87), which hunted statements the system
+makes about itself that nobody proved by running them. C10 credited "static analysis" with finding dead
+code most of it cannot see; S6 claimed every gate refuses a deployed checkout, when two of five isolate
+their writes instead, deliberately; C7 named a project, in a public repository. What each rule now says,
+and why both S6 shapes are legitimate, is in `docs/DECISIONS.md`.
+
+The gate itself broke T3: `scripts/check.sh` ran its slowest step third with four cheaper ones behind it.
+The seven steps were timed individually and renumbered cheapest-first; the measurement, and the caveat
+that steps 4 and 5 sit inside run-to-run noise, are in `docs/DECISIONS.md` — which now exists, because
+the repo kept its long-form why in the README while W7 tells every project to keep the file.
+
+**VERSION does not move, and there is a window to know about.** VERSION is a date, and PR #9 moved it to
+`2026-09-19` earlier today, so two different bodies now carry that string. `scripts/fleet-versions.sh`
+reaches STALE only when the declared version differs, so a project that vendored the text *between* #9's
+merge and this one reads DIVERGED — "local edit re-stamped?" — when it has done nothing wrong. Today's
+five adopters all declare `2026-08-23` and correctly read STALE. Land this before the next adoption, and
+no project ever sits in the window.
+
 ## 2026-09-19 — a gate must not build the image production runs (new rule T9; VERSION moves to 2026-09-19)
 Backlog 80, found by the personal-vps session reviewing Memento #99: Memento's live container was
 recreated from a `memento/app:latest` that a browser-gate run on an unmerged branch had overwritten,
