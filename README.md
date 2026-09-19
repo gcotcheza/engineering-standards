@@ -31,8 +31,9 @@ loud failure, never a skip), then the five fixture-only tests — `scripts/lib/d
 `scripts/fleet-versions-test.sh`, `scripts/fleet-budget-test.sh`, `scripts/queue-start-test.sh`
 and `scripts/gate-image-tags-test.sh`. A full run records to the fleet gate ledger
 (`scripts/lib/deploy/ledger.sh`); `scripts/check.sh --only N` runs one step alone and
-records nothing, so debugging a step never pollutes the ledger. This repo carries no
-`docs/DECISIONS.md`; this section is the record of why the gate is shaped this way.
+records nothing, so debugging a step never pollutes the ledger. The long-form why —
+including the measurement behind the step order — is in `docs/DECISIONS.md`, because
+W7 applies to this repository too.
 
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and this repo's seventh gate step
 runs its fixtures. Point it at a project root and it names the compose files it read, the image

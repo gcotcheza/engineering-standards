@@ -23,13 +23,13 @@ checked** — because a rule nothing checks is a preference, and preferences dri
 
 **C6. One unit, one job.** Small pieces can be tested without booting the world, and a function that does two things has to be read twice to change one of them. — *checked by:* review; pure logic must be testable without mounting a screen or booting a container.
 
-**C7. Where a project has layers, they only point inward.** The business rules must not depend on the framework, the database or the screen, or they cannot be tested or replaced. — *checked by:* Deptrac (memento), or review where no tool is wired.
+**C7. Where a project has layers, they only point inward.** The business rules must not depend on the framework, the database or the screen, or they cannot be tested or replaced. — *checked by:* a boundary tool (Deptrac, where a project wires one), or review where none is.
 
 **C8. Validation lives at the edge, the rule lives in the domain.** The edge rejects malformed input in one place; the domain refuses invalid states however it was reached — including data read back off disk. — *checked by:* form-request/validator classes at the boundary, plus a test that exercises the domain rule directly.
 
 **C9. Failures are loud by default.** A silently swallowed error becomes wrong data that nobody notices for months. — *checked by:* review; if a failure genuinely must be swallowed (a search index being down must not fail someone's save), it needs a `DECISIONS` entry and a named repair command.
 
-**C10. No dead code.** Unused code is read as if it were live and copied as if it were right. — *checked by:* static analysis + review — and before deleting, check which half is actually dead: the caller can be the mistake.
+**C10. No dead code.** Unused code is read as if it were live and copied as if it were right. — *checked by:* review. Static analysis finds unused **private** members only; it sees an unused public method or an orphaned front-end module just where a project has wired the extra tooling for it, so do not credit it with more. Before deleting, check which half is actually dead: the caller can be the mistake.
 
 **C11. Colours, radii, shadows and spacing are decided in one file.** A value written out 23 times in 17 components cannot be changed and cannot be themed. — *checked by:* the project's tokens file (`tokens.css` / `_variables.scss` / `pixel-kit.css`) plus a test asserting the code and the stylesheet still agree.
 
@@ -78,7 +78,7 @@ checked** — because a rule nothing checks is a preference, and preferences dri
 
 **S5. Pin what you depend on.** Reproducible installs are what make a gate's result mean anything tomorrow. — *checked by:* committed lockfiles, a platform pin (`config.platform.php`), `.nvmrc`, and a Playwright driver version matching its image tag.
 
-**S6. Production checkouts are not workspaces.** Several of these trees are bind-mounted into running containers: editing, branching or building there changes the live site instantly. — *checked by:* work in a git worktree or a private clone; the gate scripts refuse to run in a deployed checkout, and that refusal is never worked around.
+**S6. Production checkouts are not workspaces.** Several of these trees are bind-mounted into running containers: editing, branching or building there changes the live site instantly. — *checked by:* work in a git worktree or a private clone; a project's gate either **refuses** to run in a deployed checkout or **isolates its writes** from one (an overlay-mode gate does the second deliberately, and its `CLAUDE.md` says so). Whichever it does, that guard is never worked around.
 
 ---
 
