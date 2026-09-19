@@ -1,32 +1,32 @@
 # Changelog
 
 ## 2026-09-19 — a gate must not build the image production runs (new rule T9; VERSION moves to 2026-09-19)
-Backlog 80, found by the personal-vps session reviewing Memento #99 and confirmed against the
-running containers: `docker inspect --format '{{.Name}} {{.Config.Image}}' memento-app-1 orbit-app-1`
-answers `memento/app:latest` and `orbit/app:latest` — the tags those projects' browser-gate compose
-files build. A gate run on any branch therefore overwrites the tag production is recreated from, and
-Memento's live container came up carrying the `gd` and `exif` extensions that only an unmerged
-branch builds.
+Backlog 80, found by the personal-vps session reviewing Memento #99: Memento's live container was
+recreated from a `memento/app:latest` that a browser-gate run on an unmerged branch had overwritten,
+so it came up carrying the `gd` and `exif` extensions that only that branch builds. Memento's own fix
+has since shipped. Running the new check across every project on the box on 2026-09-19 answers: **one
+project still builds one tag for both its gate and production**, and that fix is its own pull request;
+the rest either keep the two apart already, build no app image, or have no gate compose file at all.
+ROLLOUT.md carries the tally — counts and not names, because this repository is public.
 
 T9 has two halves: a gate's image tag is separate and disposable, and a deploy builds the production
 tag itself from the merged tree and proves the running container by image id rather than by tag.
-`scripts/gate-image-tags.sh <project-root>` is the first half's check — compose files beside the
-root split into gate ones (`*e2e*`, `*ci*`) and production ones, `${VAR:-default}` resolved to its
-default, and a failure naming the file and line when one BUILT tag is on both sides. A pinned
-third-party image (`postgres:18-alpine`) on both sides is not a finding: only a tag something here
-builds can be overwritten. A project with no built image at all prints nothing and exits 0 — absence
-is not a fault. `scripts/gate-image-tags-test.sh` drives it from fixtures in a temp dir: a shared
-tag, separate tags, a resolved `${CI_APP_IMAGE:-x/app:ci}`, a default that IS the production tag, a
-gate that only runs the tag it did not build, a `${VAR:?}` with no default, a bind-mount project and
-an empty directory. The offender condition and the default-resolver were each mutated once against a
-scratch copy and the test went red (8 checks, then 3). The gate grew a seventh step.
+`scripts/gate-image-tags.sh <project-root>` is the first half's check; its own header says what it
+reads, and this file does not repeat it. **The second half has no check anywhere yet** — no deploy on
+this box compares a running container's image id against the id its deploy built — so T9 says so
+plainly rather than naming a mechanism that does not perform the check, which is the very failure the
+rule exists to stop. ROLLOUT.md carries it as open work.
 
-Where the fleet stands as this lands, from running the check: Memento fails (`docker-compose.e2e.yml:65`
-against `docker-compose.yml:76` and `:121`) and Orbit fails on three production services
-(`docker-compose.e2e.yml:67` against `:56`, `:99`, `:149`); KidsQuest (`${CI_APP_IMAGE:-kidsquest/app:ci}`),
-Fineprint (`fineprint/app:ci-<project>`) and Health Tracker (`health-tracker/app:ci`) are already
-clean; Scribly and Reflection bind-mount PHP and build no app image, so the check is silent for them.
-The two fixes belong to those projects' own pull requests. ROLLOUT.md carries the per-project status.
+`scripts/gate-image-tags-test.sh` drives the check from fixtures in a temp dir: a shared tag, separate
+tags, a resolved `${CI_APP_IMAGE:-x/app:ci}`, a default that IS the production tag, a gate that only
+runs a tag it did not build, an unresolvable `${VAR:?}`, a build inherited through a YAML merge key, an
+untagged image, an unrecognised compose filename, a double-quoted value, a `compose.yaml`, a symlinked
+file, a CRLF file, a bind-mount project and an empty directory. Ten mutations were made against a
+scratch copy, one per behaviour, and the matching fixture went red every time. The check never exits
+silently: it prints the files it read, the values it could not resolve and the built-tag count, because
+a silent pass made "nothing is built here" and "I could not tell" look identical — and a build
+inherited through `<<:` or `extends` counts as built, which is what made that silence reachable. The
+gate grew a seventh step.
 
 This entry changes the standard, so VERSION moves to 2026-09-19 — every vendored `docs/STANDARDS.md`
 is STALE to `scripts/fleet-versions.sh` until its project takes the bump. README: the rule count,

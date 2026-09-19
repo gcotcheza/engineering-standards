@@ -35,11 +35,9 @@ records nothing, so debugging a step never pollutes the ledger. This repo carrie
 `docs/DECISIONS.md`; this section is the record of why the gate is shaped this way.
 
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and this repo's seventh gate step
-runs its test. It reads the compose files beside a project root, splits them into gate ones
-(`*e2e*`, `*ci*`) and production ones, resolves `${VAR:-default}`, and fails naming the file and
-line when a tag something there builds appears on both sides — the way a browser-gate run on a
-branch comes to overwrite the image production is recreated from. A pinned third-party image shared
-by both stacks is not a finding, and a project that builds no image at all prints nothing.
+runs its fixtures. Point it at a project root and it names the compose files it read, the image
+values it could not resolve, and any tag that project builds for both its gate and production. It
+never passes in silence, so "nothing is built here" and "I could not tell" cannot be confused.
 
 ## Vendored scripts
 

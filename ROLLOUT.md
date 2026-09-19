@@ -25,7 +25,7 @@ Two things this design depends on, both worth stating plainly:
 
 1. **Canonical repo** `engineering-standards`: `ENGINEERING-STANDARDS.md`, `SOURCES.md`, a `VERSION` line, and its own `CHANGELOG.md`. Changes go through the same flow as code — branch, PR, four headings, the owner merges.
 2. **Machine-wide floor:** clone the canonical repo once onto the host, then symlink `ENGINEERING-STANDARDS.md` into the user-level rules directory (`~/.claude/rules/`). No `paths:` frontmatter, so every session loads it at launch. Updating the floor is `git pull` in one directory.
-3. **Vendored copy** in each project at `docs/STANDARDS.md`, byte-identical, carrying a header line `<!-- standards-version: 2026-08-23 · sha256:… -->`, plus `.claude/rules/standards.md` as a symlink to it (`ln -s ../../docs/STANDARDS.md .claude/rules/standards.md`). One file, two doors.
+3. **Vendored copy** in each project at `docs/STANDARDS.md`, byte-identical, carrying a header line of the form `<!-- standards-version: <this repo's VERSION> · sha256: <sha256 of the body> -->` — the space after `sha256:` is not optional, `scripts/fleet-versions.sh` requires it, plus `.claude/rules/standards.md` as a symlink to it (`ln -s ../../docs/STANDARDS.md .claude/rules/standards.md`). One file, two doors.
 4. **Drift check in the project's gate**, modelled on a pattern one of the Laravel projects already uses: a unit test that reads a *second file* out of the repo and asserts the two halves agree. Here it hashes the vendored file, compares it to the hash declared in its own header, and fails if a local edit crept in — and asserts the symlink still resolves. No network, so it cannot make the gate flaky.
 5. **A fleet-level update pass** (an always-on session, not a project gate) compares each project's declared version against the canonical repo and opens the bump PR where they differ. That is the only piece that needs to see both repos at once. `scripts/fleet-versions.sh` is that check.
 6. **Each `CLAUDE.md` shrinks** to roughly:
@@ -63,18 +63,24 @@ Then verify it the way rule W9 asks — start a headless session from a subdirec
 
 ## T9 — where each project stands
 
-A rule that needs a change in several repositories needs a status, not a schedule. `scripts/gate-image-tags.sh <project-root>` is the check; run from the canonical clone against each project root — the way `scripts/fleet-versions.sh` is — this is what it answers on 2026-09-19:
+A rule that needs a change in several repositories needs a status, not a schedule. `scripts/gate-image-tags.sh <project-root>` is the check; run from the canonical clone against each project root — the way `scripts/fleet-versions.sh` is — this is the tally on 2026-09-19. A tally and not a list of names on purpose: this repository is public, and where a live system is weak *today* is not something to publish. The named detail lives with the owner.
 
-| Project | Gate compose tag | Production compose tag | Status |
-|---|---|---|---|
-| Memento | `memento/app:latest` (`docker-compose.e2e.yml:65`) | `memento/app:latest` (`docker-compose.yml:76`, `:121`) | **to fix** — one tag, both sides |
-| Orbit | `orbit/app:latest` (`docker-compose.e2e.yml:67`) | `orbit/app:latest` (`docker-compose.yml:56`, `:99`, `:149`) | **to fix** — three production services on the gate's tag |
-| KidsQuest | `${CI_APP_IMAGE:-kidsquest/app:ci}` | `kidsquest/app` | clean |
-| Fineprint | `${CI_APP_IMAGE:?…}`, set to `fineprint/app:ci-<project>` | `fineprint/app:latest` | clean |
-| Health Tracker | `${CI_APP_IMAGE:-health-tracker/app:ci}` | `health-tracker/app:latest`, `health-tracker/app:staging` | clean |
-| Scribly, Reflection | — | — | not applicable — PHP is bind-mounted and no app image is built |
-| Ghie Writes | — | Sail's local dev image | not applicable — no gate compose file to share a tag with |
+| Where a project stands | Projects |
+|---|---|
+| The gate's tag is already separate from production's | 4 |
+| **Still builds one tag for both the gate and production** | **1** |
+| Builds no app image at all — the code is bind-mounted | 2 |
+| Builds an image but has no gate compose file to share it with | 2 |
+| No compose file beside the root | 2 |
 
-The two fixes are each project's own pull request, not this repo's: the gate compose file takes a tag of its own (`<app>/app:ci`, or `${CI_APP_IMAGE:-<app>/app:ci}` so a worktree can hold one per branch), and the project's gate calls the check. Until then the standing risk is the one that has already happened once — a gate run on any branch leaves production one `up -d` away from a container built from unmerged code.
+One of the four is clean by its gate script rather than by the check: its compose files carry `${CI_APP_IMAGE:?…}`, which has no default and so resolves to nothing, and the per-branch tag is set in that project's `scripts/ci.sh`. The check says so itself — it counts and names every value it could not resolve, and never reports a clean sweep over values it did not judge — and that row was read from the gate script, not inferred from a clean-looking verdict.
+
+The one remaining fix is that project's own pull request, not this repo's: the gate compose file takes a tag of its own (`<app>/app:ci`, or `${CI_APP_IMAGE:-<app>/app:ci}` so a worktree can hold one per branch), and the project's gate calls the check. Until then the standing risk is the one that has already happened once — a gate run on any branch leaves production one `up -d` away from a container built from unmerged code.
+
+### T9's second half is not mechanised
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| "a deploy builds the production tag itself and proves the running container by image id" | No project compares `docker inspect -f '{{.Image}}'` against the image id its deploy built. The deploy verifiers read `{{.State.StartedAt}}` instead, which a gate-built image satisfies exactly as well, and the nearest thing to a content check counts PHP extensions the offending image also had. The rule binds today; nothing checks it. | each project, in its own PR |
 
 **How a project runs it.** From the canonical clone, not a vendored copy: the check reads only the compose files it is pointed at, so there is no project state to drift and nothing to re-stamp — unlike `scripts/lib/deploy/`, which a deploy script must source. A project whose gate must run without the canonical clone present vendors it like any other script and says so in its `CLAUDE.md`.
