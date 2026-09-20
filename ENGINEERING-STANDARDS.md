@@ -92,7 +92,7 @@ checked** — because a rule nothing checks is a preference, and preferences dri
 
 **W3. Only Ghie merges.** The merge is the moment a change reaches real users, and it triggers the deploy — so it belongs to the person who reviewed it. — *checked by:* nobody else runs `gh pr merge`; a stated intent is not consent.
 
-**W4. PR bodies use these four headings, literally, in ≤150 words of plain language.** The body is for the person deciding to merge, not for the developer who wrote it. — *checked by:* the reviewer, before the PR goes ready:
+**W4. A PR's title says what was done, and its body uses these four headings, literally, in ≤150 words of plain language.** The title is one past-tense action naming the outcome — *Added caching for card images*, not *The phone never caches card images* — because the list of open PRs is read as a list of work, and a problem statement there tells the reader nothing was done about it; the problem belongs under `## Why`. The body is for the person deciding to merge, not for the developer who wrote it. — *checked by:* the reviewer, before the PR goes ready, with `gh pr edit --title` where it is wrong:
   `## What changed` (plain, no file names) · `## Why` (the problem in user terms) · `## What you'll notice` (or "nothing in the app") · `## How it was checked`
   and one closing line: *Technical detail: commits and docs/DECISIONS.md.*
 

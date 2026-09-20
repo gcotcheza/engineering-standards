@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-19 — S7: nothing is deleted in bulk until its read-only twin has run (VERSION 2026-09-19.2)
+## 2026-09-20 — Added S7 (preview before any bulk delete) and put the action into W4's title (VERSION 2026-09-20)
 Ghie, on being handed a `docker volume prune` line to type: **"Make this fleetwide, very important."**
 
 The near miss, found by the personal-vps session: a prune offered as finished gate leftovers would also
@@ -16,13 +16,20 @@ The rule's second half is not about Docker: **a refusal by a permission layer is
 person without the preview and the count.** A layer refusing a destructive command is a decision, and
 handing the same line to someone else walks around it.
 
-**VERSION takes a serial** — a date alone cannot distinguish two changes made on one day, and a project
-vendoring between them reads DIVERGED ("local edit re-stamped?") rather than STALE. Two things follow:
+**W4 now governs the title, not only the body.** Ghie, 2026-09-20: *"when creating a PR, title should be
+action, 'what was done?' Like this should be: Added caching for card images."* The trigger was a PR titled
+with its problem — a list of open PRs is read as a list of work, and a problem statement there says nothing
+was done. The title is one past-tense action naming the outcome; the problem moves to `## Why`.
+
+**VERSION and the serial.** VERSION is a date, which cannot distinguish two changes made on one day — and
+2026-09-19 carried two, because the previous entry merged without moving it. A project vendoring between
+such a pair reads DIVERGED ("local edit re-stamped?") rather than STALE, which accuses an honest adopter.
 `scripts/fleet-versions.sh` validated the canonical VERSION as a strict date and would have refused to
-report on any project at all (it now accepts `YYYY-MM-DD[.N]`, with a test for each), and every project's
-drift test asserts the same shape, so **each adoption or bump PR widens its own regex** — ROLLOUT.md
-step 4 says so. The invariant the serial trades into — every change to the body moves VERSION — is
-checked by review until a gate step enforces it; `docs/DECISIONS.md` records both.
+report on any project at all, so it now accepts `YYYY-MM-DD[.N]`, with a test for each; every project's
+drift test asserts the same shape, so **each adoption or bump PR widens its own regex** — ROLLOUT.md step 4
+says so. This entry lands on a fresh date and needs no serial; the serial is there for the next day that
+carries two. The invariant it trades into — every change to the body moves VERSION — is checked by review
+until a gate step enforces it; `docs/DECISIONS.md` records both.
 
 ## 2026-09-19 — three rules stop claiming more than they check; the gate obeys T3 (VERSION unchanged)
 From the audit of claims nobody had exercised (fleet backlog 83/87), which hunted statements the system
