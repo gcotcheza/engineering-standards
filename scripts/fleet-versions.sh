@@ -215,7 +215,9 @@ done
 
 # --- unlisted projects --------------------------------------------------------
 # The list above is the contract; a repository under ROOT that is not on it has
-# joined the fleet without joining the check, which is the failure worth naming.
+# joined the fleet without joining the check. One row each, in the shape every
+# other row has: the watchdog reads only /^\s+[A-Z]+\s/, and an exit 1 with no
+# such line is reported as "output format changed?" rather than as the finding.
 unlisted=""; nunlisted=0
 while IFS= read -r d; do
     n=${d##*/}
@@ -226,7 +228,9 @@ while IFS= read -r d; do
 done < <(find "$ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
 if [ "$nunlisted" -gt 0 ]; then
     say ""
-    say "  unlisted: $unlisted"
+    for n in $unlisted; do
+        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not in the project list)"
+    done
     bad=$((bad+nunlisted)); checked=$((checked+nunlisted))
 fi
 

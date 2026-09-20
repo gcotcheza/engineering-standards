@@ -18,11 +18,13 @@ the current version) is the DIVERGED case, and asserts that word instead of DRIF
 pattern also accepts a `.N` serial, as the canonical VERSION validator already did.
 **A new project joined the fleet silently absent.** `DEFAULT_PROJECTS` stays the contract, but
 after the run every directory under `$ROOT` holding a `.git`, not on the list and not named
-`*-staging` or `*-worktrees`, is printed as `unlisted: <names>` and counted as attention, so the
-answer to "is the whole fleet checked?" comes from the check rather than from memory. Each
-unlisted project is added to both sides of the summary, so the count can never again exceed its
-own denominator. The name is lowercase for the same reason `ok` and `none` are: the watchdog's
-parser only captures a leading ALL-CAPS word.
+`*-staging` or `*-worktrees`, gets a row of its own — `UNLISTED <name>` — and is counted as
+attention, so the answer to "is the whole fleet checked?" comes from the check rather than from
+memory. Each unlisted project is added to both sides of the summary, so the count can never again
+exceed its own denominator. The row is ALL-CAPS and shaped like every other row deliberately: the
+watchdog reads this output through `^\s+[A-Z]+\s` and reports an exit 1 carrying no such line as
+"output format changed?", so a lowercase summary line would have turned the fleet's one real
+finding into a parser complaint.
 Three new assertions in `scripts/fleet-versions-test.sh` (cases 10 to 12), each proved red first
 against a copy of the script from `main`, plus case 3's changed expectation.
 

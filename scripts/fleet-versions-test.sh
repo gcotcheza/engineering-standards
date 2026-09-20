@@ -180,9 +180,12 @@ matches 'case 11: but the project is counted once' "${OUT}" 'fleet: 1 of 1 proje
 equals  'case 11: exit code' "${RC}" 1
 
 # --- 12. a repository under the root that is not on the list is named ---------
+# The row shape matters as much as the finding: the watchdog parses only a
+# leading ALL-CAPS word, and calls an exit 1 without one a format change.
 mkdir -p "${ROOT}/newbie/.git" "${ROOT}/x-staging/.git" "${ROOT}/y-worktrees/.git"
 run p1
-matches   'case 12: an unlisted repository is named' "${OUT}" 'unlisted: newbie'
+matches   'case 12: an unlisted repository gets a row the watchdog can parse' "${OUT}" '^ +UNLISTED +newbie +\(has a \.git under'
+matches   'case 12: and counts on both sides of the summary' "${OUT}" 'fleet: 1 of 2 project\(s\) need attention'
 unmatches 'case 12: a -staging directory is not' "${OUT}" 'x-staging'
 unmatches 'case 12: nor is a -worktrees directory' "${OUT}" 'y-worktrees'
 equals    'case 12: unlisted is attention — exit code' "${RC}" 1
