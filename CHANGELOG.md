@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-20 — W4: a PR's title is one past-tense action (VERSION 2026-09-20)
+Ghie, on a Memento PR titled "The phone never caches card images": **"when creating a PR, title should be
+action, 'what was done?' Like this should be: Added caching for card images."**
+
+W4 already governed the PR body and said nothing about the title, so the rule was carried in each
+session's head and applied unevenly. It belongs in W4 rather than in a rule of its own because the title
+and the four headings are one object — what the person deciding to merge reads — and splitting them would
+put half the guidance where nobody looking at the other half would find it.
+
+The previous release claimed this rule in its own title and did not carry it: PR #11 was called "Added S7
+(preview before any bulk delete) and W4's title rule" and its diff to the standard added S7 alone. Found
+by reading the merged text rather than the PR (W9), which is the same class of mistake the standard's own
+audit was hunting — a claim nobody exercised.
+
 ## 2026-09-19 — S7: nothing is deleted in bulk until its read-only twin has run (VERSION 2026-09-19.2)
 Ghie, on being handed a `docker volume prune` line to type: **"Make this fleetwide, very important."**
 
