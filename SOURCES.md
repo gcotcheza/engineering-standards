@@ -57,7 +57,7 @@ shared memory (the owner's standing instructions to the AI sessions).
 | W1 Branch + PR, never straight to main | The fleet's shared memory (git-workflow note) |
 | W2 Draft → adversarial review → ready | A Laravel project's `CLAUDE.md`: "the reviewer is never the builder" |
 | W3 Only the owner merges | The fleet's shared memory (git-workflow note: "`gh pr merge` belongs to Ghie"); a Laravel project's `CLAUDE.md` |
-| W4 A past-tense title, then the four literal PR headings, ≤150 words | The fleet's shared memory (comment-style note: the template, and "The four headings are LITERAL… not a vibe"; and the owner's 2026-09-20 note on a PR named after its fault: "title should be action, 'what was done?'"); a Laravel project's `CLAUDE.md`, which holds the canonical wording |
+| W4 A title that is the action, then the four literal PR headings, ≤150 words | The fleet's shared memory (comment-style note: the template, and "The four headings are LITERAL… not a vibe"; and the owner's 2026-09-20 note on a PR named after its fault: "title should be action, 'what was done?'"); a Laravel project's `CLAUDE.md`, which holds the canonical wording |
 | W5 Avoid stacks; retarget before merging | The fleet's shared memory (git-workflow note), recording a PR that merged into an already-merged branch and never shipped |
 | W6 Stage by name; detail in the commit | The fleet's shared memory (git-workflow and comment-style notes: "Technical content belongs in commit messages, DECISIONS entries and the diff") |
 | W7 `docs/DECISIONS.md` per project | A Laravel project's `docs/DECISIONS.md` preamble; another project's equivalent `docs/rationale-*.md` |

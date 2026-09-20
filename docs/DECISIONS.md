@@ -105,7 +105,8 @@ caught it is the gate step already owed above — compare the body against
 `origin/main` — not a test of this repository's own text. The read-back that did
 catch it is a human reading the merged file, which is W9 working as intended.
 
-**What the rule is not.** Ghie, reviewing this entry on 2026-09-20: a file name in the
+**What the rule is not.** The first release (VERSION 2026-09-20) had added "past-tense" and "no file
+names" on its own. Ghie, reviewing it on 2026-09-20: a file name in the
 title is fine when the change is one file, and the tense is not the rule — *Fix the
 flicker* is as good as *Added caching*. The rule is that the title is the action.
 
