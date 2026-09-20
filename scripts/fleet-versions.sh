@@ -11,7 +11,8 @@
 #   fleet-versions.sh              report; exit 1 if anything needs attention
 #   fleet-versions.sh --quiet|-q   exit code only (usage/canonical errors still go to stderr)
 #
-# Exit: 0 all projects on the canonical version · 1 one or more need attention ·
+# Exit: 0 all projects on the canonical version · 1 one or more need attention,
+#       including a directory under ROOT that is a repository but not on the list ·
 #       2 usage error, canonical clone unreadable/invalid, or no projects to check.
 #
 # The defaults below describe one host's layout; every one of them is overridable
@@ -67,10 +68,8 @@ say "canonical: version=$canon_version sha256=${canon_hash:0:16}… head=$canon_
 say ""
 
 # --- canonical deploy library --------------------------------------------------
-# Same idea as the docs comparison above, for scripts/lib/deploy/. A project's
-# copy is judged byte-for-byte against this directory — a re-stamped header
-# (self-consistent, wrong body) is caught by the cmp below before any header is
-# ever read, which is what makes it visible at all (#T1 in the brief).
+# Same idea as the docs comparison above, for scripts/lib/deploy/: the vendored
+# header is read first. Which of the three words a row gets: docs/DECISIONS.md.
 canon_lib=$CANON/scripts/lib/deploy
 canon_lib_vfile=$canon_lib/VERSION
 [ -d "$canon_lib"      ] || die "canonical deploy-lib dir unreadable: $canon_lib"
@@ -89,6 +88,8 @@ read -r -a projects <<<"$list"
 bad=0; checked=0
 for p in "${projects[@]}"; do
     checked=$((checked+1))
+    # A project is one unit of attention however many of its rows fail.
+    pbad=0
     f=$ROOT/$p/docs/STANDARDS.md
     link=$ROOT/$p/.claude/rules/standards.md
     content=ok; cwhy=""; linkst=ok; lwhy=""
@@ -147,12 +148,12 @@ for p in "${projects[@]}"; do
         if [ "$content" = ok ]; then st=$linkst; why=$lwhy
         elif [ "$linkst" != ok ]; then why="$cwhy; also: $lwhy"; fi
         say "  $(printf '%-10s' "$st") $p  ($why)"
-        bad=$((bad+1))
+        pbad=1
     fi
 
     # --- deploy-library line ---------------------------------------------------
     # dstatus prints lowercase (none/ok) or uppercase (MISSING/STALE/DRIFTED/
-    # BADHEADER) on purpose: the watchdog's line parser only captures a leading
+    # DIVERGED/BADHEADER) on purpose: the watchdog's line parser only captures a leading
     # ALL-CAPS word (see check_standards() in vps-health-check.sh), so lowercase
     # is how "nothing to see here" stays invisible to it, exactly like the
     # existing "ok" line above — a capitalised OK/NONE here would misreport as
@@ -166,25 +167,34 @@ for p in "${projects[@]}"; do
         else
             dstatus=ok
             for lf in $LIB_FILES; do
-                if ! cmp -s "$ldir/$lf.sh" "$canon_lib/$lf.sh" 2>/dev/null; then
+                lfile=$ldir/$lf.sh
+                if [ ! -r "$lfile" ]; then
+                    dstatus=MISSING; dwhy="$lf.sh is missing or unreadable"; break
+                fi
+                dheader=$(head -n1 "$lfile" 2>/dev/null)
+                if [[ ! $dheader =~ ^#\ fleet-deploy-lib\ ([0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?)\ sha256:([0-9a-f]{64})$ ]]; then
+                    dstatus=BADHEADER; dwhy="$lf.sh header is not the fleet-deploy-lib stamp"; break
+                fi
+                dver_h=${BASH_REMATCH[1]}
+                dbody_hash=$(tail -n +2 "$lfile" | sha256sum | cut -d' ' -f1)
+                if [ "$dbody_hash" != "${BASH_REMATCH[3]}" ]; then
                     dstatus=DRIFTED
-                    dwhy="$lf.sh differs from canonical byte-for-byte (local edit, incl. a re-stamped header, or missing)"
+                    dwhy="$lf.sh differs from canonical byte-for-byte (local edit — body does not match its own header)"
                     break
                 fi
+                cmp -s "$lfile" "$canon_lib/$lf.sh" 2>/dev/null && continue
+                if [[ $dver_h < $canon_lib_version ]]; then
+                    dstatus=STALE; dwhy="deploy-lib $dver_h, canonical $canon_lib_version"
+                elif [[ $dver_h > $canon_lib_version ]]; then
+                    # Ahead of canonical: the clone we measured against is the behind one.
+                    dstatus=DIVERGED
+                    dwhy="$lf.sh differs from canonical (deploy-lib $dver_h, canonical $canon_lib_version) — canonical clone unpulled?"
+                else
+                    dstatus=DIVERGED
+                    dwhy="claims $dver_h but $lf.sh differs from canonical — local edit re-stamped? re-vendor from the canonical repo"
+                fi
+                break
             done
-            if [ "$dstatus" = ok ]; then
-                for lf in $LIB_FILES; do
-                    dheader=$(head -n1 "$ldir/$lf.sh" 2>/dev/null)
-                    if [[ $dheader =~ ^#\ fleet-deploy-lib\ [0-9]{4}-[0-9]{2}-[0-9]{2}\ sha256:([0-9a-f]{64})$ ]]; then
-                        dbody_hash=$(tail -n +2 "$ldir/$lf.sh" | sha256sum | cut -d' ' -f1)
-                        if [ "${BASH_REMATCH[1]}" != "$dbody_hash" ]; then
-                            dstatus=BADHEADER; dwhy="$lf.sh header hash does not match its own body"; break
-                        fi
-                    else
-                        dstatus=BADHEADER; dwhy="$lf.sh header is not the fleet-deploy-lib stamp"; break
-                    fi
-                done
-            fi
             if [ "$dstatus" = ok ]; then
                 dver=""
                 if [ -r "$ldir/VERSION" ]; then read -r dver < "$ldir/VERSION" || true; fi
@@ -198,10 +208,31 @@ for p in "${projects[@]}"; do
     fi
     case "$dstatus" in
         none|ok) ;;
-        *) bad=$((bad+1)) ;;
+        *) pbad=1 ;;
     esac
     say "  $(printf '%-10s' "$dstatus") $p  ($dwhy)"
+    bad=$((bad+pbad))
 done
+
+# --- unlisted projects --------------------------------------------------------
+# A repository under ROOT that is not on the list has joined the fleet without
+# joining the check. Row shape and the two exclusions: docs/DECISIONS.md.
+unlisted=()
+while IFS= read -r d; do
+    n=${d##*/}
+    case "$n" in *-staging|*-worktrees) continue ;; esac
+    [ -d "$d" ] || continue                 # -type l above: a project dir may be a symlink
+    [ -e "$d/.git" ] || continue
+    for q in "${projects[@]}"; do [ "$q" = "$n" ] && continue 2; done
+    unlisted+=("$n")
+done < <(find "$ROOT" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/null | sort)
+if [ "${#unlisted[@]}" -gt 0 ]; then
+    say ""
+    for n in "${unlisted[@]}"; do
+        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not in the project list)"
+    done
+    bad=$((bad+${#unlisted[@]})); checked=$((checked+${#unlisted[@]}))
+fi
 
 say ""
 if [ "$bad" -eq 0 ]; then say "fleet: all $checked project(s) on $canon_version"; exit 0; fi

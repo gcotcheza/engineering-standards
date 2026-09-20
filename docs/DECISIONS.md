@@ -4,6 +4,43 @@ Why this repository is shaped the way it is, where the reason is too long for a
 comment (C5) and too easy to lose (W7). One entry per decision, newest last; the
 code carries a one-line pointer here, never the argument itself.
 
+## What the fleet check calls a deploy-lib copy, and what it calls a project (2026-09-20)
+
+**Three words for a vendored deploy library, not one.** The row used to compare bytes and say
+DRIFTED for every difference, so the day the canonical library moved on, ten projects were told
+they carried a local edit nobody had made and each one went looking for it. The vendored
+`# fleet-deploy-lib <ver> sha256:<h>` header is now read before the bytes are compared, and the
+three answers are genuinely different repairs. **DRIFTED** — the body disagrees with its own
+header — is a local edit, and the project's own gate fails too. **STALE** — the header version
+sorts *before* the canonical — is not a fault at all: re-vendor on the next deploy-lib bump and
+it clears. **DIVERGED** is everything else that differs: the same version with different bytes
+(a local edit re-stamped to pass its own gate, which only this fleet-wide comparison can see),
+or a version sorting *after* the canonical, which is not the project's problem at all — it means
+the clone the report was measured against is unpulled, and the row says so rather than blaming
+the project for being behind something that is itself behind. A file that is simply absent is
+**MISSING** and says so; it is not byte-compared, so it must not claim it was.
+
+**An unlisted repository is attention, and its row shouts.** `DEFAULT_PROJECTS` is the contract —
+the list is what "the fleet" means — but a hardcoded list cannot notice a project that joins the
+box and never joins the check, which is exactly how a project goes unchecked for months. The
+check now names any directory under `$ROOT` that holds a `.git` and is not on the list. It gets a
+full ALL-CAPS row of its own, in the shape every other row has, rather than a tidy lowercase
+summary line: the watchdog reads this output only through `^\s+[A-Z]+\s` (`vps-health-check.sh`
+:806), and on exit 1 with no such line it reports *"exit 1 but no parsable project lines — output
+format changed?"* (:814). A lowercase line would therefore have converted the one real finding
+into a complaint about the format. Lowercase is for rows that are *not* attention (`ok`, `none`);
+this one is. Each unlisted project is added to both sides of the `N of M` summary, so the
+numerator can never exceed its denominator — the defect this same change fixed.
+
+**`*-staging` and `*-worktrees` are excluded by name, on purpose.** `ghie-writes-staging` and
+`health-tracker-staging` are real repositories on this box and they are deliberately not fleet
+projects: staging is where a project's own change is tried, it is not a thing the standard is
+vendored into, and a worktree is a second checkout of a repository already on the list. Counting
+either would put a permanent two-line complaint on a clean report, which is how a check stops
+being read. The exclusion is by suffix rather than by a second list because the suffix is the
+convention the box already follows; if that ever stops being true, the fix is a named exclusion
+list, not a looser pattern.
+
 ## The ledger is asked about the merge commit, not the branch head (2026-09-20)
 A merge commit that is not a fast-forward has a tree of its own, and that tree is what a deploy
 puts live; the branch head's green gate says nothing about it. The old `resolve()` refused that

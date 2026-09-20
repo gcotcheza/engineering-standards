@@ -19,6 +19,7 @@ pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
 matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+unmatches() { if printf '%s' "$2" | grep -qE "$3"; then fail "$1 — [$2] matches /$3/"; else pass "$1"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -69,9 +70,9 @@ run p2
 matches 'case 2: a changed body byte reports DRIFTED' "${OUT}" 'DRIFTED +p2 +\(ledger\.sh differs from canonical'
 equals  'case 2: exit code' "${RC}" 1
 
-# --- 3. body changed AND header re-stamped correctly -> DRIFTED ----------------
-# The case a project's own drift test cannot see: header is self-consistent,
-# only the fleet-wide comparison against canonical catches it.
+# --- 3. body changed AND header re-stamped correctly -> DIVERGED --------------
+# The case a project's own drift test cannot see: header is self-consistent and
+# claims the current version, only the comparison against canonical catches it.
 mkdir -p "${ROOT}/p3/scripts/lib/deploy"
 cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p3/scripts/lib/deploy/"
 f="${ROOT}/p3/scripts/lib/deploy/resolve.sh"
@@ -83,7 +84,7 @@ rm -f "${f}.body"
 : >"${ROOT}/p3/scripts/deploy.sh"
 add_docs_ok "${ROOT}/p3"
 run p3
-matches 'case 3: a re-stamped header still reports DRIFTED' "${OUT}" 'DRIFTED +p3 +\(resolve\.sh differs from canonical'
+matches 'case 3: a re-stamped header reports DIVERGED' "${OUT}" "DIVERGED +p3 +\(claims ${LIB_VERSION} but resolve\.sh differs from canonical"
 equals  'case 3: exit code' "${RC}" 1
 
 # --- 4. VERSION changed alone -> STALE -----------------------------------------
@@ -141,6 +142,84 @@ run p8
 matches 'case 9: a malformed canonical version is fatal' "${OUT}" "canonical VERSION is not a date: 'tuesday'"
 equals  'case 9: exit code' "${RC}" 2
 printf '2026-09-18\n' >"${CANON}/VERSION"
+
+# --- 10. the canonical deploy-lib moved on -> STALE, not a local edit ---------
+# Every vendored copy on the box read DRIFTED "(local edit ... or missing)" the
+# day the canonical VERSION moved; a stale copy is self-consistent, just behind.
+OLD_LIB_VERSION='2026-09-19'
+mkdir -p "${ROOT}/p10/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p10/scripts/lib/deploy/"
+for lf in ledger resolve preflight summary; do
+    f="${ROOT}/p10/scripts/lib/deploy/${lf}.sh"
+    tail -n +2 "${f}" >"${f}.body"
+    oldhash="$(sha256sum "${f}.body" | cut -d' ' -f1)"
+    { printf '# fleet-deploy-lib %s sha256:%s\n' "${OLD_LIB_VERSION}" "${oldhash}"; cat "${f}.body"; } >"${f}"
+    rm -f "${f}.body"
+done
+printf '%s\n' "${OLD_LIB_VERSION}" >"${ROOT}/p10/scripts/lib/deploy/VERSION"
+: >"${ROOT}/p10/scripts/deploy.sh"
+add_docs_ok "${ROOT}/p10"
+run p10
+matches 'case 10: a canonical that moved on reports STALE' "${OUT}" "STALE +p10 +\(deploy-lib ${OLD_LIB_VERSION}, canonical ${LIB_VERSION}\)"
+equals  'case 10: exit code' "${RC}" 1
+
+# --- 11. two failing rows on one project count once ---------------------------
+mkdir -p "${ROOT}/p11/scripts/lib/deploy" "${ROOT}/p11/docs" "${ROOT}/p11/.claude/rules"
+cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p11/scripts/lib/deploy/"
+printf '# one extra body byte\n' >>"${ROOT}/p11/scripts/lib/deploy/ledger.sh"
+: >"${ROOT}/p11/scripts/deploy.sh"
+printf 'older canonical standards\n' >"${WORK}/p11-body"
+OLD_STANDARDS_HASH="$(sha256sum "${WORK}/p11-body" | cut -d' ' -f1)"
+printf '<!-- standards-version: 2026-09-01 · sha256: %s -->\n' "${OLD_STANDARDS_HASH}" >"${ROOT}/p11/docs/STANDARDS.md"
+cat "${WORK}/p11-body" >>"${ROOT}/p11/docs/STANDARDS.md"
+ln -s '../../docs/STANDARDS.md' "${ROOT}/p11/.claude/rules/standards.md"
+run p11
+matches 'case 11: the stale content row prints' "${OUT}" 'STALE +p11 +\(declared 2026-09-01, canonical 2026-09-18\)'
+matches 'case 11: the drifted deploy-lib row prints too' "${OUT}" 'DRIFTED +p11 +\(ledger\.sh differs from canonical'
+matches 'case 11: but the project is counted once' "${OUT}" 'fleet: 1 of 1 project\(s\) need attention'
+equals  'case 11: exit code' "${RC}" 1
+
+# --- 12. a repository under the root that is not on the list is named ---------
+# The row shape matters as much as the finding: the watchdog parses only a
+# leading ALL-CAPS word, and calls an exit 1 without one a format change.
+mkdir -p "${ROOT}/newbie/.git" "${ROOT}/x-staging/.git" "${ROOT}/y-worktrees/.git" \
+         "${ROOT}/weird name/.git" "${WORK}/elsewhere/.git"
+ln -s "${WORK}/elsewhere" "${ROOT}/linked"
+run p1
+matches   'case 12: an unlisted repository gets a row the watchdog can parse' "${OUT}" '^ +UNLISTED +newbie +\(has a \.git under'
+matches   'case 12: a name with a space is one row, not two' "${OUT}" '^ +UNLISTED +weird name +\(has a \.git under'
+matches   'case 12: a symlinked project directory is seen too' "${OUT}" '^ +UNLISTED +linked +\(has a \.git under'
+equals    'case 12: one row per directory, no more' "$(printf '%s\n' "${OUT}" | grep -c UNLISTED)" 3
+matches   'case 12: and every one counts on both sides of the summary' "${OUT}" 'fleet: 3 of 4 project\(s\) need attention'
+unmatches 'case 12: a -staging directory is not' "${OUT}" 'x-staging'
+unmatches 'case 12: nor is a -worktrees directory' "${OUT}" 'y-worktrees'
+equals    'case 12: unlisted is attention — exit code' "${RC}" 1
+
+# --- 13. a lib file that is not there is missing, not byte-compared -----------
+mkdir -p "${ROOT}/p13/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p13/scripts/lib/deploy/"
+rm -f "${ROOT}/p13/scripts/lib/deploy/ledger.sh"
+: >"${ROOT}/p13/scripts/deploy.sh"
+add_docs_ok "${ROOT}/p13"
+run p13
+matches 'case 13: an absent lib file does not claim a byte comparison' "${OUT}" 'MISSING +p13 +\(ledger\.sh is missing or unreadable\)'
+equals  'case 13: exit code' "${RC}" 1
+
+# --- 14. vendored copy AHEAD of canonical is not stale ------------------------
+# An unpulled canonical clone, not a project that failed to re-vendor.
+AHEAD_LIB_VERSION='2026-09-21'
+mkdir -p "${ROOT}/p14/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p14/scripts/lib/deploy/"
+f="${ROOT}/p14/scripts/lib/deploy/ledger.sh"
+tail -n +2 "${f}" >"${f}.body"
+aheadhash="$(sha256sum "${f}.body" | cut -d' ' -f1)"
+{ printf '# fleet-deploy-lib %s sha256:%s\n' "${AHEAD_LIB_VERSION}" "${aheadhash}"; cat "${f}.body"; } >"${f}"
+rm -f "${f}.body"
+: >"${ROOT}/p14/scripts/deploy.sh"
+add_docs_ok "${ROOT}/p14"
+run p14
+matches 'case 14: a copy ahead of canonical is not called stale' "${OUT}" "DIVERGED +p14 +\(ledger\.sh differs from canonical \(deploy-lib ${AHEAD_LIB_VERSION}, canonical ${LIB_VERSION}\)"
+equals  'case 14: exit code' "${RC}" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'
