@@ -69,7 +69,7 @@ say ""
 
 # --- canonical deploy library --------------------------------------------------
 # Same idea as the docs comparison above, for scripts/lib/deploy/: the vendored
-# header is read first, so a canonical that moved on reads STALE, not as a local edit.
+# header is read first. Which of the three words a row gets: docs/DECISIONS.md.
 canon_lib=$CANON/scripts/lib/deploy
 canon_lib_vfile=$canon_lib/VERSION
 [ -d "$canon_lib"      ] || die "canonical deploy-lib dir unreadable: $canon_lib"
@@ -169,9 +169,7 @@ for p in "${projects[@]}"; do
             for lf in $LIB_FILES; do
                 lfile=$ldir/$lf.sh
                 if [ ! -r "$lfile" ]; then
-                    dstatus=DRIFTED
-                    dwhy="$lf.sh differs from canonical byte-for-byte (missing or unreadable)"
-                    break
+                    dstatus=MISSING; dwhy="$lf.sh is missing or unreadable"; break
                 fi
                 dheader=$(head -n1 "$lfile" 2>/dev/null)
                 if [[ ! $dheader =~ ^#\ fleet-deploy-lib\ ([0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?)\ sha256:([0-9a-f]{64})$ ]]; then
@@ -185,10 +183,13 @@ for p in "${projects[@]}"; do
                     break
                 fi
                 cmp -s "$lfile" "$canon_lib/$lf.sh" 2>/dev/null && continue
-                if [ "$dver_h" != "$canon_lib_version" ]; then
+                if [[ $dver_h < $canon_lib_version ]]; then
                     dstatus=STALE; dwhy="deploy-lib $dver_h, canonical $canon_lib_version"
+                elif [[ $dver_h > $canon_lib_version ]]; then
+                    # Ahead of canonical: the clone we measured against is the behind one.
+                    dstatus=DIVERGED
+                    dwhy="$lf.sh differs from canonical (deploy-lib $dver_h, canonical $canon_lib_version) — canonical clone unpulled?"
                 else
-                    # Self-consistent, claims the current version, still differs: a re-stamp.
                     dstatus=DIVERGED
                     dwhy="claims $dver_h but $lf.sh differs from canonical — local edit re-stamped? re-vendor from the canonical repo"
                 fi
@@ -214,24 +215,23 @@ for p in "${projects[@]}"; do
 done
 
 # --- unlisted projects --------------------------------------------------------
-# The list above is the contract; a repository under ROOT that is not on it has
-# joined the fleet without joining the check. One row each, in the shape every
-# other row has: the watchdog reads only /^\s+[A-Z]+\s/, and an exit 1 with no
-# such line is reported as "output format changed?" rather than as the finding.
-unlisted=""; nunlisted=0
+# A repository under ROOT that is not on the list has joined the fleet without
+# joining the check. Row shape and the two exclusions: docs/DECISIONS.md.
+unlisted=()
 while IFS= read -r d; do
     n=${d##*/}
     case "$n" in *-staging|*-worktrees) continue ;; esac
+    [ -d "$d" ] || continue                 # -type l above: a project dir may be a symlink
     [ -e "$d/.git" ] || continue
     for q in "${projects[@]}"; do [ "$q" = "$n" ] && continue 2; done
-    unlisted="${unlisted:+$unlisted }$n"; nunlisted=$((nunlisted+1))
-done < <(find "$ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
-if [ "$nunlisted" -gt 0 ]; then
+    unlisted+=("$n")
+done < <(find "$ROOT" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/null | sort)
+if [ "${#unlisted[@]}" -gt 0 ]; then
     say ""
-    for n in $unlisted; do
+    for n in "${unlisted[@]}"; do
         say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not in the project list)"
     done
-    bad=$((bad+nunlisted)); checked=$((checked+nunlisted))
+    bad=$((bad+${#unlisted[@]})); checked=$((checked+${#unlisted[@]}))
 fi
 
 say ""

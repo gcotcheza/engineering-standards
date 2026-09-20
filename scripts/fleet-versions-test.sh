@@ -182,13 +182,44 @@ equals  'case 11: exit code' "${RC}" 1
 # --- 12. a repository under the root that is not on the list is named ---------
 # The row shape matters as much as the finding: the watchdog parses only a
 # leading ALL-CAPS word, and calls an exit 1 without one a format change.
-mkdir -p "${ROOT}/newbie/.git" "${ROOT}/x-staging/.git" "${ROOT}/y-worktrees/.git"
+mkdir -p "${ROOT}/newbie/.git" "${ROOT}/x-staging/.git" "${ROOT}/y-worktrees/.git" \
+         "${ROOT}/weird name/.git" "${WORK}/elsewhere/.git"
+ln -s "${WORK}/elsewhere" "${ROOT}/linked"
 run p1
 matches   'case 12: an unlisted repository gets a row the watchdog can parse' "${OUT}" '^ +UNLISTED +newbie +\(has a \.git under'
-matches   'case 12: and counts on both sides of the summary' "${OUT}" 'fleet: 1 of 2 project\(s\) need attention'
+matches   'case 12: a name with a space is one row, not two' "${OUT}" '^ +UNLISTED +weird name +\(has a \.git under'
+matches   'case 12: a symlinked project directory is seen too' "${OUT}" '^ +UNLISTED +linked +\(has a \.git under'
+equals    'case 12: one row per directory, no more' "$(printf '%s\n' "${OUT}" | grep -c UNLISTED)" 3
+matches   'case 12: and every one counts on both sides of the summary' "${OUT}" 'fleet: 3 of 4 project\(s\) need attention'
 unmatches 'case 12: a -staging directory is not' "${OUT}" 'x-staging'
 unmatches 'case 12: nor is a -worktrees directory' "${OUT}" 'y-worktrees'
 equals    'case 12: unlisted is attention — exit code' "${RC}" 1
+
+# --- 13. a lib file that is not there is missing, not byte-compared -----------
+mkdir -p "${ROOT}/p13/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p13/scripts/lib/deploy/"
+rm -f "${ROOT}/p13/scripts/lib/deploy/ledger.sh"
+: >"${ROOT}/p13/scripts/deploy.sh"
+add_docs_ok "${ROOT}/p13"
+run p13
+matches 'case 13: an absent lib file does not claim a byte comparison' "${OUT}" 'MISSING +p13 +\(ledger\.sh is missing or unreadable\)'
+equals  'case 13: exit code' "${RC}" 1
+
+# --- 14. vendored copy AHEAD of canonical is not stale ------------------------
+# An unpulled canonical clone, not a project that failed to re-vendor.
+AHEAD_LIB_VERSION='2026-09-21'
+mkdir -p "${ROOT}/p14/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p14/scripts/lib/deploy/"
+f="${ROOT}/p14/scripts/lib/deploy/ledger.sh"
+tail -n +2 "${f}" >"${f}.body"
+aheadhash="$(sha256sum "${f}.body" | cut -d' ' -f1)"
+{ printf '# fleet-deploy-lib %s sha256:%s\n' "${AHEAD_LIB_VERSION}" "${aheadhash}"; cat "${f}.body"; } >"${f}"
+rm -f "${f}.body"
+: >"${ROOT}/p14/scripts/deploy.sh"
+add_docs_ok "${ROOT}/p14"
+run p14
+matches 'case 14: a copy ahead of canonical is not called stale' "${OUT}" "DIVERGED +p14 +\(ledger\.sh differs from canonical \(deploy-lib ${AHEAD_LIB_VERSION}, canonical ${LIB_VERSION}\)"
+equals  'case 14: exit code' "${RC}" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'
