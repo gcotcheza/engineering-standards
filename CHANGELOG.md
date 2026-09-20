@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-20 — W4: a PR's title is the action, what was done (VERSION 2026-09-20)
+## 2026-09-20 — W4: a PR's title is the action, what was done (VERSION 2026-09-20, then 2026-09-20.1)
 Ghie, on a Memento PR titled "The phone never caches card images": **"when creating a PR, title should be
 action, 'what was done?' Like this should be: Added caching for card images."**
 
@@ -13,6 +13,11 @@ its check really is, and why the change carries no test: `docs/DECISIONS.md`.
 what was done, not what was wrong" — and the word "title" appears nowhere in its eight-file diff. W4 was
 untouched. It was found by reading the merged text rather than the PR (W9), which is the same class of
 mistake the standard's own audit was hunting: a claim nobody exercised.
+
+**2026-09-20.1 — the wording, corrected after merge.** The first release of this rule said *one past-tense action
+with no file names*. Ghie, reviewing it: "not necessarily filename, if there's only one file, that's fine. It
+should be the action, like 'Fix flickering bla..'" Both clauses struck; W4 says *one action — what was done —*
+and shows both shapes. Merged as #12 minutes before the correction was pushed, hence the serial.
 
 ## 2026-09-19 — S7: nothing is deleted in bulk until its read-only twin has run (VERSION 2026-09-19.2)
 Ghie, on being handed a `docker volume prune` line to type: **"Make this fleetwide, very important."**
