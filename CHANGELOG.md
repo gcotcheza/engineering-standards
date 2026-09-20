@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-09-20 — the fleet version check counts projects, names a moved canonical and notices an unlisted project (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+Three defects, one script. **The tally counted rows, not projects.** `bad` grew once per failing
+row — content and deploy-lib are two rows per project — while `checked` grew once per project, so
+the summary read `fleet: 11 of 10 project(s) need attention`. A project is now one unit of
+attention however many of its rows fail.
+**A canonical that moved on read as a local edit.** The deploy-lib row compared bytes before it
+read a header, so the day the deploy-lib VERSION went to 2026-09-20 every vendored copy reported
+`DRIFTED (local edit, incl. a re-stamped header, or missing)` — advice that sent each project
+hunting for an edit nobody made. The row now mirrors the content rows: the vendored
+`# fleet-deploy-lib <ver> sha256:<h>` header is read first, a body that disagrees with its own
+header is DRIFTED, an older header version is `STALE (deploy-lib <ver>, canonical <cver>)`, and
+the same version with different bytes is DIVERGED — the re-stamp the old code claimed to catch,
+now named. Case 3 of the test changes with it: its fixture (body changed, header re-stamped to
+the current version) is the DIVERGED case, and asserts that word instead of DRIFTED. The header
+pattern also accepts a `.N` serial, as the canonical VERSION validator already did.
+**A new project joined the fleet silently absent.** `DEFAULT_PROJECTS` stays the contract, but
+after the run every directory under `$ROOT` holding a `.git`, not on the list and not named
+`*-staging` or `*-worktrees`, is printed as `unlisted: <names>` and counted as attention, so the
+answer to "is the whole fleet checked?" comes from the check rather than from memory. Each
+unlisted project is added to both sides of the summary, so the count can never again exceed its
+own denominator. The name is lowercase for the same reason `ok` and `none` are: the watchdog's
+parser only captures a leading ALL-CAPS word.
+Three new assertions in `scripts/fleet-versions-test.sh` (cases 10 to 12), each proved red first
+against a copy of the script from `main`, plus case 3's changed expectation.
+
 ## 2026-09-20 — the deploy library gates the commit that deploys, not the branch head (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 `resolve()` compared the pull request's head tree with the merge commit's and refused every
 difference, so a PR merged after `main` had moved was undeployable and the refusal's advice —
