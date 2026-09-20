@@ -50,7 +50,8 @@ canon_version=""   # `read` leaves it unset on a zero-byte file, which set -u wo
 read -r canon_version < "$canon_vfile" || true
 canon_version=${canon_version#"${canon_version%%[![:space:]]*}"}   # trim leading
 canon_version=${canon_version%"${canon_version##*[![:space:]]}"}   # trim trailing
-[[ $canon_version =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "canonical VERSION is not a date: '$canon_version'"
+# A date, plus .N from the second change of a day onward (see the canonical docs/DECISIONS.md).
+[[ $canon_version =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$ ]] || die "canonical VERSION is not a date: '$canon_version'"
 canon_hash=$(sha256sum "$canon_file" | cut -d' ' -f1)
 
 # Say what the report was measured against: a forgotten `git pull` in the canonical
