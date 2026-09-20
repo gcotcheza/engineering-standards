@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-09-20 sha256:e3734fdc95bf7f22d34ee2b2380ca0d9dcb12257aee77caeac4732be1339ecd0
+# fleet-deploy-lib 2026-09-20 sha256:2cf622905ee7a0b6bf419f2e46bd98f4a0f20d32f5403e3922eed62fd39a3ec9
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it is in there green.
@@ -50,9 +50,11 @@ gated() {
         say "GATED BY HAND: the ledger was not read. #$PR deploys on a human's word — transition and rescue only."
         return 0
     fi
-    # A caller that vendors this file without the matching resolve.sh never sets GATE_SHA.
-    sha=${GATE_SHA:-$HEAD_SHA}
-    what=${GATE_WHAT:-head}
+    # Unset is a caller without the matching resolve.sh; set but empty is a resolve that
+    # was skipped or did not finish, and that one is refused rather than read as the head.
+    sha=${GATE_SHA-$HEAD_SHA}
+    what=${GATE_WHAT-head}
+    [ -n "$sha" ] || refuse "GATE_SHA is set but empty: resolve did not finish, and gated cannot guess what deploys."
     [ -f "$LEDGER" ] || refuse "no gate ledger at $LEDGER, so no head was ever gated on this box."
     for kind in ci e2e; do
         # Append-only, so the last line for (sha, kind) is the newest and it alone decides.

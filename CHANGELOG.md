@@ -13,7 +13,9 @@ the `by hand` that was always there. `--gated-by-hand` keeps its meaning exactly
 `ledger.sh` degrades on its own: a project that vendors it without the matching `resolve.sh`,
 or a caller that never reaches `resolve`, leaves `GATE_SHA` unset, and under `set -u` that now
 falls back to the head (`GATE_WHAT` "head") instead of dying — with a test that goes red when
-the default is removed. `resolve.sh` also quotes its two literals and carries the two
+the default is removed. A `GATE_SHA` that is set but *empty* is a different thing — a resolve
+that was skipped or did not finish — and is refused outright rather than read as the head,
+which would fail open in exactly the squash-or-rebase case this change exists for. `resolve.sh` also quotes its two literals and carries the two
 `# shellcheck disable=SC2034` with the reason beside them, for lints that cannot see that
 `ledger.sh` reads those two variables in the same shell.
 `scripts/lib/deploy/test.sh` gains five assertions across three new cases (an ungated merge, a

@@ -324,6 +324,14 @@ contains 'a caller that never sets GATE_SHA falls back to the head instead of dy
 contains 'and the fallback records itself as the head' "${OUT}" \
     "GATED_IS ledger head ${HEAD_SHA:0:7}"
 
+# Set but empty is not the same as unset: a caller that initialises GATE_SHA='' for set -u
+# and then skips or abandons resolve must be refused, never gated on the branch head.
+fixture gate-sha-empty
+run_lib "HEAD_SHA=${HEAD_SHA}; "'GATE_SHA=""; gated'
+contains 'a set-but-empty GATE_SHA is refused, not quietly gated as the head' "${OUT}" \
+    'REFUSED: GATE_SHA is set but empty: resolve did not finish, and gated cannot guess what deploys.'
+absent 'and nothing is gated on the strength of it' "${OUT}" 'GATED'
+
 fixture no-ledger
 rm -f "${LEDGER}"
 run_lib 'resolve; gated'
