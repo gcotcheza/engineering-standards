@@ -95,7 +95,7 @@ already carries compound rules joined by "and" (S7, T9), so the shape is not new
 
 The rule's own check is a repair, not a detection: a reviewer notices a
 problem-statement title and runs `gh pr edit`. The mechanical half that is owed
-is a title-prefix lint (`Added|Removed|Fixed|Made|Moved|Renamed|…`), in the shape
+is a title lint — a verb first: *Add*, *Added*, *Fix*, *Fixed*, … — in the shape
 of `scripts/backlog-owners-lint.py`. Until that exists the rule is held by review,
 and this entry is where that is admitted rather than left unsaid.
 
@@ -105,8 +105,8 @@ caught it is the gate step already owed above — compare the body against
 `origin/main` — not a test of this repository's own text. The read-back that did
 catch it is a human reading the merged file, which is W9 working as intended.
 
-**One clause goes past the owner's words.** "No file names" is not in the note
-that prompted this rule; it is how the fleet had been applying it, and it matches
-the plain-language example the note gives. It is called out here so the merge
-decision is made with that in view, not around it.
+**What the rule is not.** The first release (VERSION 2026-09-20) had added "past-tense" and "no file
+names" on its own. Ghie, reviewing it on 2026-09-20: a file name in the
+title is fine when the change is one file, and the tense is not the rule — *Fix the
+flicker* is as good as *Added caching*. The rule is that the title is the action.
 
