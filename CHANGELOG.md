@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-20 — the deploy library gates the commit that deploys, not the branch head (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+`resolve()` compared the pull request's head tree with the merge commit's and refused every
+difference, so a PR merged after `main` had moved was undeployable and the refusal's advice —
+re-gate the merge commit — changed neither tree. Orbit hit it on its PR #80 and fixed it there
+(`6d2d443`, `a2c4c28`); this is that change upstream, ported not redesigned. `resolve()` now sets
+`GATE_SHA` and `GATE_WHAT`: the branch head when the two trees are identical, the merge commit
+itself when they are not. `gated()` reads `GATE_SHA`, so the ledger is asked about the commit
+whose tree actually deploys, the refusal names it (`gate that merge, then deploy`), and `GATED`
+— and with it a project's DONE line — reads `ledger head <sha>` or `ledger merge <sha>` beside
+the `by hand` that was always there. `--gated-by-hand` keeps its meaning exactly.
+`ledger.sh` degrades on its own: a project that vendors it without the matching `resolve.sh`,
+or a caller that never reaches `resolve`, leaves `GATE_SHA` unset, and under `set -u` that now
+falls back to the head (`GATE_WHAT` "head") instead of dying — with a test that goes red when
+the default is removed. `resolve.sh` also quotes its two literals and carries the two
+`# shellcheck disable=SC2034` with the reason beside them, for lints that cannot see that
+`ledger.sh` reads those two variables in the same shell.
+`scripts/lib/deploy/test.sh` gains five assertions across three new cases (an ungated merge, a
+gated merge, and the unset-`GATE_SHA` fallback) and tightens two existing ones; each was proved
+red first against a copy of the old library, and the fallback against a copy with its default
+removed. deploy-lib VERSION is 2026-09-20 and all four vendored headers are re-stamped, so
+`fleet-versions.sh` reports every project's vendored copy DRIFTED or STALE until it re-vendors,
+which each project does on its next deploy-lib bump.
+
 ## 2026-09-20 — W4 wording corrected: the title is the action (VERSION 2026-09-20.2)
 The first release of the rule, above, said *one past-tense action with no file names*. Ghie, reviewing it:
 "not necessarily filename, if there's only one file, that's fine. It should be the action, like 'Fix

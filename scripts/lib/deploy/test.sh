@@ -287,15 +287,42 @@ contains 'a merge behind the tip is refused' "${OUT}" 'REFUSED: main moved since
 
 fixture trees-differ trees-differ
 run_lib 'resolve'
-contains 'a merge tree that is not the gated tree is refused' "${OUT}" \
-    "REFUSED: merge tree differs from the gated head: re-gate the merge commit."
+contains 'a merge tree that is not the head tree names the merge as the commit to gate' "${OUT}" \
+    "RESOLVED #73 merge ${MERGE_SHA:0:7} is origin/main and its tree is not head ${HEAD_SHA:0:7}'s, so the merge commit itself is what must be gated"
+absent 'and it is no longer refused for having a tree of its own' "${OUT}" \
+    'merge tree differs from the gated head'
 
 # --- 3. gated -------------------------------------------------------------------
 fixture gated-ledger
 run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
 contains 'a head green twice in the ledger is gated' "${OUT}" \
     "GATED ${HEAD_SHA:0:7} ci and e2e both green in ${LEDGER}"
-contains 'and it says so in GATED' "${OUT}" 'GATED_IS ledger'
+contains 'and it says so in GATED' "${OUT}" "GATED_IS ledger head ${HEAD_SHA:0:7}"
+
+# An ordinary merge commit has a tree of its own, and that tree is what deploys, so it is
+# the commit the ledger must hold; the branch head's greens say nothing about it.
+fixture trees-differ-ungated trees-differ
+run_lib 'resolve; gated'
+contains 'a green head does not gate a merge the ledger never saw' "${OUT}" \
+    "REFUSED: the ledger holds no green ci for ${MERGE_SHA:0:7}: gate that merge, then deploy."
+
+fixture trees-differ-gated trees-differ
+printf '%s ci 2026-09-19T07:00:00Z 0 -\n%s e2e 2026-09-19T07:30:00Z 0 -\n' \
+    "${MERGE_SHA}" "${MERGE_SHA}" >"${LEDGER}"
+run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'a merge commit green twice in the ledger is gated on the merge' "${OUT}" \
+    "GATED ${MERGE_SHA:0:7} ci and e2e both green in ${LEDGER}"
+contains 'and DONE says the merge was the commit that was gated' "${OUT}" \
+    "GATED_IS ledger merge ${MERGE_SHA:0:7}"
+
+# A caller that vendors this ledger.sh without the matching resolve.sh, or one that never
+# reaches resolve, leaves GATE_SHA unset: under set -u that degrades to the head, never dies.
+fixture gate-sha-unset
+run_lib "HEAD_SHA=${HEAD_SHA}; "'gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'a caller that never sets GATE_SHA falls back to the head instead of dying' "${OUT}" \
+    "GATED ${HEAD_SHA:0:7} ci and e2e both green in ${LEDGER}"
+contains 'and the fallback records itself as the head' "${OUT}" \
+    "GATED_IS ledger head ${HEAD_SHA:0:7}"
 
 fixture no-ledger
 rm -f "${LEDGER}"
