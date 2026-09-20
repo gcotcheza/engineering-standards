@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-20 — W4: a PR's title is one past-tense action (VERSION 2026-09-20)
+## 2026-09-20 — W4: a PR's title is the action, what was done (VERSION 2026-09-20)
 Ghie, on a Memento PR titled "The phone never caches card images": **"when creating a PR, title should be
 action, 'what was done?' Like this should be: Added caching for card images."**
 
