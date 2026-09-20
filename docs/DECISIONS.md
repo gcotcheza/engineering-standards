@@ -85,3 +85,28 @@ with a body that matches canonical — reported `ok` — while another project o
 body also declares that version and is reported DIVERGED, accused of a local edit it never
 made. Until a gate step compares `ENGINEERING-STANDARDS.md` against `origin/main` and fails
 when VERSION has not moved, this is checked by review of every PR that touches the body.
+
+## The PR-title rule lives inside W4, not in a rule of its own (2026-09-20)
+
+W4 governs what the person deciding to merge reads. The title and the four
+headings are one object to that reader, and a standalone W10 would put half the
+guidance where someone reading the other half would never meet it. The document
+already carries compound rules joined by "and" (S7, T9), so the shape is not new.
+
+The rule's own check is a repair, not a detection: a reviewer notices a
+problem-statement title and runs `gh pr edit`. The mechanical half that is owed
+is a title-prefix lint (`Added|Removed|Fixed|Made|Moved|Renamed|…`), in the shape
+of `scripts/backlog-owners-lint.py`. Until that exists the rule is held by review,
+and this entry is where that is admitted rather than left unsaid.
+
+**Why this change carries no test (T4).** The bug it fixes is a PR whose title
+promised a rule its diff did not contain, and nothing caught it. What would have
+caught it is the gate step already owed above — compare the body against
+`origin/main` — not a test of this repository's own text. The read-back that did
+catch it is a human reading the merged file, which is W9 working as intended.
+
+**One clause goes past the owner's words.** "No file names" is not in the note
+that prompted this rule; it is how the fleet had been applying it, and it matches
+the plain-language example the note gives. It is called out here so the merge
+decision is made with that in view, not around it.
+
