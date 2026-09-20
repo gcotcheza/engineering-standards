@@ -5,14 +5,14 @@ Ghie, on a Memento PR titled "The phone never caches card images": **"when creat
 action, 'what was done?' Like this should be: Added caching for card images."**
 
 W4 already governed the PR body and said nothing about the title, so the rule was carried in each
-session's head and applied unevenly. It belongs in W4 rather than in a rule of its own because the title
-and the four headings are one object — what the person deciding to merge reads — and splitting them would
-put half the guidance where nobody looking at the other half would find it.
+session's head and applied unevenly. Why it folds into W4 rather than standing as its own rule, what
+its check really is, and why the change carries no test: `docs/DECISIONS.md`.
 
-The previous release claimed this rule in its own title and did not carry it: PR #11 was called "Added S7
-(preview before any bulk delete) and W4's title rule" and its diff to the standard added S7 alone. Found
-by reading the merged text rather than the PR (W9), which is the same class of mistake the standard's own
-audit was hunting — a claim nobody exercised.
+**The previous release claimed this rule twice and carried it neither time.** PR #11 was titled "Added S7
+(preview before any bulk delete) and W4's title rule" and its body said "a pull request's title now says
+what was done, not what was wrong" — and the word "title" appears nowhere in its eight-file diff. W4 was
+untouched. It was found by reading the merged text rather than the PR (W9), which is the same class of
+mistake the standard's own audit was hunting: a claim nobody exercised.
 
 ## 2026-09-19 — S7: nothing is deleted in bulk until its read-only twin has run (VERSION 2026-09-19.2)
 Ghie, on being handed a `docker volume prune` line to type: **"Make this fleetwide, very important."**
