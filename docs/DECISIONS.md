@@ -4,6 +4,18 @@ Why this repository is shaped the way it is, where the reason is too long for a
 comment (C5) and too easy to lose (W7). One entry per decision, newest last; the
 code carries a one-line pointer here, never the argument itself.
 
+## The ledger is asked about the merge commit, not the branch head (2026-09-20)
+A merge commit that is not a fast-forward has a tree of its own, and that tree is what a deploy
+puts live; the branch head's green gate says nothing about it. The old `resolve()` refused that
+case outright, which made every PR merged after `main` had moved undeployable. `resolve()` now
+names the commit that deploys in `GATE_SHA` and `gated()` asks the ledger about that one, so the
+gate covers what ships. `ledger.sh` keeps a `${GATE_SHA-$HEAD_SHA}` default on purpose: a
+project vendors these files one at a time, and a half-vendored pair must degrade to the old
+behaviour rather than die on `set -u`. The colon is deliberately absent, and putting it back
+would be a fail-open: a caller that initialises `GATE_SHA=''` for `set -u` and then skips or
+abandons `resolve` would silently be gated on the branch head, which is the squash-and-rebase
+case the whole change exists for. Unset falls back to the head; set-but-empty still refuses.
+
 ## The gate refuses a missing shellcheck image rather than skipping the step
 
 A linter that is not installed produces no findings, which reads exactly like a
