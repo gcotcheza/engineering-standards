@@ -184,13 +184,13 @@ matches 'case 15: a production build with no image: still has a tag' "${OUT}" 'F
 matches 'case 15: located at the service line, the only line there is' "${OUT}" 'production: +docker-compose\.yml:2$'
 equals  'case 15: exit code' "${RC}" 1
 
-# --- 16. a gate service that builds through extends: -> its implicit tag counts -
+# --- 16. a gate service that builds through extends: -> unresolved, not invented
 builder extended docker-compose.ci.yml app extends
 service extended docker-compose.yml    'extended-app' build
 run extended
-matches 'case 16: an extends: build on the gate side is tagged and compared' "${OUT}" 'FAIL .*: image tag extended-app:latest is built for the gate and run in production'
-matches 'case 16: the inheritance is reported' "${OUT}" 'built tags: +1 \(1 value\(s\) inherit a build through <<: or extends\)$'
-equals  'case 16: exit code' "${RC}" 1
+matches 'case 16: an extends: build carries no tag this check can resolve' "${OUT}" 'images: +1 resolved, 1 unresolved — the image of app \(extends a service, whose image: is not read here\) in docker-compose\.ci\.yml:2$'
+matches 'case 16: and no tag is invented from the project name' "${OUT}" '^ok .*: 1 built image tag\(s\), none shared between the gate and production — 1 value\(s\) unresolved and not judged$'
+equals  'case 16: exit code' "${RC}" 0
 
 # --- 17. a file's own name: beats the directory -> FAIL on the chosen project ---
 named   named-proj docker-compose.yml chosen
@@ -239,6 +239,45 @@ printf 'services:\n  app:\n    <<: *elsewhere\n' >"${WORK}/foreign/docker-compos
 run foreign
 matches 'case 21: an unknown anchor leaves the tag unresolved, and says so' "${OUT}" 'images: +0 resolved, 1 unresolved — the image of app \(merges \*elsewhere, not defined here\) in docker-compose\.yml:2$'
 equals  'case 21: exit code' "${RC}" 0
+
+# --- 22. a flow-style service body -> unresolved, never a silent pass ----------
+builder flowbody docker-compose.yml symfony
+printf 'services:\n  symfony: {build: ./docker/app, image: flowbody-symfony}\n' >"${WORK}/flowbody/docker-compose.ci.yml"
+run flowbody
+matches 'case 22: a service written as a flow map is read as unresolved, not as nothing' "${OUT}" 'images: +1 resolved, 1 unresolved — the image of symfony \(written in a form this check cannot read\) in docker-compose\.ci\.yml:2$'
+equals  'case 22: exit code' "${RC}" 0
+
+# --- 23. quoted mapping keys -> unresolved, not read as a service with no image -
+service quotedkeys docker-compose.yml 'demo/app:ci' build
+printf 'services:\n  app:\n    "build": ./d\n    "image": "demo/app:ci"\n' >"${WORK}/quotedkeys/docker-compose.ci.yml"
+run quotedkeys
+matches 'case 23: a quoted image: key leaves the service unresolved' "${OUT}" 'images: +1 resolved, 1 unresolved — the image of app \(written in a form this check cannot read\) in docker-compose\.ci\.yml:2$'
+equals  'case 23: exit code' "${RC}" 0
+
+# --- 24. extends: a service in this root -> unresolved, not an invented tag -----
+service extfile docker-compose.yml 'myapp/api:prod' build
+printf 'services:\n  worker:\n    extends:\n      file: docker-compose.yml\n      service: app\n' >"${WORK}/extfile/docker-compose.ci.yml"
+run extfile
+matches 'case 24: an extends: with no image: of its own is named, not guessed at' "${OUT}" 'images: +1 resolved, 1 unresolved — the image of worker \(extends a service, whose image: is not read here\) in docker-compose\.ci\.yml:2$'
+matches 'case 24: and the verdict says what it could not judge' "${OUT}" '^ok .*: 1 built image tag\(s\), none shared between the gate and production — 1 value\(s\) unresolved and not judged$'
+equals  'case 24: exit code' "${RC}" 0
+
+# --- 25. a build.tags entry is a tag the build writes -> FAIL ------------------
+builder tagsonly docker-compose.yml symfony
+printf 'services:\n  symfony:\n    build:\n      context: ./docker/app\n      tags:\n        - tagsonly-symfony\n    image: throwaway:ci\n' >"${WORK}/tagsonly/docker-compose.ci.yml"
+run tagsonly
+matches 'case 25: a build.tags entry is compared like an image: value' "${OUT}" 'FAIL .*: image tag tagsonly-symfony:latest is built for the gate and run in production'
+matches 'case 25: located at the entry line' "${OUT}" 'gate: +docker-compose\.ci\.yml:6$'
+equals  'case 25: exit code' "${RC}" 1
+
+# --- 26. a file with no name: beside one that has it -> FAIL on that project ----
+named   overlay docker-compose.yml chosen
+builder overlay docker-compose.yml    app
+builder overlay docker-compose.ci.yml app
+run overlay
+matches 'case 26: a file declaring no name: is compared under the name declared beside it' "${OUT}" 'FAIL .*: image tag chosen-app:latest is built for the gate and run in production'
+matches 'case 26: and its own directory stays a candidate project' "${OUT}" 'built tags: +2$'
+equals  'case 26: exit code' "${RC}" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'

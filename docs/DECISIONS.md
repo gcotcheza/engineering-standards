@@ -190,9 +190,34 @@ production services are that shape, and inventing `fineprint-app` for them would
 have been a tag nothing builds. Where the merged anchor is not defined in the
 file, the tag is *unresolved* and named as such rather than guessed: loud beats
 quiet, and a guess here would print a FAIL naming a tag that may not exist.
-`extends:` is treated as a build, as it already was for `image:` lines — the
-extended service may carry an `image:` this check cannot follow across files, so
-that one case can over-report, and the report names the file and line to look at.
+`extends:` is treated as a build, as it already was for `image:` lines, but it no
+longer earns an implicit tag. The extended service usually carries an `image:`
+this check does not follow, and inventing `<project>-<service>` printed a tag
+nothing builds: on a file whose `worker` extends an `app` with `image:
+myapp/api:prod`, real `docker compose config --images` answers `myapp/api:prod`.
+A service that extends and names no `image:` of its own is now *unresolved* and
+named, like the unknown anchor above. The residue is the opposite direction: where
+the extended service builds and names no image anywhere, compose does tag it
+`<project>-<service>`, and this check says it could not tell rather than saying so.
+
+**A `name:` on one file is the project of the file beside it.** Compose takes one
+project name per invocation, so `-f docker-compose.yml -f docker-compose.ci.yml`
+with the name on the base alone builds the overlay's services under the base's
+name: a base declaring `name: chosen` beside a nameless overlay gives `chosen-app`
+for both, not `<directory>-app`. A file that declares no `name:` of its own is
+therefore compared under every name declared beside it *and* the directory, and a
+collision on any of them is a finding. `COMPOSE_PROJECT_NAME` and `-p` stay
+residue: they are set at run time, not in the file, so a run that passes one builds
+a tag this check cannot know — the same limit as reading files rather than processes.
+
+**A body it cannot read is not a pass.** `symfony: {build: ./docker/app, image:
+flowproj-symfony}` and `"image": 'demo/app:ci'` are valid compose and invisible to
+line regexes; both read as "no image here", which is the silent pass arriving by a
+third door. A service whose own line or whose direct keys carry a `{` outside a
+`${…}` default, or a `build`/`image`/`extends` key these regexes do not match, is
+reported *unresolved*: the flow map is refused, not parsed. `build.tags` entries
+are read as built tags in the same pass — that is a tag the build writes even when
+`image:` beside it names a throwaway one.
 
 **Why `unrecognised:` still exits 0 unless it builds.** A compose file named
 outside `*ci*`/`*e2e*`/`*prod*` is read as production on its filename alone. Failing

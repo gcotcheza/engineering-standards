@@ -14,8 +14,11 @@
 #
 # A service that builds and names no `image:` is not untagged: compose tags it
 # `<project>-<service>`, so that tag is resolved and compared like a written one,
-# with the project taken from the file's `name:` or the directory. Its file:line
-# is the service's own line, the only line there is.
+# with the project taken from the file's `name:`, or — when it declares none —
+# from every name declared beside it and the directory, because one invocation
+# carries one project name. Its file:line is the service's own line, the only
+# line there is. `build.tags` entries are built tags too; a service body these
+# line-regexes cannot read is reported unresolved rather than skipped.
 set -uo pipefail
 
 usage() { printf 'usage: gate-image-tags.sh [project-root]\n' >&2; exit 2; }
@@ -43,7 +46,7 @@ trap 'rm -f "${RECORDS}"' EXIT
 
 # img|unres, side, file, line, tag, built, inherited — one record per `image:`.
 read_images() {
-    awk -v side="$2" -v file="$3" -v dir="$4" '
+    awk -v side="$2" -v file="$3" -v dir="$4" -v cands="$5" '
         function ind(s) { match(s, /^ */); return RLENGTH }
         function skippable(s) { return (s ~ /^ *$/ || s ~ /^ *#/) }
         function unquote(v) {
@@ -51,6 +54,15 @@ read_images() {
             if (substr(v, 1, 1) == q || substr(v, 1, 1) == "\"") v = substr(v, 2)
             if (substr(v, length(v), 1) == q || substr(v, length(v), 1) == "\"") v = substr(v, 1, length(v) - 1)
             return v
+        }
+        function brace(s) { gsub(/\$\{[^}]*\}/, "", s); return index(s, "{") }
+        # The key of a mapping line, dequoted: "image" and image come back alike.
+        function keyword(s,   k) {
+            k = s
+            sub(/^ */, "", k)
+            if (k !~ /:/) return ""
+            sub(/ *:.*$/, "", k)
+            return unquote(k)
         }
         function resolve(v,   d) {
             while (match(v, /\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]*\}/)) {
@@ -98,7 +110,7 @@ read_images() {
                     if (L[j] ~ /^ *image *:/) anchorimage[name] = 1
                 }
             }
-            proj = normproj(dir)
+            np = 0
             for (i = 1; i <= NR; i++) {
                 if (L[i] !~ /^name *:/ || ind(L[i]) != 0) continue
                 v = L[i]
@@ -106,8 +118,19 @@ read_images() {
                 sub(/ +#.*$/, "", v)
                 sub(/ +$/, "", v)
                 v = normproj(resolve(unquote(v)))
-                if (v != "") proj = v
+                if (v != "") { np = 1; PROJ[1] = v }
                 break
+            }
+            # One invocation carries one project name, so a file with no `name:`
+            # of its own can be built under any name declared beside it.
+            if (np == 0) {
+                nc = split(cands, CA, "\t")
+                for (i = 1; i <= nc; i++) {
+                    v = normproj(resolve(unquote(CA[i])))
+                    if (v == "" || projseen[v]++) continue
+                    PROJ[++np] = v
+                }
+                if (np == 0) { np = 1; PROJ[1] = normproj(dir) }
             }
             for (i = 1; i <= NR; i++) {
                 if (L[i] !~ /^ *image *:/) continue
@@ -147,29 +170,75 @@ read_images() {
                 }
                 printf "img\t%s\t%s\t%d\t%s\t%d\t%d\n", side, file, i, normtag(v), built, inherited
             }
+            # build.tags names tags the build writes, beside or instead of image:.
+            for (i = 1; i <= NR; i++) {
+                if (L[i] !~ /^ *build *:/) continue
+                BI = ind(L[i])
+                for (j = i + 1; j <= NR; j++) {
+                    if (skippable(L[j])) continue
+                    if (ind(L[j]) <= BI) break
+                    if (L[j] !~ /^ *tags *:/) continue
+                    TI = ind(L[j])
+                    v = L[j]
+                    sub(/^ *tags *: */, "", v)
+                    sub(/ +#.*$/, "", v)
+                    sub(/ +$/, "", v)
+                    if (v != "") {
+                        printf "unres\t%s\t%s\t%d\ta build tags: list written in a form this check cannot read\t0\t0\n",
+                            side, file, j
+                        break
+                    }
+                    for (k = j + 1; k <= NR; k++) {
+                        if (skippable(L[k])) continue
+                        if (L[k] !~ /^ *- */) { if (ind(L[k]) <= TI) break; continue }
+                        if (ind(L[k]) < TI) break
+                        v = L[k]
+                        sub(/^ *- */, "", v)
+                        sub(/ +#.*$/, "", v)
+                        sub(/ +$/, "", v)
+                        v = unquote(v)
+                        raw = v
+                        v = resolve(v)
+                        if (v == "" || v ~ /\$/) {
+                            printf "unres\t%s\t%s\t%d\t%s\t0\t0\n", side, file, k, raw
+                            continue
+                        }
+                        printf "img\t%s\t%s\t%d\t%s\t1\t0\n", side, file, k, normtag(v)
+                    }
+                    break
+                }
+            }
             svcs = 0
             for (i = 1; i <= NR; i++) {
                 if (L[i] ~ /^services *:/ && ind(L[i]) == 0) { svcs = i; break }
             }
+            if (svcs && L[svcs] ~ /^services *: *[^ #]/)
+                printf "unres\t%s\t%s\t%d\tthe services of this file (written in a form this check cannot read)\t0\t0\n",
+                    side, file, svcs
             SI = -1
             for (i = svcs + 1; svcs && i <= NR; i++) {
                 if (skippable(L[i])) continue
                 if (ind(L[i]) == 0) break
                 if (SI < 0) SI = ind(L[i])
-                if (ind(L[i]) != SI || L[i] !~ /^ *[A-Za-z0-9_.-]+ *:/) continue
+                if (ind(L[i]) != SI || L[i] !~ /^ *[^ #]+ *:/) continue
                 svc = L[i]
                 sub(/^ */, "", svc)
                 sub(/ *:.*$/, "", svc)
-                hasimage = 0; hasbuild = 0; inherited = 0; unknown = ""
+                hasimage = 0; hasbuild = 0; inherited = 0; extended = 0; unknown = ""
+                murk = (L[i] !~ /^ *[A-Za-z0-9_.-]+ *:/ || brace(L[i]))
                 DI = -1
                 for (j = i + 1; j <= NR; j++) {
                     if (skippable(L[j])) continue
                     if (ind(L[j]) <= SI) break
                     if (DI < 0) DI = ind(L[j])
                     if (ind(L[j]) != DI) continue
+                    kw = keyword(L[j])
+                    if (brace(L[j])) murk = 1
+                    if ((kw == "image" || kw == "build" || kw == "extends") &&
+                        L[j] !~ /^ *(image|build|extends) *:/) murk = 1
                     if (L[j] ~ /^ *image *:/) { hasimage = 1; continue }
                     if (L[j] ~ /^ *build *:/) { hasbuild = 1; continue }
-                    if (L[j] ~ /^ *extends *:/) { hasbuild = 1; inherited = 1; continue }
+                    if (L[j] ~ /^ *extends *:/) { hasbuild = 1; inherited = 1; extended = 1; continue }
                     if (L[j] !~ /^ *<< *: *\*/) continue
                     a = L[j]
                     sub(/^[^*]*\*/, "", a)
@@ -178,16 +247,39 @@ read_images() {
                     if (anchorbuild[a] || !anchor[a]) { hasbuild = 1; inherited = 1 }
                     if (!anchor[a]) unknown = a
                 }
+                # Fail closed: a body these line-regexes cannot read is not a pass.
+                if (murk) {
+                    printf "unres\t%s\t%s\t%d\tthe image of %s (written in a form this check cannot read)\t0\t0\n",
+                        side, file, i, svc
+                    continue
+                }
                 if (hasimage || !hasbuild) continue
                 if (unknown != "") {
                     printf "unres\t%s\t%s\t%d\tthe image of %s (merges *%s, not defined here)\t0\t0\n",
                         side, file, i, svc, unknown
                     continue
                 }
-                printf "img\t%s\t%s\t%d\t%s\t1\t%d\n", side, file, i, normtag(proj "-" svc), inherited
+                if (extended) {
+                    printf "unres\t%s\t%s\t%d\tthe image of %s (extends a service, whose image: is not read here)\t0\t0\n",
+                        side, file, i, svc
+                    continue
+                }
+                for (k = 1; k <= np; k++)
+                    printf "img\t%s\t%s\t%d\t%s\t1\t%d\n", side, file, i, normtag(PROJ[k] "-" svc), inherited
             }
         }' "$1"
 }
+
+# Every project name declared here, plus the directory: the candidates a file
+# that declares none of its own can be built under.
+TAB="$(printf '\t')"
+CANDS=''
+for f in "${FILES[@]}"; do
+    n="$(awk '{ sub(/\r$/, "") }
+        /^name *:/ { sub(/^name *: */, ""); sub(/ +#.*$/, ""); sub(/ +$/, ""); print; exit }' "${f}")"
+    [ -z "${n}" ] || CANDS="${CANDS}${n}${TAB}"
+done
+CANDS="${CANDS}$(basename -- "${ROOT}")"
 
 GATE_FILES=()
 PROD_FILES=()
@@ -201,7 +293,7 @@ for f in "${FILES[@]}"; do
             PROD_FILES+=("${rel}") ;;
         *) PROD_FILES+=("${rel}"); ODD_FILES+=("${rel}") ;;
     esac
-    read_images "${f}" "${side}" "${rel}" "$(basename -- "${ROOT}")" >>"${RECORDS}"
+    read_images "${f}" "${side}" "${rel}" "$(basename -- "${ROOT}")" "${CANDS}" >>"${RECORDS}"
 done
 
 ODD_LIST='|'
