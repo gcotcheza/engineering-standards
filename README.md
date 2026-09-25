@@ -38,7 +38,11 @@ W7 applies to this repository too.
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and one of this repo's gate steps
 runs its fixtures. Point it at a project root and it names the compose files it read, the image
 values it could not resolve, and any tag that project builds for both its gate and production. It
-never passes in silence, so "nothing is built here" and "I could not tell" cannot be confused.
+never passes in silence, so "nothing is built here" and "I could not tell" cannot be confused. A
+service that builds and names no `image:` is not untagged either: compose tags it
+`<project>-<service>`, so that tag is resolved from the file's `name:` or its directory and
+compared like a written one. A compose file whose name places it on neither side and that builds a
+tag is refused, because that is the file whose side decides whether a collision is reported.
 
 ## Vendored scripts
 
