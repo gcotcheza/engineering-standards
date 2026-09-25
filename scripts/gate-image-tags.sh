@@ -15,8 +15,9 @@
 # A service that builds and names no `image:` is not untagged: compose tags it
 # `<project>-<service>`, so that tag is resolved and compared like a written one,
 # with the project taken from the file's `name:`, or — when it declares none —
-# from every name declared beside it and the directory, because one invocation
-# carries one project name. Its file:line is the service's own line, the only
+# from the names the production files beside it declare and the directory,
+# because one invocation carries one project name; a name only a gate file
+# declares is that gate invocation's own and is never offered to production. Its file:line is the service's own line, the only
 # line there is. `build.tags` entries are built tags too; a service body these
 # line-regexes cannot read is reported unresolved rather than skipped.
 set -uo pipefail
@@ -56,6 +57,8 @@ read_images() {
             return v
         }
         function brace(s) { gsub(/\$\{[^}]*\}/, "", s); return index(s, "{") }
+        # No tag carries flow-map punctuation: a value holding it was read in part.
+        function flowish(v,   s) { s = v; gsub(/\$\{[^}]*\}/, "", s); return (s ~ /[][{},]/) }
         # The key of a mapping line, dequoted: "image" and image come back alike.
         function keyword(s,   k) {
             k = s
@@ -141,7 +144,7 @@ read_images() {
                 v = unquote(v)
                 raw = v
                 v = resolve(v)
-                if (v == "" || v ~ /\$/) {
+                if (v == "" || v ~ /\$/ || flowish(raw)) {
                     printf "unres\t%s\t%s\t%d\t%s\t0\t0\n", side, file, i, raw
                     continue
                 }
@@ -199,7 +202,7 @@ read_images() {
                         v = unquote(v)
                         raw = v
                         v = resolve(v)
-                        if (v == "" || v ~ /\$/) {
+                        if (v == "" || v ~ /\$/ || flowish(raw)) {
                             printf "unres\t%s\t%s\t%d\t%s\t0\t0\n", side, file, k, raw
                             continue
                         }
@@ -210,11 +213,24 @@ read_images() {
             }
             svcs = 0
             for (i = 1; i <= NR; i++) {
-                if (L[i] ~ /^services *:/ && ind(L[i]) == 0) { svcs = i; break }
+                if (ind(L[i]) == 0 && keyword(L[i]) == "services") { svcs = i; break }
             }
-            if (svcs && L[svcs] ~ /^services *: *[^ #]/)
-                printf "unres\t%s\t%s\t%d\tthe services of this file (written in a form this check cannot read)\t0\t0\n",
-                    side, file, svcs
+            if (svcs) {
+                v = L[svcs]
+                sub(/^[^:]*: */, "", v)
+                sub(/ +#.*$/, "", v)
+                if (v !~ /^ *$/)
+                    printf "unres\t%s\t%s\t%d\tthe services of this file (written in a form this check cannot read)\t0\t0\n",
+                        side, file, svcs
+            }
+            # A file whose services: this check never found still builds things.
+            bre = "(^|[^A-Za-z0-9_.-])[\"" q "]?(image|build)[\"" q "]? *:"
+            for (i = 1; !svcs && i <= NR; i++) {
+                if (L[i] !~ bre) continue
+                printf "unres\t%s\t%s\t%d\tthe services of this file (no top-level services: line this check can read)\t0\t0\n",
+                    side, file, i
+                break
+            }
             SI = -1
             for (i = svcs + 1; svcs && i <= NR; i++) {
                 if (skippable(L[i])) continue
@@ -224,6 +240,7 @@ read_images() {
                 svc = L[i]
                 sub(/^ */, "", svc)
                 sub(/ *:.*$/, "", svc)
+                svc = unquote(svc)
                 hasimage = 0; hasbuild = 0; inherited = 0; extended = 0; unknown = ""
                 murk = (L[i] !~ /^ *[A-Za-z0-9_.-]+ *:/ || brace(L[i]))
                 DI = -1
@@ -233,9 +250,8 @@ read_images() {
                     if (DI < 0) DI = ind(L[j])
                     if (ind(L[j]) != DI) continue
                     kw = keyword(L[j])
-                    if (brace(L[j])) murk = 1
                     if ((kw == "image" || kw == "build" || kw == "extends") &&
-                        L[j] !~ /^ *(image|build|extends) *:/) murk = 1
+                        (brace(L[j]) || L[j] !~ /^ *(image|build|extends) *:/)) murk = 1
                     if (L[j] ~ /^ *image *:/) { hasimage = 1; continue }
                     if (L[j] ~ /^ *build *:/) { hasbuild = 1; continue }
                     if (L[j] ~ /^ *extends *:/) { hasbuild = 1; inherited = 1; extended = 1; continue }
@@ -249,7 +265,7 @@ read_images() {
                 }
                 # Fail closed: a body these line-regexes cannot read is not a pass.
                 if (murk) {
-                    printf "unres\t%s\t%s\t%d\tthe image of %s (written in a form this check cannot read)\t0\t0\n",
+                    printf "unres\t%s\t%s\t%d\tthe body of %s (written in a form this check cannot read)\t0\t0\n",
                         side, file, i, svc
                     continue
                 }
@@ -270,20 +286,10 @@ read_images() {
         }' "$1"
 }
 
-# Every project name declared here, plus the directory: the candidates a file
-# that declares none of its own can be built under.
-TAB="$(printf '\t')"
-CANDS=''
-for f in "${FILES[@]}"; do
-    n="$(awk '{ sub(/\r$/, "") }
-        /^name *:/ { sub(/^name *: */, ""); sub(/ +#.*$/, ""); sub(/ +$/, ""); print; exit }' "${f}")"
-    [ -z "${n}" ] || CANDS="${CANDS}${n}${TAB}"
-done
-CANDS="${CANDS}$(basename -- "${ROOT}")"
-
 GATE_FILES=()
 PROD_FILES=()
 ODD_FILES=()
+SIDES=()
 for f in "${FILES[@]}"; do
     rel="${f#"${ROOT}"/}"
     side=production
@@ -293,7 +299,30 @@ for f in "${FILES[@]}"; do
             PROD_FILES+=("${rel}") ;;
         *) PROD_FILES+=("${rel}"); ODD_FILES+=("${rel}") ;;
     esac
-    read_images "${f}" "${side}" "${rel}" "$(basename -- "${ROOT}")" "${CANDS}" >>"${RECORDS}"
+    SIDES+=("${side}")
+done
+
+# The names a file that declares none of its own can be built under: what the
+# production files declare, plus the directory. A gate file may also be run
+# under its own side's names; production is never run under a gate-only one.
+TAB="$(printf '\t')"
+BASE="$(basename -- "${ROOT}")"
+CANDS_PROD=''
+CANDS_GATE=''
+for i in "${!FILES[@]}"; do
+    n="$(awk '{ sub(/\r$/, "") }
+        /^name *:/ { sub(/^name *: */, ""); sub(/ +#.*$/, ""); sub(/ +$/, ""); print; exit }' "${FILES[${i}]}")"
+    [ -n "${n}" ] || continue
+    if [ "${SIDES[${i}]}" = gate ]; then CANDS_GATE="${CANDS_GATE}${n}${TAB}"
+    else CANDS_PROD="${CANDS_PROD}${n}${TAB}"; fi
+done
+CANDS_GATE="${CANDS_PROD}${CANDS_GATE}${BASE}"
+CANDS_PROD="${CANDS_PROD}${BASE}"
+
+for i in "${!FILES[@]}"; do
+    cands="${CANDS_PROD}"
+    [ "${SIDES[${i}]}" != gate ] || cands="${CANDS_GATE}"
+    read_images "${FILES[${i}]}" "${SIDES[${i}]}" "${FILES[${i}]#"${ROOT}"/}" "${BASE}" "${cands}" >>"${RECORDS}"
 done
 
 ODD_LIST='|'

@@ -244,14 +244,14 @@ equals  'case 21: exit code' "${RC}" 0
 builder flowbody docker-compose.yml symfony
 printf 'services:\n  symfony: {build: ./docker/app, image: flowbody-symfony}\n' >"${WORK}/flowbody/docker-compose.ci.yml"
 run flowbody
-matches 'case 22: a service written as a flow map is read as unresolved, not as nothing' "${OUT}" 'images: +1 resolved, 1 unresolved — the image of symfony \(written in a form this check cannot read\) in docker-compose\.ci\.yml:2$'
+matches 'case 22: a service written as a flow map is read as unresolved, not as nothing' "${OUT}" 'images: +1 resolved, 1 unresolved — the body of symfony \(written in a form this check cannot read\) in docker-compose\.ci\.yml:2$'
 equals  'case 22: exit code' "${RC}" 0
 
 # --- 23. quoted mapping keys -> unresolved, not read as a service with no image -
 service quotedkeys docker-compose.yml 'demo/app:ci' build
 printf 'services:\n  app:\n    "build": ./d\n    "image": "demo/app:ci"\n' >"${WORK}/quotedkeys/docker-compose.ci.yml"
 run quotedkeys
-matches 'case 23: a quoted image: key leaves the service unresolved' "${OUT}" 'images: +1 resolved, 1 unresolved — the image of app \(written in a form this check cannot read\) in docker-compose\.ci\.yml:2$'
+matches 'case 23: a quoted image: key leaves the service unresolved' "${OUT}" 'images: +1 resolved, 1 unresolved — the body of app \(written in a form this check cannot read\) in docker-compose\.ci\.yml:2$'
 equals  'case 23: exit code' "${RC}" 0
 
 # --- 24. extends: a service in this root -> unresolved, not an invented tag -----
@@ -278,6 +278,46 @@ run overlay
 matches 'case 26: a file declaring no name: is compared under the name declared beside it' "${OUT}" 'FAIL .*: image tag chosen-app:latest is built for the gate and run in production'
 matches 'case 26: and its own directory stays a candidate project' "${OUT}" 'built tags: +2$'
 equals  'case 26: exit code' "${RC}" 1
+
+# --- 27. a flow map on a key that is not the image: -> the service is still read
+builder flowsibling docker-compose.ci.yml app
+builder flowsibling docker-compose.yml    app
+append  flowsibling docker-compose.yml "    healthcheck: {test: ['CMD','true'], interval: 10s}"
+run flowsibling
+matches 'case 27: a flow map on healthcheck: does not hide the image' "${OUT}" 'FAIL .*: image tag flowsibling-app:latest is built for the gate and run in production'
+matches 'case 27: and nothing is left unresolved' "${OUT}" 'images: +2 resolved, 0 unresolved$'
+equals  'case 27: exit code' "${RC}" 1
+
+# --- 28. a quoted top-level "services": key -> dequoted and read --------------
+builder quotedsvcs docker-compose.yml app
+printf '"services":\n  app:\n    build: ./docker/app\n' >"${WORK}/quotedsvcs/docker-compose.ci.yml"
+run quotedsvcs
+matches 'case 28: a quoted services: key is read like a bare one' "${OUT}" 'FAIL .*: image tag quotedsvcs-app:latest is built for the gate and run in production'
+matches 'case 28: located at the service line' "${OUT}" 'gate: +docker-compose\.ci\.yml:2$'
+equals  'case 28: exit code' "${RC}" 1
+
+# --- 28b. no top-level services: this check can read -> unresolved, not empty --
+mkdir -p "${WORK}/nosvcs"
+printf '{"services": {"app": {"build": "./d"}}}\n' >"${WORK}/nosvcs/docker-compose.yml"
+run nosvcs
+matches 'case 28b: a file whose services: was never found is unresolved' "${OUT}" 'images: +0 resolved, 1 unresolved — the services of this file \(no top-level services: line this check can read\) in docker-compose\.yml:1$'
+equals  'case 28b: exit code' "${RC}" 0
+
+# --- 29. a name: only a gate file declares -> not production's project --------
+named   gatename docker-compose.ci.yml gatename-ci
+builder gatename docker-compose.ci.yml app
+builder gatename docker-compose.yml    app
+run gatename
+matches 'case 29: a gate-only project name is not a candidate for production' "${OUT}" '^ok .*: 2 built image tag\(s\), none shared'
+equals  'case 29: exit code' "${RC}" 0
+
+# --- 30. a value carried out of a flow map -> unresolved, never a tag ---------
+service flowvalue docker-compose.yml 'flowvalue-app' build
+printf 'services:\n  app: {\n    build: ./d,\n    image: flowvalue-app }\n' >"${WORK}/flowvalue/docker-compose.ci.yml"
+run flowvalue
+matches 'case 30: a value left holding flow punctuation is not resolved' "${OUT}" 'images: +1 resolved, 2 unresolved'
+matches 'case 30: and no mangled tag is counted' "${OUT}" 'built tags: +1$'
+equals  'case 30: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
