@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-10-03 — the fleet check discovers its projects, and a deployed mirror is not one (tooling only; the standard is unchanged and VERSION is not bumped)
+**The ten project names left the script.** `scripts/fleet-versions.sh` now takes its projects from
+`$ROOT/*/docs/STANDARDS.md`, the very file the rest of it measures, so vendoring the file is
+joining the check and there is no second repository to remember. The rows did not change on the
+day of the change, only their order, which is now the root's own and pinned to C collation
+(`LC_ALL=C` inside the discovery loop) so a caller's locale cannot reorder the report; case 20
+asserts that order. `STANDARDS_PROJECTS` still overrides and still refuses to be empty, and a
+root where nothing is vendored is still exit 2, never a clean fleet of zero.
+**A `*-staging` or `*-worktrees` directory is excluded on both sides.** Discovery and the UNLISTED
+row now share one `is_fleet_project_name`, instead of the UNLISTED row holding the only copy of
+the pattern. Two of this box's deployed staging checkouts will carry `docs/STANDARDS.md` from
+their next `git pull`; without the exclusion they would have joined the fleet as projects of
+their own and gone STALE on the deploying project's schedule, which the watchdog reads as a
+failure. Cases 19 and 20 are new, proved red first — 19 against the discovery-without-a-filter
+version, 20 against the same script with the collation pin removed. What discovery gives up — a
+project whose directory *vanishes* was a MISSING row and is now invisible — and two consequences
+for the watchdog are written out in `docs/DECISIONS.md`.
+
 ## 2026-10-03 — S1: a test harness may drive git through a candidate hook in a throwaway repository it made (VERSION 2026-10-03)
 **Ghie's approval of 2026-10-03, written into S1 as one sentence with a pointer.** S1 listed every
 repo-local `core.hooksPath` as a finding, whatever the diff held. A `pre-merge-commit` or

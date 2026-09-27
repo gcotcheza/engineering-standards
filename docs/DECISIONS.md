@@ -1018,17 +1018,41 @@ repositories and a pull request nobody thinks of: vendor the standard, then come
 add the name. The check now takes its projects from `$ROOT/*/docs/STANDARDS.md` — the very file
 the rest of the script measures — so vendoring the file is joining the check, and there is no
 second place to forget. The names dropped out of the script; the rows did not change on the day
-of the change, only their order, which is now the root's own (the locale's collation of the
-directory names) rather than the order someone typed them in.
+of the change, only their order, which is now the root's own rather than the order someone typed
+them in — pinned to C collation inside the discovery loop, so the report does not reorder itself
+when it is run from a session with a different locale than cron's.
 
 `STANDARDS_PROJECTS` still overrides, and still refuses to be empty: set-but-empty is a caller
 whose list did not come out, and falling back to discovery there would answer a question nobody
 asked. A root where nothing is vendored is the same refusal (exit 2), never a clean fleet of
-zero. `set -f` stays on for the same reason it was turned on — an override entry is a name, not
-a pattern — and the one glob this script wants is expanded with it lifted for that loop alone.
+zero. What keeps an override entry a name and not a pattern is `read -r -a`, which splits on
+whitespace and never pathname-expands; `set -f` is defence in depth for the rest of the script,
+not the mechanism, and the case-18 test goes red against a rewrite that word-splits an unquoted
+expansion instead — deleting `set -f` alone leaves it green. The one glob this script wants is
+expanded inside `discover_project_names_c_ordered`, which lifts `set -f` and pins `LC_ALL=C` for
+that loop alone.
+
+`*-staging` and `*-worktrees` are excluded on **both** sides — discovery and the UNLISTED row —
+through one helper, `is_fleet_project_name`, because two copies of that pattern are two things to
+keep in step and the first version of this change already had them disagree. A deployed staging
+checkout mirrors the files of the project it deploys: `ghie-writes-staging` and
+`health-tracker-staging` will carry `docs/STANDARDS.md` from their next `git pull`, and without
+the exclusion they would join the fleet as projects of their own and report STALE on their
+deploying project's schedule — a watchdog failure for a directory nobody ever adopted.
 
 Discovery cannot report a project as un-adopted, because an un-adopted directory is no longer a
-project. Nothing is lost: a directory with a `.git` and no vendored copy is exactly what the
-UNLISTED row already names, and that row is the one that says a project joined the box without
-joining the check. `*-staging` and `*-worktrees` never carried the file and are excluded from
-that row by name, as before.
+project, and something *is* lost with that. A project whose directory disappears — renamed,
+moved, un-deployed — used to be a MISSING row and exit 1, because its name was written into the
+script; it is now invisible, and a fleet of nine reads exactly as clean as a fleet of ten. The
+UNLISTED row catches only the narrower case where the directory is still there with a `.git` in
+it. We take that trade rather than keep a floor list of names that must exist, because that list
+is the hard-coding this change removes and it would have to be maintained by the same forgotten
+pull request. Whether a project still exists is the box's inventory to answer, not this script's.
+
+Two consequences for the watchdog, named here rather than changed. Its MISSING-row rollout timer
+(`/usr/local/sbin/vps-health-check.sh`, the `standards.armed` / `unarmed-since` arming around
+lines 968-990) is no longer reachable from the default path: discovery emits no MISSING row, so
+only an explicit `STANDARDS_PROJECTS` list can arm it. And a project directory the running user
+cannot traverse is now invisible instead of MISSING — the glob cannot expand into it, and the
+UNLISTED row's `.git` test fails on the same permission — so a non-root run reports a smaller
+fleet, quietly, where it used to report a row.

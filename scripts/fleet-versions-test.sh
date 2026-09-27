@@ -256,11 +256,35 @@ equals  'case 17: exit code' "${RC}" 2
 
 # --- 18. the override still wins, is a list of names, and empty is an error ---
 run '*'
-matches 'case 18: an override entry is a name, not a glob' "${OUT}" 'MISSING +\* +\(no docs/STANDARDS\.md'
+matches 'case 18: an override entry is used as a name, never pathname-expanded' "${OUT}" 'MISSING +\* +\(no docs/STANDARDS\.md'
 equals  'case 18: exit code' "${RC}" 1
 run ''
 matches 'case 18: an empty override is an error, not a fall-back to discovery' "${OUT}" 'STANDARDS_PROJECTS is empty'
 equals  'case 18: empty override exit code' "${RC}" 2
+
+# --- 19. a checkout that mirrors a project is not a second project ------------
+# A deployed staging tree carries docs/STANDARDS.md after its next pull; joining
+# the fleet on that alone would give one project two rows, one of them stale.
+SROOT="${WORK}/mirrors"
+mkdir -p "${SROOT}"
+add_docs_ok "${SROOT}/sundial"
+add_docs_ok "${SROOT}/sundial-staging"
+add_docs_ok "${SROOT}/sundial-worktrees"
+run_discovery "${SROOT}"
+unmatches 'case 19: a -staging checkout that vendored the file is not a project' "${OUT}" 'sundial-staging'
+unmatches 'case 19: nor is a -worktrees pool that vendored it' "${OUT}" 'sundial-worktrees'
+matches   'case 19: the project they mirror is still checked' "${OUT}" 'ok +sundial +\(2026-09-18\)'
+matches   'case 19: and only it is counted' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18'
+equals    'case 19: exit code' "${RC}" 0
+
+# --- 20. the row order is the C collation of the names, not the caller's ------
+OROOT="${WORK}/order"
+mkdir -p "${OROOT}"
+for n in Zulu alpha Mike; do add_docs_ok "${OROOT}/${n}"; done
+run_discovery "${OROOT}"
+ORDER="$(printf '%s\n' "${OUT}" | grep -oE '^ +ok +[A-Za-z]+' | awk '{print $2}' | tr '\n' ' ')"
+equals 'case 20: rows come out in C collation order' "${ORDER}" 'Mike Zulu alpha '
+equals 'case 20: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'

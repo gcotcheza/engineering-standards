@@ -18,7 +18,8 @@ vendored `docs/STANDARDS.md` per repo, a `.claude/rules/standards.md` symlink to
 drift test in each project's gate, and a canonical clone on the host underneath as a
 floor. `scripts/fleet-versions.sh` compares every project against the canonical copy; the
 projects are the directories under the root that carry `docs/STANDARDS.md`, so vendoring the
-file is what joins the check. The canonical path, the projects root and the project list
+file is what joins the check — bar a `*-staging` or `*-worktrees` directory, which mirrors a
+project's files rather than being one. The canonical path, the projects root and the project list
 itself are all overridable by environment variable. It also compares each
 project's vendored `scripts/lib/deploy/` against canonical, one extra line per project
 (`none` / `MISSING` / `STALE` / `DRIFTED` / `BADHEADER` / `ok`) in the same shape the
