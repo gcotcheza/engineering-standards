@@ -272,6 +272,15 @@ re-gate a commit that was never the problem; "git cannot read this sha" is the f
 that is actually known. And an unreadable head **refuses** rather than falling back
 to gating the merge commit, even though a merged-and-deleted head branch is ordinary
 on GitHub and its commit may genuinely not be in the checkout: the fallback is what
-the bug did, silently. The refusal names the sha so the repair is one command
-(`git fetch origin <sha>`), and the ledger's own greens are keyed to shas, so a head
-nobody can read has no greens to inherit anyway.
+the bug did, silently. The refusal names the sha and the one command that repairs it,
+and the ledger's own greens are keyed to shas, so a head nobody can read has no greens
+to inherit anyway.
+Each refusal carries the command, and the two commands differ on purpose. The head's is
+`git fetch origin refs/pull/$PR/head`, because the case that produces it is a merged
+branch that was deleted: GitHub keeps that ref forever, while `git fetch origin <sha>`
+needs the commit reachable from a ref the remote will serve. The merge's is
+`git fetch origin ${MERGE_SHA}`, because a merge commit that is `origin/main` is
+reachable by definition, and naming the sha is what tells the operator which one.
+The third refusal, an rc that is neither 0 nor 1, carries no command: a store that has
+the commits but not their tree is a repair for `git fsck`, not for one line a deploy can
+hand over.

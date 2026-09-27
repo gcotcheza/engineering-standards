@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-09-27 sha256:4dcfc814e614756b6ae9bf0ba2b1fa8f8c0b38888467aecc05900ddd8e83330c
+# fleet-deploy-lib 2026-09-27 sha256:bf6b71a0d4b6153491fb5f942879ed1e27b60c203f35c7b0ebf361d820bc8f6a
 # shellcheck shell=bash
 # resolve <PR#> proves gh says MERGED and the merge commit IS origin/main, then sets
 # GATE_SHA: the commit whose tree deploys, and so the commit that must be gated.
@@ -49,9 +49,9 @@ resolve() {
     # Both commits are proved readable before any comparison: an unreadable one makes
     # `git diff` exit 128, which is not "the trees differ".
     $GIT cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
-        || refuse "git cannot read PR #$PR's head commit ${HEAD_SHA}: fetch that commit, then deploy."
+        || refuse "git cannot read PR #$PR's head commit ${HEAD_SHA}: run 'git fetch origin refs/pull/$PR/head', then deploy."
     $GIT cat-file -e "${MERGE_SHA}^{commit}" 2>/dev/null \
-        || refuse "git cannot read PR #$PR's merge commit ${MERGE_SHA}: fetch that commit, then deploy."
+        || refuse "git cannot read PR #$PR's merge commit ${MERGE_SHA}: run 'git fetch origin ${MERGE_SHA}', then deploy."
     tip=$($GIT rev-parse origin/main)
     [ "$tip" = "$MERGE_SHA" ] || refuse "main moved since the merge: re-gate."
     if $GIT diff --quiet "$HEAD_SHA" "$MERGE_SHA"; then
