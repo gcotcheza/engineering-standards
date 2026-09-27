@@ -4,7 +4,7 @@
 # Each project's drift test compares docs/STANDARDS.md against ITS OWN header, so
 # a project that never updates passes its own test forever. This compares every
 # project against the CANONICAL clone, which is the only comparison that can
-# notice staleness. A project with no vendored copy is a FAILURE, not a skip —
+# notice staleness. A repository with no vendored copy is a FAILURE, not a skip —
 # otherwise "never adopted" is indistinguishable from "clean". For the same
 # reason, checking zero projects is an error, never a pass.
 #
@@ -12,22 +12,22 @@
 #   fleet-versions.sh --quiet|-q   exit code only (usage/canonical errors still go to stderr)
 #
 # Exit: 0 all projects on the canonical version · 1 one or more need attention,
-#       including a directory under ROOT that is a repository but not on the list ·
+#       including a directory under ROOT that is a repository but not a project ·
 #       2 usage error, canonical clone unreadable/invalid, or no projects to check.
 #
-# The defaults below describe one host's layout; every one of them is overridable
-# by environment variable, so the script is not tied to that machine.
+# The projects are the directories under ROOT that carry docs/STANDARDS.md, so a
+# project joins the check by vendoring the file (docs/DECISIONS.md). The paths
+# below describe one host's layout and are overridable by environment variable.
 #
 # Env: STANDARDS_CANONICAL (default /srv/engineering-standards), STANDARDS_ROOT
-# (default /var/www), STANDARDS_PROJECTS (space-separated; default = the projects
-# listed below; set but empty is an error, not the default).
+# (default /var/www), STANDARDS_PROJECTS (space-separated; default = discovery;
+# set but empty is an error, not the default).
 
 set -uo pipefail
 set -f   # the project list is split on whitespace, never glob-expanded
 
 CANON=${STANDARDS_CANONICAL:-/srv/engineering-standards}
 ROOT=${STANDARDS_ROOT:-/var/www}
-DEFAULT_PROJECTS="fineprint memento orbit health-tracker kidsquest ghiecode ghie-writes reflection scribly pig-dice-game"
 LINK_TARGET='../../docs/STANDARDS.md'   # what every project commits, byte-for-byte (#56)
 LIB_FILES="ledger resolve preflight summary"   # scripts/lib/deploy/*.sh, the vendored deploy library
 
@@ -80,9 +80,22 @@ canon_lib_version=${canon_lib_version#"${canon_lib_version%%[![:space:]]*}"}
 canon_lib_version=${canon_lib_version%"${canon_lib_version##*[![:space:]]}"}
 
 # --- project list ------------------------------------------------------------
-if [ "${STANDARDS_PROJECTS+x}" = x ]; then list=$STANDARDS_PROJECTS; else list=$DEFAULT_PROJECTS; fi
-read -r -a projects <<<"$list"
-[ "${#projects[@]}" -gt 0 ] || die "no projects to check (STANDARDS_PROJECTS is empty) — refusing to report a clean fleet"
+projects=()
+if [ "${STANDARDS_PROJECTS+x}" = x ]; then
+    read -r -a projects <<<"$STANDARDS_PROJECTS"
+    [ "${#projects[@]}" -gt 0 ] || die "no projects to check (STANDARDS_PROJECTS is empty) — refusing to report a clean fleet"
+else
+    # The one expansion this script wants; `set -f` is back on before anything
+    # else is expanded, so an override list is still never globbed.
+    set +f
+    for s in "$ROOT"/*/docs/STANDARDS.md; do
+        [ -e "$s" ] || continue
+        d=${s%/docs/STANDARDS.md}
+        projects+=("${d##*/}")
+    done
+    set -f
+    [ "${#projects[@]}" -gt 0 ] || die "no project under $ROOT has docs/STANDARDS.md — refusing to report a clean fleet"
+fi
 
 # --- per project -------------------------------------------------------------
 bad=0; checked=0
@@ -215,7 +228,7 @@ for p in "${projects[@]}"; do
 done
 
 # --- unlisted projects --------------------------------------------------------
-# A repository under ROOT that is not on the list has joined the fleet without
+# A repository under ROOT that is not a project has joined the fleet without
 # joining the check. Row shape and the two exclusions: docs/DECISIONS.md.
 unlisted=()
 while IFS= read -r d; do

@@ -51,6 +51,12 @@ run() {
     RC=$?
 }
 
+# The discovery path: a root of its own and no STANDARDS_PROJECTS at all.
+run_discovery() {
+    OUT="$(STANDARDS_CANONICAL="${CANON}" STANDARDS_ROOT="$1" "${CHECK}" 2>&1)"
+    RC=$?
+}
+
 # --- 1. byte-identical copy -> ok ----------------------------------------------
 mkdir -p "${ROOT}/p1/scripts/lib/deploy"
 cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p1/scripts/lib/deploy/"
@@ -221,6 +227,40 @@ add_docs_ok "${ROOT}/p14"
 run p14
 matches 'case 14: a copy ahead of canonical is not called stale' "${OUT}" "DIVERGED +p14 +\(ledger\.sh differs from canonical \(deploy-lib ${AHEAD_LIB_VERSION}, canonical ${LIB_VERSION}\)"
 equals  'case 14: exit code' "${RC}" 1
+
+# --- 15. the projects are discovered from the root, not carried in the script --
+# A project joins the check by vendoring docs/STANDARDS.md; a directory that
+# vendored nothing is not a project, whatever it is called.
+DROOT="${WORK}/discovered"
+mkdir -p "${DROOT}/sundial-e2e" "${DROOT}/sundial-worktrees"
+add_docs_ok "${DROOT}/sundial"
+run_discovery "${DROOT}"
+matches   'case 15: a project that was never named in the script is checked' "${OUT}" 'ok +sundial +\(2026-09-18\)'
+unmatches 'case 15: a directory with no docs/STANDARDS.md is not a project' "${OUT}" 'sundial-e2e'
+unmatches 'case 15: nor is a -worktrees directory' "${OUT}" 'sundial-worktrees'
+matches   'case 15: and only what was discovered is counted' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18'
+equals    'case 15: exit code' "${RC}" 0
+
+# --- 16. discovery does not silence the unlisted-repository row ---------------
+mkdir -p "${DROOT}/newcomer/.git"
+run_discovery "${DROOT}"
+matches 'case 16: a repository that vendored nothing is still named' "${OUT}" '^ +UNLISTED +newcomer +\(has a \.git under'
+matches 'case 16: and it counts on both sides of the summary' "${OUT}" 'fleet: 1 of 2 project\(s\) need attention'
+equals  'case 16: exit code' "${RC}" 1
+
+# --- 17. a root where nothing is vendored is an error, never a clean fleet ----
+mkdir -p "${WORK}/emptyroot"
+run_discovery "${WORK}/emptyroot"
+matches 'case 17: a root with no projects refuses to report' "${OUT}" 'no project under .*emptyroot has docs/STANDARDS\.md'
+equals  'case 17: exit code' "${RC}" 2
+
+# --- 18. the override still wins, is a list of names, and empty is an error ---
+run '*'
+matches 'case 18: an override entry is a name, not a glob' "${OUT}" 'MISSING +\* +\(no docs/STANDARDS\.md'
+equals  'case 18: exit code' "${RC}" 1
+run ''
+matches 'case 18: an empty override is an error, not a fall-back to discovery' "${OUT}" 'STANDARDS_PROJECTS is empty'
+equals  'case 18: empty override exit code' "${RC}" 2
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'

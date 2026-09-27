@@ -20,10 +20,10 @@ the clone the report was measured against is unpulled, and the row says so rathe
 the project for being behind something that is itself behind. A file that is simply absent is
 **MISSING** and says so; it is not byte-compared, so it must not claim it was.
 
-**An unlisted repository is attention, and its row shouts.** `DEFAULT_PROJECTS` is the contract —
-the list is what "the fleet" means — but a hardcoded list cannot notice a project that joins the
-box and never joins the check, which is exactly how a project goes unchecked for months. The
-check now names any directory under `$ROOT` that holds a `.git` and is not on the list. It gets a
+**An unlisted repository is attention, and its row shouts.** The project list is the contract —
+it is what "the fleet" means — but a list cannot notice a project that joins the box and never
+joins the check, which is exactly how a project goes unchecked for months. The check now names
+any directory under `$ROOT` that holds a `.git` and is not a project. It gets a
 full ALL-CAPS row of its own, in the shape every other row has, rather than a tidy lowercase
 summary line: the watchdog reads this output only through `^\s+[A-Z]+\s` (`vps-health-check.sh`
 :806), and on exit 1 with no such line it reports *"exit 1 but no parsable project lines — output
@@ -1010,3 +1010,25 @@ stays an S1 finding.
 **The option not taken:** installing the candidate hook live and watching the next real merge.
 That tests the guard on production work, and a broken dispatcher would either refuse every merge
 on the box or, worse, pass them all in silence.
+
+## The fleet check discovers its projects, and `docs/STANDARDS.md` is what joins one (2026-09-27)
+
+The list of ten project names lived in the script, so joining the fleet meant two edits in two
+repositories and a pull request nobody thinks of: vendor the standard, then come back here and
+add the name. The check now takes its projects from `$ROOT/*/docs/STANDARDS.md` — the very file
+the rest of the script measures — so vendoring the file is joining the check, and there is no
+second place to forget. The names dropped out of the script; the rows did not change on the day
+of the change, only their order, which is now the root's own (the locale's collation of the
+directory names) rather than the order someone typed them in.
+
+`STANDARDS_PROJECTS` still overrides, and still refuses to be empty: set-but-empty is a caller
+whose list did not come out, and falling back to discovery there would answer a question nobody
+asked. A root where nothing is vendored is the same refusal (exit 2), never a clean fleet of
+zero. `set -f` stays on for the same reason it was turned on — an override entry is a name, not
+a pattern — and the one glob this script wants is expanded with it lifted for that loop alone.
+
+Discovery cannot report a project as un-adopted, because an un-adopted directory is no longer a
+project. Nothing is lost: a directory with a `.git` and no vendored copy is exactly what the
+UNLISTED row already names, and that row is the one that says a project joined the box without
+joining the check. `*-staging` and `*-worktrees` never carried the file and are excluded from
+that row by name, as before.

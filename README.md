@@ -16,9 +16,10 @@ where two projects had already answered the same question differently and one ha
 `ROLLOUT.md` is how one file reaches many repositories without becoming many standards: a
 vendored `docs/STANDARDS.md` per repo, a `.claude/rules/standards.md` symlink to it, a
 drift test in each project's gate, and a canonical clone on the host underneath as a
-floor. `scripts/fleet-versions.sh` compares every project against the canonical copy; it ships
-with one host's layout as its defaults — the canonical path, the projects root and the
-ten project names — all overridable by environment variable. It also compares each
+floor. `scripts/fleet-versions.sh` compares every project against the canonical copy; the
+projects are the directories under the root that carry `docs/STANDARDS.md`, so vendoring the
+file is what joins the check. The canonical path, the projects root and the project list
+itself are all overridable by environment variable. It also compares each
 project's vendored `scripts/lib/deploy/` against canonical, one extra line per project
 (`none` / `MISSING` / `STALE` / `DRIFTED` / `BADHEADER` / `ok`) in the same shape the
 watchdog's line parser already reads.
