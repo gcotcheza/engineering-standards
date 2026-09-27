@@ -255,3 +255,23 @@ file whose side decides whether a real collision is reported. A non-building
 unrecognised file can still hide the case-6 finding (a gate that only *runs*
 production's tag), and that residue is named in `ROLLOUT.md` rather than left
 unsaid.
+
+**An unreadable commit gets its own refusal, checked before the tip (2026-09-27).**
+`resolve()` compared the pull request's head and merge trees with `git diff --quiet`
+inside an `if`, so the only two answers it could give were "identical" and
+"different". `git diff` has a third: rc 128, when an object is missing or corrupt —
+a head branch deleted and gc'd on GitHub, a merge commit never fetched, a truncated
+loose object. That 128 landed in the else branch, which says the merge commit has a
+tree of its own and must be gated, and a deploy went out on a comparison that never
+ran. Both commits are now proved with `git cat-file -e <sha>^{commit}` first, and
+the diff's rc is read as 0, 1, or a refusal naming both shas and the rc.
+Two choices inside that are deliberate. The object check runs **before** the
+`origin/main` tip comparison, because an unreadable merge sha was being reported as
+*main moved since the merge: re-gate* — true-looking, and it sends the operator to
+re-gate a commit that was never the problem; "git cannot read this sha" is the fact
+that is actually known. And an unreadable head **refuses** rather than falling back
+to gating the merge commit, even though a merged-and-deleted head branch is ordinary
+on GitHub and its commit may genuinely not be in the checkout: the fallback is what
+the bug did, silently. The refusal names the sha so the repair is one command
+(`git fetch origin <sha>`), and the ledger's own greens are keyed to shas, so a head
+nobody can read has no greens to inherit anyway.

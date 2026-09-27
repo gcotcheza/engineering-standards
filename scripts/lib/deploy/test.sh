@@ -13,6 +13,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${DEPLOY_LIB_DIR:-${SCRIPT_DIR}}"
 PR_NUMBER=73
+MISSING_SHA=0000000000000000000000000000000000000001
 
 fails=0
 pass() { printf 'ok   %s\n' "$*"; }
@@ -276,6 +277,25 @@ printf '{"headRefOid":"","mergeCommit":{"oid":""},"state":"MERGED"}\n' >"${CASE}
 run_lib 'resolve'
 contains 'a PR with no head and no merge commit is refused' "${OUT}" \
     'REFUSED: PR #73 names no head commit and no merge commit.'
+
+# 2026-09-27: an unreadable commit makes `git diff` exit 128, and the else branch read
+# that as "the trees differ" — gating a merge commit git cannot read.
+fixture head-unreadable
+printf '{"headRefOid":"%s","mergeCommit":{"oid":"%s"},"state":"MERGED"}\n' \
+    "${MISSING_SHA}" "${MERGE_SHA}" >"${CASE}/gh.json"
+run_lib 'resolve'
+contains 'a head commit git cannot read is refused' "${OUT}" \
+    "REFUSED: git cannot read PR #73's head commit ${MISSING_SHA}: fetch that commit, then deploy."
+absent 'and is never read as a tree of its own' "${OUT}" \
+    'so the merge commit itself is what must be gated'
+
+fixture merge-unreadable
+printf '{"headRefOid":"%s","mergeCommit":{"oid":"%s"},"state":"MERGED"}\n' \
+    "${HEAD_SHA}" "${MISSING_SHA}" >"${CASE}/gh.json"
+run_lib 'resolve'
+contains 'a merge commit git cannot read is refused' "${OUT}" \
+    "REFUSED: git cannot read PR #73's merge commit ${MISSING_SHA}: fetch that commit, then deploy."
+absent 'and nothing resolves on the strength of it' "${OUT}" 'RESOLVED #73'
 
 fixture main-moved
 git_at checkout -q -b later "${MERGE_SHA}"

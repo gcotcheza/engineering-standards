@@ -207,7 +207,7 @@ equals  'case 13: exit code' "${RC}" 1
 
 # --- 14. vendored copy AHEAD of canonical is not stale ------------------------
 # An unpulled canonical clone, not a project that failed to re-vendor.
-AHEAD_LIB_VERSION='2026-09-21'
+AHEAD_LIB_VERSION='2026-09-28'
 mkdir -p "${ROOT}/p14/scripts/lib/deploy"
 cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p14/scripts/lib/deploy/"
 f="${ROOT}/p14/scripts/lib/deploy/ledger.sh"

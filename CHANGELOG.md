@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-27 — resolve refuses a deploy whose commits git cannot read (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+**An unreadable commit is not "the trees differ".** `resolve()` compared the pull request's head
+and merge commits with `if $GIT diff --quiet "$HEAD_SHA" "$MERGE_SHA"`, and `git diff` exits 128
+when either object is missing or corrupt — a head branch deleted and garbage-collected, a merge
+commit never fetched, a truncated loose object. The else branch read that 128 as *the trees
+differ*, printed `RESOLVED #N merge … its tree is not head …'s`, set `GATE_SHA` to the merge
+commit and deployed on a comparison that never happened. Both commits are now proved readable
+with `git cat-file -e <sha>^{commit}` before anything is compared, each with its own refusal
+naming the full sha and the repair (`fetch that commit, then deploy`); the comparison itself
+distinguishes rc 0 (same tree) from rc 1 (differ) and refuses anything else, naming both shas and
+the rc, so no third answer is ever folded into one of the two. The object check runs before the
+`origin/main` tip comparison on purpose: an unreadable merge sha used to be reported as *main
+moved since the merge*, which sent the operator to re-gate a commit that was never the problem.
+`scripts/lib/deploy/test.sh` gains two cases (an unreadable head, an unreadable merge) and four
+assertions, each proved red first against `resolve.sh` from `main` — where the unreadable head
+resolved as a merge to gate. deploy-lib VERSION is 2026-09-27 and all four vendored headers are
+re-stamped, so `fleet-versions.sh` reports every project's vendored copy STALE until it
+re-vendors; re-vendoring into Reflection, Scribly and the rest is its own round, and the pinned
+`SUITE_SHA256` those projects hold becomes
+`1132729ce4b17b2613f83342b783c6d2ad3a4cc17cc59fdf26a8f201b3ef10ee`. `scripts/fleet-versions-test.sh`
+case 14 needed its "ahead of canonical" fixture date moved past the new library version.
+
 ## 2026-09-25 — the image-tag check sees the tag compose invents, and refuses a built tag in a file it cannot place (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 **A build with no `image:` key is not untagged.** Compose tags it `<project>-<service>`, which is
 the tag `docker ps` shows two of this box's projects running in production — and the check
