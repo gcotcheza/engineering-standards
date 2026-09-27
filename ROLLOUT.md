@@ -73,6 +73,15 @@ A rule that needs a change in several repositories needs a status, not a schedul
 | Builds an image but has no gate compose file to share it with | 2 |
 | No compose file beside the root | 2 |
 
+**The tally above was measured with a check that could not see an implicit tag** (fixed 2026-09-25,
+`CHANGELOG.md`). Two projects sat in the bind-mount row because every production service they build
+names no `image:`; re-run against them today each resolves 4 built tags, and their row is "builds an
+image but has no gate compose file to share it with". The whole tally is owed a re-measurement on
+the new check before it is quoted again — the rows here are the 2026-09-19 reading, not today's.
+One further residue: a compose file named outside `*ci*`/`*e2e*`/`*prod*` that builds nothing is
+still read as production on its filename alone, so a gate file under such a name that only *runs*
+production's tag is the one collision shape the check still cannot report.
+
 One of the four is clean by its gate script rather than by the check: its compose files carry `${CI_APP_IMAGE:?…}`, which has no default and so resolves to nothing, and the per-branch tag is set in that project's `scripts/ci.sh`. The check says so itself — it counts and names every value it could not resolve, and never reports a clean sweep over values it did not judge — and that row was read from the gate script, not inferred from a clean-looking verdict.
 
 The one remaining fix is that project's own pull request, not this repo's: the gate compose file takes a tag of its own (`<app>/app:ci`, or `${CI_APP_IMAGE:-<app>/app:ci}` so a worktree can hold one per branch), and the project's gate calls the check. Until then the standing risk is the one that has already happened once — a gate run on any branch leaves production one `up -d` away from a container built from unmerged code.

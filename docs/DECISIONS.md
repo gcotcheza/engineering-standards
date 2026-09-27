@@ -159,3 +159,99 @@ names" on its own. Ghie, reviewing it on 2026-09-20: a file name in the
 title is fine when the change is one file, and the tense is not the rule — *Fix the
 flicker* is as good as *Added caching*. The rule is that the title is the action.
 
+
+## A build with no `image:` key still has a tag (2026-09-25)
+
+**What the check could not see.** `scripts/gate-image-tags.sh` compared `image:`
+keys, and two of this box's projects build every production service without one.
+Compose does not leave those untagged: it tags them `<project>-<service>`, and
+`docker ps` on this box shows `scribly-symfony` and `reflection-symfony` running
+from exactly such a tag. So the check read those projects as *"no built image tag
+resolved here — nothing a gate run could overwrite"*, which is the silent pass
+dcc8376 set out to remove, arriving by a different door. A gate compose file
+holding `image: scribly-symfony` beside a build was called clean while production
+ran that tag; so was a gate file that named no tag either, because both sides'
+implicit tags are the same string. The check now resolves the implicit tag on both
+sides and compares it like a written one.
+
+**Where the project name comes from.** The file's own top-level `name:` if it has
+one, else the directory basename lower-cased with everything outside `[a-z0-9_-]`
+dropped and leading `-_` trimmed, which is what compose-go's project-name
+normalisation does. It is read per file on purpose: these compose files carry
+`name:` per file (`memento`, `memento-e2e`, `memento-staging`), and it is that
+name — not the one a `-p` flag might carry at run time — that the file itself
+claims. A gate run that passes `-p something-else` builds a different tag and this
+check will not know; that is a limit of reading files rather than processes, and it
+is why the gate side is compared on the value in the file.
+
+**An inherited `image:` is an image.** A service merging `<<: *app` where the
+anchor carries `image:` has one, so it gets no implicit tag — Fineprint's three
+production services are that shape, and inventing `fineprint-app` for them would
+have been a tag nothing builds. Where the merged anchor is not defined in the
+file, the tag is *unresolved* and named as such rather than guessed: loud beats
+quiet, and a guess here would print a FAIL naming a tag that may not exist.
+`extends:` is treated as a build, as it already was for `image:` lines, but it no
+longer earns an implicit tag. The extended service usually carries an `image:`
+this check does not follow, and inventing `<project>-<service>` printed a tag
+nothing builds: on a file whose `worker` extends an `app` with `image:
+myapp/api:prod`, real `docker compose config --images` answers `myapp/api:prod`.
+A service that extends and names no `image:` of its own is now *unresolved* and
+named, like the unknown anchor above. The residue is the opposite direction: where
+the extended service builds and names no image anywhere, compose does tag it
+`<project>-<service>`, and this check says it could not tell rather than saying so.
+
+**A `name:` on one file is the project of the file beside it.** Compose takes one
+project name per invocation, so `-f docker-compose.yml -f docker-compose.ci.yml`
+with the name on the base alone builds the overlay's services under the base's
+name: a base declaring `name: chosen` beside a nameless overlay gives `chosen-app`
+for both, not `<directory>-app`. A file that declares no `name:` of its own is
+therefore compared under the names declared beside it *and* the directory, and a
+collision on any of them is a finding. `COMPOSE_PROJECT_NAME` and `-p` stay
+residue: they are set at run time, not in the file, so a run that passes one builds
+a tag this check cannot know — the same limit as reading files rather than processes.
+
+**A body it cannot read is not a pass.** `symfony: {build: ./docker/app, image:
+flowproj-symfony}` and `"image": 'demo/app:ci'` are valid compose and invisible to
+line regexes; both read as "no image here", which is the silent pass arriving by a
+third door. A service whose own line carries a `{` outside a `${…}` default, or whose
+`build`/`image`/`extends` key carries one or is written in a form these regexes do
+not match, is reported *unresolved*: the flow map is refused, not parsed. A `{` on
+any other key is not one — `healthcheck: {test: […]}` is ordinary compose, and
+hiding a whole service behind it cost the check the collision it was there to see.
+A value that comes back still holding flow punctuation (`p4-app }`, out of a
+multi-line `app: {` body) is unresolved for the same reason: a mangled tag compared
+as if it were real is worse than a named gap. `build.tags` entries
+are read as built tags in the same pass — that is a tag the build writes even when
+`image:` beside it names a throwaway one.
+
+**A gate-only `name:` is not production's project (2026-09-25).** Every name
+declared in the directory used to be a candidate for every file in it, so a gate
+file's `name: p8-ci` beside a nameless `docker-compose.yml` made `p8-ci-app` a
+production tag too, and the check failed on a collision with a project name
+production is never run under. The names offered to a file that declares none of
+its own are now the ones the *production* files declare, plus the directory; a gate
+file gets the gate side's names as well, because a name on the base really is the
+name a nameless overlay is built under. `COMPOSE_PROJECT_NAME` and `-p` stay
+residue either way: set at run time, they are invisible to a check that reads files.
+
+**A quoted `"services":` is still the services key (2026-09-25).** The top-level key
+was matched as `^services *:`, so `"services":` — valid YAML, and what a
+JSON-flavoured compose file writes — was never found: the service walk never ran,
+a gate file whose service builds with no `image:` contributed no tag, and the
+verdict was `built tags: 0` on a file that builds. The key is now dequoted like any
+other mapping key. When no top-level `services:` is found at all and the file still
+carries an `image`/`build` key, that is reported *unresolved* rather than read as an
+empty file, because "nothing is built here" and "I could not find the services"
+must not look alike.
+
+**Why `unrecognised:` still exits 0 unless it builds.** A compose file named
+outside `*ci*`/`*e2e*`/`*prod*` is read as production on its filename alone. Failing
+closed on that name was the recommendation, and it is not what this change does:
+Fineprint's `docker-compose.realip.yml` is a genuine production-side proof stack
+whose name says neither, and an unconditional refusal would have turned a green
+project red for a file that builds nothing. The narrower rule is the one that
+matters — an unrecognised file that **builds** a tag now fails, because that is the
+file whose side decides whether a real collision is reported. A non-building
+unrecognised file can still hide the case-6 finding (a gate that only *runs*
+production's tag), and that residue is named in `ROLLOUT.md` rather than left
+unsaid.

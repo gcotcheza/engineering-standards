@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-09-25 — the image-tag check sees the tag compose invents, and refuses a built tag in a file it cannot place (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+**A build with no `image:` key is not untagged.** Compose tags it `<project>-<service>`, which is
+the tag `docker ps` shows two of this box's projects running in production — and the check
+compared `image:` keys only, so it reported *"no built image tag resolved here — nothing a gate
+run could overwrite"* for both. A gate compose file carrying `image: scribly-symfony` beside a
+build passed that check while production ran that exact tag. Both sides now resolve the implicit
+tag and compare it like a written one: the project comes from the file's own top-level `name:` if
+it has one, else from the directory basename lower-cased and stripped the way compose-go
+normalises a project name, and `x` is the same tag as `x:latest` as it already was. The finding is
+located at the service's own line, the only line there is to point at. `extends:` counts as a
+build on the gate side too, and an inherited `image:` counts as an image, so a service merging an
+anchor that carries one keeps that tag instead of gaining an invented one; where the merged anchor
+is not defined in the file the tag is counted *unresolved* and named, never guessed.
+**A tag built in a file the classifier cannot place is now refused.** A compose file named outside
+`*ci*`/`*e2e*`/`*prod*` was printed as `unrecognised: … read as production, on filename alone` and
+exited 0, which is where a gate file under any other name has its disposable tag compared against
+nothing. An unrecognised file that builds a tag now exits non-zero and says what to rename it to;
+one that builds nothing still passes, and is still named. Failing on the name alone was the
+recommendation and is deliberately not what this does — one project keeps a real production-side
+proof stack under such a name, and reddening it for a file that builds nothing buys no safety.
+The output line shapes are unchanged, because six projects' gates parse them; the counts move
+where a project builds without naming tags. Seven new cases (15 to 21) in
+`scripts/gate-image-tags-test.sh`, each proved red first against a copy of the script from `main`,
+plus case 10's changed expectation. The long-form why is in `docs/DECISIONS.md`.
+
 ## 2026-09-20 — the fleet version check counts projects, names a moved canonical and notices an unlisted project (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 Three defects, one script. **The tally counted rows, not projects.** `bad` grew once per failing
 row — content and deploy-lib are two rows per project — while `checked` grew once per project, so
