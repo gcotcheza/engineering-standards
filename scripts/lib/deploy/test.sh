@@ -13,6 +13,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${DEPLOY_LIB_DIR:-${SCRIPT_DIR}}"
 PR_NUMBER=73
+MISSING_SHA=0000000000000000000000000000000000000001
 
 fails=0
 pass() { printf 'ok   %s\n' "$*"; }
@@ -276,6 +277,35 @@ printf '{"headRefOid":"","mergeCommit":{"oid":""},"state":"MERGED"}\n' >"${CASE}
 run_lib 'resolve'
 contains 'a PR with no head and no merge commit is refused' "${OUT}" \
     'REFUSED: PR #73 names no head commit and no merge commit.'
+
+# 2026-09-27: an unreadable commit makes `git diff` exit 128, and the else branch read
+# that as "the trees differ" — gating a merge commit git cannot read.
+fixture head-unreadable
+printf '{"headRefOid":"%s","mergeCommit":{"oid":"%s"},"state":"MERGED"}\n' \
+    "${MISSING_SHA}" "${MERGE_SHA}" >"${CASE}/gh.json"
+run_lib 'resolve'
+contains 'a head commit git cannot read is refused' "${OUT}" \
+    "REFUSED: git cannot read PR #73's head commit ${MISSING_SHA}: run 'git fetch origin refs/pull/73/head', then deploy."
+absent 'and is never read as a tree of its own' "${OUT}" \
+    'so the merge commit itself is what must be gated'
+
+fixture merge-unreadable
+printf '{"headRefOid":"%s","mergeCommit":{"oid":"%s"},"state":"MERGED"}\n' \
+    "${HEAD_SHA}" "${MISSING_SHA}" >"${CASE}/gh.json"
+run_lib 'resolve'
+contains 'a merge commit git cannot read is refused' "${OUT}" \
+    "REFUSED: git cannot read PR #73's merge commit ${MISSING_SHA}: run 'git fetch origin ${MISSING_SHA}', then deploy."
+absent 'and nothing resolves on the strength of it' "${OUT}" 'RESOLVED #73'
+
+# Both commits readable and the tree they share is not: `git diff` exits 128 there too, and
+# 128 is an answer to neither question the two branches below it ask.
+fixture tree-unreadable
+TREE="$(git_at rev-parse "${HEAD_SHA}^{tree}")"
+rm -f "${ROOT}/.git/objects/${TREE:0:2}/${TREE:2}"
+run_lib 'resolve'
+contains 'a diff that exits neither 0 nor 1 is refused, never read as a difference' "${OUT}" \
+    "REFUSED: git diff of head ${HEAD_SHA} and merge ${MERGE_SHA} exited 128, which says neither same tree nor different: a deploy does not guess which commit it gates."
+absent 'and no commit is gated on the strength of it' "${OUT}" 'RESOLVED #73'
 
 fixture main-moved
 git_at checkout -q -b later "${MERGE_SHA}"
