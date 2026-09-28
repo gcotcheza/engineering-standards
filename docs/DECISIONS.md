@@ -284,3 +284,33 @@ reachable by definition, and naming the sha is what tells the operator which one
 The third refusal, an rc that is neither 0 nor 1, carries no command: a store that has
 the commits but not their tree is a repair for `git fsck`, not for one line a deploy can
 hand over.
+
+
+## A root with no compose file is refused, not passed (2026-09-28)
+
+**What it did.** `scripts/gate-image-tags.sh` printed *"no compose file beside this
+root — nothing was examined"* and exited 0. Every gate on this box reads that exit
+status, so a compose file renamed out of `docker-compose*.yml` / `compose*.yml`, or a
+root argument pointing one directory too high, was a green T9 step that had read
+nothing at all — the silent pass this check exists to remove, arriving by the door the
+check itself opened. Seven of the eight call sites on this box had already written the
+same `case` branch on that sentence, and the eighth refuses any report carrying no
+`built tags:` line — eight hand-written guards against one exit code, which is the sign
+the exit code was wrong rather than their parsing. The next caller to wire T9 in would
+have had to write a ninth, or be green on a tree nothing read.
+
+**What it does now.** The same sentence, on stderr, in one line naming the root, and
+exit 2 — the code the script already uses for "I cannot judge this" (`-h`, a root that
+is not a directory), kept distinct from 1, which means a shared tag was found. Callers
+need no change: each reds on any non-zero. Their `case` branches on the old sentence
+are now unreachable rather than wrong, and are left to the projects to remove.
+
+**No opt-out flag.** Every call site passes its own checkout root and every one of
+those roots keeps its compose files in git, so no flag would be passed by anyone today
+— and a flag that silences this check is the flag that gets added to a command line the
+day it goes red for the right reason (C10, and S6's guard is never worked around). A
+project with no containers does not wire T9's check into its gate; it has no gate tag
+and no production tag to share. The one place the refusal is newly visible is the
+fleet-wide tally in `ROLLOUT.md`, run by hand from this clone against every project
+root: the two projects in its *no compose file beside the root* row now answer exit 2
+with the reason, which is the honest reading and was always what that row meant.

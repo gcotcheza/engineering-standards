@@ -42,7 +42,9 @@ never passes in silence, so "nothing is built here" and "I could not tell" canno
 service that builds and names no `image:` is not untagged either: compose tags it
 `<project>-<service>`, so that tag is resolved from the file's `name:` or its directory and
 compared like a written one. A compose file whose name places it on neither side and that builds a
-tag is refused, because that is the file whose side decides whether a collision is reported.
+tag is refused, because that is the file whose side decides whether a collision is reported. A
+root with no compose file beside it at all is refused too — exit 2, one line — because a renamed
+file or a wrong root would otherwise read as nothing-to-overwrite.
 
 ## Vendored scripts
 

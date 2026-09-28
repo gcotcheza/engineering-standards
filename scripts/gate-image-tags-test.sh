@@ -114,11 +114,19 @@ run runsit
 matches 'case 6: running the production tag in the gate fails too' "${OUT}" 'FAIL .*: image tag demo/app:latest is built'
 equals  'case 6: exit code' "${RC}" 1
 
-# --- 7. a directory with no compose file at all -> PASS, and says so ----------
+# --- 7. a directory with no compose file at all -> REFUSED, never a pass ------
 mkdir -p "${WORK}/empty"
 run empty
-matches 'case 7: no compose file is reported, not passed over' "${OUT}" 'no compose file beside this root — nothing was examined$'
-equals  'case 7: exit code' "${RC}" 0
+matches 'case 7: a root with nothing to read is refused in one line' "${OUT}" \
+    '^gate-image-tags: no compose file beside this root — nothing was examined, so .*/empty is refused, not passed \(T9\)$'
+equals  'case 7: exit code' "${RC}" 2
+
+# --- 7b. the compose file renamed out of the pattern -> the same refusal ------
+mkdir -p "${WORK}/renamed"
+printf 'services:\n  app:\n    build: ./docker/app\n    image: demo/app:latest\n' >"${WORK}/renamed/stack.yml"
+run renamed
+matches 'case 7b: a renamed compose file does not read as nothing to overwrite' "${OUT}" 'is refused, not passed \(T9\)$'
+equals  'case 7b: exit code' "${RC}" 2
 
 # --- 8. the build is inherited through a merge key on both sides -> FAIL ------
 merged anchored docker-compose.e2e.yml 'demo/app:latest'

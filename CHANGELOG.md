@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-28 — the image-tag check refuses a root it found no compose file in (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+**Nothing examined is no longer a pass.** Given a root with no `docker-compose*.yml` or
+`compose*.yml` beside it, the check printed *"no compose file beside this root — nothing was
+examined"* and exited 0, so a compose file renamed out of that pattern, or a root argument one
+directory too high, was a green T9 step that had read nothing. The same sentence now goes to
+stderr in one line naming the root, and the exit code is 2 — the code the script already uses for
+"I cannot judge this", kept distinct from 1, which means a shared tag was found. No caller
+changes: each of the eight call sites on this box reds on any non-zero, each passes its own
+checkout root, and every one of those roots keeps its compose files in git — run against the
+seven repositories they sit in, the new check exits 0 on every one. The `case` branches those callers wrote against the
+old sentence are now unreachable rather than wrong. No opt-out flag: a project with no containers
+does not wire T9's check into its gate, and a flag that silences this check is the flag that gets
+added the day it goes red for the right reason. Case 7 of `scripts/gate-image-tags-test.sh`
+changes with it and case 7b joins it (a compose file renamed to `stack.yml`), both proved red
+first against a copy of the script from `main`. The long-form why is in `docs/DECISIONS.md`.
+
 ## 2026-09-27 — resolve refuses a deploy whose commits git cannot read (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 **An unreadable commit is not "the trees differ".** `resolve()` compared the pull request's head
 and merge commits with `if $GIT diff --quiet "$HEAD_SHA" "$MERGE_SHA"`, and `git diff` exits 128

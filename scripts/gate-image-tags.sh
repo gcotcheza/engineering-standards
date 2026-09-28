@@ -8,9 +8,9 @@
 #
 # A pinned third-party image (postgres:18-alpine) is shared on purpose and is
 # never a finding — only a tag something here builds can be overwritten. The
-# check never stays silent: it always prints the files it read, the values it
-# could not resolve and the built-tag count, because a silent pass made "nothing
-# is built here" and "I could not tell" look identical.
+# check never stays silent and never passes on nothing: it prints the files it
+# read, the unresolved values and the built-tag count, and refuses (exit 2) a
+# root with no compose file beside it, which is a rename or a wrong root.
 #
 # A service that builds and names no `image:` is not untagged: compose tags it
 # `<project>-<service>`, so that tag is resolved and compared like a written one,
@@ -38,8 +38,8 @@ while IFS= read -r f; do FILES+=("${f}"); done < <(
 
 printf 'gate-image-tags: %s\n' "${ROOT}"
 if [ "${#FILES[@]}" -eq 0 ]; then
-    printf '  no compose file beside this root — nothing was examined\n'
-    exit 0
+    printf 'gate-image-tags: no compose file beside this root — nothing was examined, so %s is refused, not passed (T9)\n' "${ROOT}" >&2
+    exit 2
 fi
 
 RECORDS="$(mktemp)"
