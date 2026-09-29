@@ -420,18 +420,18 @@ assignment inside a branch (`if … then F=x; fi`) may or may not have run, so i
 a possible value rather than replacing one: where two values remain possible the call
 is printed as unread rather than resolved to whichever the file mentions last. The
 same line ordering is what lets a `COMPOSE_FILE` set in a sourced file be followed —
-one level, the path's leading variable dropped and the rest resolved under the root —
-and what makes a bare call under a sourced file this check *cannot* read unjudged
-instead of falling through to compose's default.
+four levels deep, `$(dirname "$0")/lib.sh` and `${BASH_SOURCE[0]%/*}/lib.sh` resolved
+against the sourcing script, any other path's leading variable dropped and the rest
+resolved under the root — and what makes a bare call under a sourced file this check
+*cannot* read unjudged instead of falling through to compose's default.
 
 **A line naming compose that yields no call is printed, and does not fail.**
 `eval "docker compose …"`, `sh -c '…'` and a wrapper built from a string read as
 *no compose call at all*, which looks exactly like a gate that never calls compose.
 Every such line — outside a comment, which the shell provably never runs — is now
 printed as an unjudged call. It does not change the exit code, for two reasons. It
-would be inconsistent: every other thing this check cannot read (an unresolved
-`image:`, an unread `-f` value, an unpaired overlay) is printed and not failed, and
-a mention is the weakest of them, because it may not be a call at all. And it was
+is the weakest thing here, because it may not be a call at all: an unread call names
+files and will run, a mention may be a sentence in a help string. And it was
 measured: across the nine gate scripts on this box every single unjudged mention is
 help text — `printf '  docker compose up -d app\n'` and its kin — and nothing else.
 A check that goes red on a project's own documentation gets switched off. The line
@@ -445,6 +445,37 @@ that only tears down, and treating them as idle would lose the gate that really 
 `"${DC[@]}" up -d`. The file set is remembered under the name and judged at each use,
 with the subcommand read there; a wrapper never used, or used somewhere this reader
 cannot follow, keeps the idle verdict and is printed as *not judged*.
+
+**A call whose file set cannot be read fails the check.** The first cut printed such a
+call and exited 0, on the reasoning that this reader should not red a gate over its
+own blind spot. That is backwards for anything that names files and will run: a `-f`
+pointing at a file that is not here, a variable with two possible values above the
+call, a wrapper defined differently in two branches, a `source` that resolves to
+nothing — each is a set that really is merged at run time and might carry
+production's tag, reported under a green exit nobody reads (C9). They now end the run
+with exit 1 and a line naming the call. Measured before the change: across every root
+on this box with a compose file beside it, no gate produces one, so nothing turns red
+on this alone. A mention is the one thing left that is printed and not failed, for the
+reason above.
+
+**A `-f` directory is this root only where the script computes it.** `-f "$X/x.yml"`
+used to be matched on its basename, so a file in someone else's tree was judged as the
+file of that name here — and the reverse, `-f infra/x.yml`, was refused. The rule is
+now the origin of the directory, not its spelling: where the path expands entirely
+from assignments the script makes above the call, it is this tree and the basename
+stands; where a variable in it is one only the environment sets, the directory is
+unknown and the call is unread. Both live shapes stay judged — `-f "${COMPOSE_FILE}"`
+over `COMPOSE_FILE="${REPO_ROOT}/docker-compose.ci.yml"`, and a bare `-f x.yml` — while
+`-f "$SHARED/docker-compose.yml"` is not read as the `docker-compose.yml` beside this
+root. A directory written out in full must still be this root.
+
+**A wrapper is read the way a variable is.** The file set under a name was kept
+last-write-wins, so an `if`/`else` that built `DC=(…)` two ways passed on whichever
+branch came last in the file — the safe one, if the unsafe one came first. Definitions
+now carry their line and whether they sit inside a branch, exactly as assignments do:
+an unconditional one replaces what is possible, one inside a branch adds to it, and two
+possible file sets are not a file set. The line that only *defines* a wrapper judged
+further down says nothing of its own, so one run is reported once.
 
 **The limit that stays.** A gate that passes `-p` or `COMPOSE_PROJECT_NAME` at run
 time still builds implicit tags this check cannot name; that is the limit the

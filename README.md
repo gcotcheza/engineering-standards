@@ -53,7 +53,9 @@ base-and-override pair — and judges each merged set the way compose merges it:
 wins, a `build:` anywhere in the set builds. A variable is read from the assignments above the
 call, never from the file's last one. It prints what each gate run builds, and names every call it
 could not read — an unresolved `-f`, a subcommand it never reached, or a line naming
-`docker compose` that yielded no call at all — rather than assuming it away.
+`docker compose` that yielded no call at all — rather than assuming it away. A call whose file set
+it could not read is a refusal (exit 1), not a note under a green run; a line that merely mentions
+`docker compose` is printed and changes nothing.
 
 ## Vendored scripts
 

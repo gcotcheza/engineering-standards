@@ -426,8 +426,9 @@ service teardown docker-compose.yml 'x/app:latest' build
 gate_script teardown e2e.sh 'DOWN=(docker compose -p "$PROJECT")
 "${DOWN[@]}" down -v --remove-orphans'
 run teardown
-matches 'case 36: a call whose subcommand was never read is not judged' "${OUT}" \
-    'gate runs: +docker-compose\.yml \(scripts/e2e\.sh:1, default\) not judged — no subcommand read$'
+matches 'case 36: the wrapper is judged where it is used, by the subcommand there' "${OUT}" \
+    'gate runs: +docker-compose\.yml \(scripts/e2e\.sh:2, default\) down builds nothing$'
+lacks   'case 36: and the line that only defined it says nothing' "${OUT}" 'scripts/e2e\.sh:1'
 equals  'case 36: exit code' "${RC}" 0
 
 # --- 37. an overlay naming production's own built tag -> FAIL, as it always did -
@@ -453,7 +454,9 @@ gate_script missingf check.sh 'docker compose -f docker-compose.gone.yml up -d'
 run missingf
 matches 'case 39: a -f value this root has no file for is named' "${OUT}" \
     'unread -f values: +docker-compose\.gone\.yml in scripts/check\.sh:1$'
-equals  'case 39: exit code' "${RC}" 0
+matches 'case 39: and a call this reader could not read is refused, not passed' "${OUT}" \
+    '^gate-image-tags: 1 unread compose call\(s\) — a set this check cannot read is a set it cannot clear \(T9\)$'
+equals  'case 39: exit code' "${RC}" 1
 
 # --- 40. a compose call inside a quoted help string is not a gate run ----------
 service helptext docker-compose.yml 'x/app:latest' build
@@ -543,7 +546,7 @@ run fbranch
 # shellcheck disable=SC2016  # the expected text quotes the fixture's own $F
 matches 'case 46: a variable given two values this cannot order is printed, not picked' "${OUT}" \
     'unread -f values: +"\$F" \(F takes more than one value above this line\) in scripts/check\.sh:3$'
-equals  'case 46: exit code' "${RC}" 0
+equals  'case 46: exit code' "${RC}" 1
 
 # --- 47. COMPOSE_FILE set in a sourced file -> followed one level -------------
 service srcset docker-compose.yml 'x/app:latest' build
@@ -568,7 +571,7 @@ run srcgone
 matches 'case 48: a bare call under an unreadable sourced file is named' "${OUT}" \
     'unread -f values: +COMPOSE_FILE, which \$here/scripts/missing-lib\.sh \(sourced at line 1\) may set in scripts/check\.sh:2$'
 matches 'case 48: and no default file set is invented for it' "${OUT}" 'gate runs: +none read beside this root$'
-equals  'case 48: exit code' "${RC}" 0
+equals  'case 48: exit code' "${RC}" 1
 
 # --- 49. a -f wrapper carrying no subcommand -> not judged, whatever it names --
 service teardownf docker-compose.yml 'x/app:latest' build
@@ -667,8 +670,137 @@ gate_script subdirf check.sh 'docker compose -f infra/docker-compose.yml up -d'
 run subdirf
 matches 'case 56: a -f under another directory is named, not resolved here' "${OUT}" \
     'unread -f values: +infra/docker-compose\.yml \(not beside this root\) in scripts/check\.sh:1$'
-matches 'case 56: and the root is not judged on it' "${OUT}" '^ok '
-equals  'case 56: exit code' "${RC}" 0
+matches 'case 56: and the root is not passed on it either' "${OUT}" \
+    '^FAIL .*: 1 compose call\(s\) here name files this check could not read, so what they build is not judged$'
+equals  'case 56: exit code' "${RC}" 1
+
+# --- 57. a -f wrapper defined differently in two branches -> not one file set --
+service wrapbranch docker-compose.yml 'x/app:latest' build
+overlay wrapbranch docker-compose.ci.yml app 'x/app:ci'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script wrapbranch check.sh 'if [ -n "${FAST:-}" ]; then
+  DC=(docker compose -f docker-compose.yml)
+else
+  DC=(docker compose -f docker-compose.yml -f docker-compose.ci.yml)
+fi
+"${DC[@]}" up -d app'
+run wrapbranch
+matches 'case 57: a wrapper with two possible file sets is not read as the last one' "${OUT}" \
+    'unread -f values: +DC \(more than one file set is possible above this line\) in scripts/check\.sh:6$'
+lacks   'case 57: so the safe branch does not clear the root' "${OUT}" '^ok '
+equals  'case 57: exit code' "${RC}" 1
+
+# --- 58. -f under a directory only the environment names -> not a name match ---
+service vardirf docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script vardirf check.sh 'docker compose -f "$SHARED/docker-compose.yml" up -d'
+run vardirf
+# shellcheck disable=SC2016  # the expected text quotes the fixture's own $SHARED
+matches 'case 58: a -f under an unknown directory is named, not matched by basename' "${OUT}" \
+    'unread -f values: +"\$SHARED/docker-compose\.yml" \(under a directory only the environment names\) in scripts/check\.sh:1$'
+lacks   'case 58: and the file of that name here is not judged in its place' "${OUT}" 'builds x/app:latest'
+equals  'case 58: exit code' "${RC}" 1
+
+# --- 59. a source written as $(dirname "$0")/lib.sh is followed ---------------
+service srcdyn docker-compose.yml 'x/app:latest' build
+gate_script srcdyn lib.sh 'export COMPOSE_FILE=docker-compose.yml'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script srcdyn check.sh '. "$(dirname "$0")/lib.sh"
+docker compose up -d'
+run srcdyn
+matches 'case 59: a source naming the script own directory is resolved' "${OUT}" \
+    'gate runs: +docker-compose\.yml \(scripts/check\.sh:2, COMPOSE_FILE\) builds x/app:latest$'
+equals  'case 59: exit code' "${RC}" 1
+
+# --- 59b. the same source, unreadable -> the whole argument is named ----------
+service srcdyngone docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script srcdyngone check.sh '. "$(dirname "$0")/missing-lib.sh"
+docker compose up -d'
+run srcdyngone
+# shellcheck disable=SC2016  # the expected text quotes the fixture's own $(dirname "$0")
+matches 'case 59b: the message carries the whole source argument' "${OUT}" \
+    'COMPOSE_FILE, which \$\(dirname \$0\)/missing-lib\.sh \(sourced at line 1\) may set in scripts/check\.sh:2$'
+equals  'case 59b: exit code' "${RC}" 1
+
+# --- 60. COMPOSE_FILE set two sources deep -> still the file set --------------
+service srcnest docker-compose.yml 'x/app:latest' build
+gate_script srcnest inner.sh 'export COMPOSE_FILE=docker-compose.yml'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script srcnest outer.sh '. "$(dirname "$0")/inner.sh"'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script srcnest check.sh '. "$(dirname "$0")/outer.sh"
+docker compose up -d'
+run srcnest
+matches 'case 60: a chain of sources is followed, not read as compose default' "${OUT}" \
+    'gate runs: +docker-compose\.yml \(scripts/check\.sh:2, COMPOSE_FILE\) builds x/app:latest$'
+equals  'case 60: exit code' "${RC}" 1
+
+# --- 61. a call that cannot build -> the finding says it runs the tag ---------
+service execonly docker-compose.yml 'x/app:latest' build
+gate_script execonly check.sh 'docker compose exec -T app php artisan test'
+run execonly
+matches 'case 61: a call with no build in it runs the tag' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:1 runs image tag x/app:latest, which production is recreated from$'
+lacks   'case 61: and is never reported as building it' "${OUT}" 'scripts/check\.sh:1 builds image tag'
+equals  'case 61: exit code' "${RC}" 1
+
+# --- 62. a call continued over nine lines -> its subcommand is still read -----
+service longcall docker-compose.yml 'x/app:latest' build
+gate_script longcall check.sh 'docker compose \
+  -f docker-compose.yml \
+  --ansi never \
+  --progress plain \
+  -p acme \
+  --project-directory . \
+  --env-file .env \
+  --parallel 2 \
+  --profile ci \
+  up -d app'
+run longcall
+matches 'case 62: the subcommand past the eighth continuation is read' "${OUT}" \
+    'gate run: +docker compose up over docker-compose\.yml \(-f\)$'
+lacks   'case 62: and the \ that joined the lines is not the subcommand' "${OUT}" 'docker compose \\ over'
+equals  'case 62: exit code' "${RC}" 1
+
+# --- 62b. the same call ending in an idle subcommand -> named, and passes -----
+service longidle docker-compose.yml 'x/app:latest' build
+gate_script longidle check.sh 'docker compose \
+  -f docker-compose.yml \
+  --ansi never \
+  --progress plain \
+  -p acme \
+  --project-directory . \
+  --env-file .env \
+  --parallel 2 \
+  --profile ci \
+  config --services'
+run longidle
+matches 'case 62b: the subcommand it really runs is the one reported' "${OUT}" \
+    'gate runs: +docker-compose\.yml \(scripts/check\.sh:1, -f\) config builds nothing$'
+equals  'case 62b: exit code' "${RC}" 0
+
+# --- 63. a compose line inside a heredoc body is not a call -------------------
+service hdoc docker-compose.yml 'x/app:latest' build
+gate_script hdoc check.sh 'cat <<EOF
+docker compose -f docker-compose.yml up -d app
+EOF'
+run hdoc
+lacks   'case 63: a heredoc body is not a line naming a call' "${OUT}" 'unjudged calls'
+matches 'case 63: and the root passes on what is really run' "${OUT}" '^ok '
+equals  'case 63: exit code' "${RC}" 0
+
+# --- 64. a wrapper consumed by a later call -> judged once, where it is used --
+service arrwrap docker-compose.yml 'x/app:latest' build
+overlay arrwrap docker-compose.ci.yml app 'x/app:ci'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script arrwrap check.sh 'DC=(docker compose -f docker-compose.yml)
+"${DC[@]}" -f docker-compose.ci.yml up -d app'
+run arrwrap
+matches 'case 64: the set is judged at the line that uses the wrapper' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:2, -f\) builds x/app:ci$'
+lacks   'case 64: and the line that only defines it is not a run of its own' "${OUT}" 'scripts/check\.sh:1'
+equals  'case 64: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'

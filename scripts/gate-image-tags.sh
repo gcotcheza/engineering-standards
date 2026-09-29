@@ -434,11 +434,36 @@ read_gate_sets() {
                 if (!VARHAVE) break
                 v = substr(v, 1, RSTART - 1) val substr(v, RSTART + RLENGTH)
             }
+            EXPUNSET = match(v, /\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/) ? 1 : 0
             return v
         }
         function bad(t) { BAD = BAD (BAD ? "; " : "") t }
+        # A record is held back until the end: a file set defined for a wrapper
+        # is judged where the wrapper is used, so its own line says nothing.
+        function out(t, d) { nout++; OUTT[nout] = t; OUTD[nout] = d }
+        # A wrapper is read the way a variable is: the definitions above the use,
+        # an unconditional one replacing what is possible and one inside a branch
+        # adding to it. Two possible file sets are not a file set.
+        function wrapval(nm, ln,   z, np, S, key, poss) {
+            S = sprintf("%c", 1)
+            poss = ""; np = 0
+            WRAPHAVE = 0; WRAPSPLIT = 0; WFSET = ""; WBAD = ""; WNAMED = 0; WLINES = ""
+            for (z = 1; z <= nwrap; z++) {
+                if (WDL[z] >= ln || WDN[z] != nm) continue
+                WRAPHAVE = 1
+                WLINES = WLINES (WLINES ? "," : "") WDL[z]
+                key = WDF[z] S WDB[z] S WDNM[z]
+                if (!WDC[z]) { poss = key; np = 1 }
+                else if (index(S poss S, S key S) == 0) { poss = poss (np ? S : "") key; np++ }
+                WFSET = WDF[z]; WBAD = WDB[z]; WNAMED = WDNM[z]
+            }
+            WRAPSPLIT = (np > 1)
+            return WRAPHAVE
+        }
         # A compose file is named by its basename here, but a directory written
         # out must be this root: `-f infra/x.yml` is not the x.yml beside it.
+        # A directory the script computes from its own path is this root; one
+        # only the environment names is not a directory this check can resolve.
         function addfile(v,   b, d) {
             SPLITVAR = ""
             b = expand(v)
@@ -448,7 +473,9 @@ read_gate_sets() {
             }
             if (index(b, "/")) {
                 d = b; sub(/\/[^\/]*$/, "", d)
-                if (d !~ /\$/ && d != "." && d != root) { bad(b " (not beside this root)"); return }
+                if (d ~ /\$/) {
+                    if (EXPUNSET) { bad(v " (under a directory only the environment names)"); return }
+                } else if (d != "." && d != root) { bad(b " (not beside this root)"); return }
             }
             sub(/.*\//, "", b)
             if (b == "" || b ~ /\$/) { bad(v); return }
@@ -460,7 +487,7 @@ read_gate_sets() {
         function mentions(s, mk,   p, seg) {
             seg = ""
             for (p = 1; p <= length(s); p++)
-                seg = seg (substr(mk, p, 1) == "N" ? " " : substr(s, p, 1))
+                seg = seg (substr(mk, p, 1) ~ /^[NH]$/ ? " " : substr(s, p, 1))
             return (seg ~ /docker[ \t]+compose([ \t]|$)/ || seg ~ /docker-compose([ \t;&|)]|$)/)
         }
         BEGIN {
@@ -475,22 +502,25 @@ read_gate_sets() {
             lex()
             for (i = 1; i <= NR; i++) {
                 s = L[i]; mk = M[i]; j = i
-                while (j < NR && needjoin(s, mk) && j - i < 8) {
+                while (j < NR && needjoin(s, mk)) {
                     # The \ that joined the lines is not a token of the command.
                     if (substr(s, length(s), 1) == "\\" && substr(mk, length(mk), 1) == "C") {
                         s = substr(s, 1, length(s) - 1); mk = substr(mk, 1, length(mk) - 1)
                     }
                     j++; s = s " " L[j]; mk = mk "C" M[j]
                 }
+                if (substr(s, length(s), 1) == "\\" && substr(mk, length(mk), 1) == "C") {
+                    s = substr(s, 1, length(s) - 1); mk = substr(mk, 1, length(mk) - 1)
+                }
                 LS[i] = s; LM[i] = mk; LE[i] = j
             }
             dep = 0
             for (i = 1; i <= NR; i++) {
                 cnt = tokenize(LS[i], LM[i])
-                head = 1; ex = 0
+                head = 1; ex = 0; dmax = dep
                 for (k = 1; k <= cnt; k++) {
                     t = T[k]
-                    if (t ~ /^(if|case|for|while|until|\{)$/) dep++
+                    if (t ~ /^(if|case|for|while|until|\{)$/) { dep++; if (dep > dmax) dmax = dep }
                     else if (t ~ /^(fi|esac|done|\})$/) { if (dep) dep-- }
                     if (head && t == "export") { ex = 1; head = 0; continue }
                     if ((head || ex) && t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
@@ -503,6 +533,7 @@ read_gate_sets() {
                     ex = 0
                     head = (t ~ /^[;()&|{}<>]$/ || t ~ /^(then|else|elif|do)$/) ? 1 : 0
                 }
+                LDEP[i] = dmax
             }
             if (emit == "assign") {
                 for (z = 1; z <= nasg; z++)
@@ -524,15 +555,17 @@ read_gate_sets() {
                             vv = varval(nm, i)
                             if (VARHAVE && (vv ~ /^docker[ \t]+compose$/ || vv == "docker-compose")) {
                                 start = k + 1; SEEN[AL[VARIDX]] = 1
-                            } else if (nm in WRAPF) { start = k + 1; wrap = nm }
-                        } else if ((nm in WRAPF) && (k == 1 || T[k - 1] ~ /^[;()&|{}<>]$/ ||
+                            } else if (wrapval(nm, i)) { start = k + 1; wrap = nm }
+                        } else if (wrapval(nm, i) && (k == 1 || T[k - 1] ~ /^[;()&|{}<>]$/ ||
                                    T[k - 1] ~ /^(then|else|elif|do)$/)) { start = k + 1; wrap = nm }
                     }
                     if (!start) continue
-                    FSET = ""; BAD = ""; subc = ""; named = 0
+                    FSET = ""; BAD = ""; subc = ""; named = 0; defline = 0
                     if (wrap != "") {
-                        FSET = WRAPF[wrap]; BAD = WRAPB[wrap]; named = WRAPN[wrap]
-                        SEEN[WRAPL[wrap]] = 1
+                        if (WRAPSPLIT) { bad(wrap " (more than one file set is possible above this line)"); named = 1 }
+                        else { FSET = WFSET; BAD = WBAD; named = WNAMED }
+                        nwl = split(WLINES, WL, ",")
+                        for (z = 1; z <= nwl; z++) { SEEN[WL[z]] = 1; USEDDEF[WL[z]] = 1 }
                     }
                     for (p = start; p <= cnt; p++) {
                         t = T[p]
@@ -559,7 +592,9 @@ read_gate_sets() {
                         else if (T[1] ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && T[2] == "(" && T[3] == ")") nm = T[1]
                         else if (T[1] == "function" && T[2] ~ /^[A-Za-z_][A-Za-z0-9_]*$/) nm = T[2]
                         if (nm != "") {
-                            WRAPF[nm] = FSET; WRAPB[nm] = BAD; WRAPN[nm] = named; WRAPL[nm] = i
+                            nwrap++; WDN[nwrap] = nm; WDL[nwrap] = i; WDC[nwrap] = (LDEP[i] > 0) ? 1 : 0
+                            WDF[nwrap] = FSET; WDB[nwrap] = BAD; WDNM[nwrap] = named
+                            defline = i
                         }
                     }
                     origin = (named ? "-f" : "")
@@ -592,12 +627,14 @@ read_gate_sets() {
                     if (BAD != "") judged = 0
                     builds = (subc ~ /^(build|up|run|create)$/) ? 1 : 0
                     if (FSET != "")
-                        printf "set\t%s\t%d\t%d\t%s\t%s\t%s\t%d\n", \
-                            script, i, judged, origin, subc, FSET, builds
-                    if (BAD != "") printf "setbad\t%s\t%d\t%s\n", script, i, BAD
+                        out(sprintf("set\t%s\t%d\t%d\t%s\t%s\t%s\t%d\t%d\n", \
+                            script, i, judged, origin, subc, FSET, builds, (BAD != "") ? 1 : 0), defline)
+                    if (BAD != "") out(sprintf("setbad\t%s\t%d\t%s\n", script, i, BAD), defline)
                     if (FSET != "" || BAD != "") for (z = i; z <= LE[i]; z++) SEEN[z] = 1
                 }
             }
+            for (z = 1; z <= nout; z++)
+                if (!OUTD[z] || !USEDDEF[OUTD[z]]) printf "%s", OUTT[z]
             for (i = 1; i <= NR; i++)
                 if (!SEEN[i] && mentions(L[i], M[i])) printf "mention\t%s\t%d\n", script, i
         }' "$1"
@@ -661,12 +698,18 @@ for o in compose.override.yaml compose.override.yml \
     [ ! -f "${ROOT}/${o}" ] || { DEFSET="${DEFSET},${o}"; break; }
 done
 
-# A gate script may set COMPOSE_FILE in a file it sources. One level is followed:
-# the leading variable of the path is dropped and the rest resolved under this
-# root; a path that resolves to nothing readable makes that script's bare calls
-# unjudged rather than falling through to compose's default file.
+# A gate script may set COMPOSE_FILE in a file it sources, which may source
+# another. The idioms naming the sourcing script's own directory are resolved
+# against it; otherwise the leading variable of the path is dropped and the rest
+# resolved under this root. A path that resolves to nothing readable makes that
+# script's bare calls unjudged rather than falling through to compose's default.
 resolve_sourced() {
-    local v="$1" rest c
+    local v="$1" dir="$2" rest c pre
+    # shellcheck disable=SC2016  # these are the sourcing script's own text, not ours
+    for pre in '$(dirname $0)' '$(dirname $BASH_SOURCE)' '$(dirname ${BASH_SOURCE[0]})' \
+               '${BASH_SOURCE%/*}' '${BASH_SOURCE[0]%/*}' '${0%/*}'; do
+        case "${v}" in "${pre}/"*) v="${dir}/${v#"${pre}/"}"; break ;; esac
+    done
     rest="${v}"
     case "${v}" in *'$'*) rest="${v#*/}" ;; esac
     case "${rest}" in *'$'*|'') return 1 ;; esac
@@ -682,6 +725,39 @@ PRE="$(mktemp)"
 ASG="$(mktemp)"
 trap 'rm -f "${RECORDS}" "${PRE}" "${ASG}"' EXIT
 
+# Every assignment a gate script reaches through source, credited to the line
+# that sourced it. A chain deeper than this, or a link that resolves to nothing
+# readable, leaves that script's bare calls unjudged.
+SRCDEPTH=4
+scan_sources() {
+    local g="$1" att="$2" depth="$3" dir ln raw sp use
+    dir="$(dirname -- "${g}")"
+    while IFS="${TAB}" read -r ln raw; do
+        [ -n "${ln}" ] || continue
+        use="${att:-${ln}}"
+        if [ "${depth}" -ge "${SRCDEPTH}" ]; then
+            [ -n "${SRCBAD}" ] || SRCBAD="${use}:${raw}"
+            continue
+        fi
+        if sp="$(resolve_sourced "${raw}" "${dir}")"; then
+            read_gate_sets "${sp}" "${sp#"${ROOT}"/}" '' '' "${ROOT}" '' '' assign >"${ASG}"
+            awk -F'\t' -v ln="${use}" 'BEGIN { OFS = "\t" }
+                $1 == "asg" { print ln, $2, $3, $4, $5 }' "${ASG}" >>"${PRE}"
+            scan_sources "${sp}" "${use}" "$((depth + 1))"
+        elif [ -z "${SRCBAD}" ]; then
+            SRCBAD="${use}:${raw}"
+        fi
+    done < <(awk '{ sub(/\r$/, "") }
+        /^[ \t]*(\.|source)[ \t]+[^ \t]/ {
+            v = $0
+            sub(/^[ \t]*(\.|source)[ \t]+/, "", v)
+            if (v !~ /\$\(/) sub(/[ \t].*$/, "", v)
+            sub(/[ \t]*$/, "", v)
+            gsub(/["'"'"']/, "", v)
+            printf "%d\t%s\n", NR, v
+        }' "${g}")
+}
+
 # The gate entry points T1 and T6 name. A gate that lives under another name is
 # not guessed at: the output says which scripts were read and which were not.
 GATE_SCRIPTS=()
@@ -691,17 +767,7 @@ for s in check ci e2e gate; do
     GATE_SCRIPTS+=("scripts/${s}.sh")
     : >"${PRE}"
     SRCBAD=''
-    while IFS="${TAB}" read -r ln raw; do
-        [ -n "${ln}" ] || continue
-        if sp="$(resolve_sourced "${raw}")"; then
-            read_gate_sets "${sp}" "${sp#"${ROOT}"/}" '' '' "${ROOT}" '' '' assign >"${ASG}"
-            awk -F'\t' -v ln="${ln}" 'BEGIN { OFS = "\t" }
-                $1 == "asg" { print ln, $2, $3, $4, $5 }' "${ASG}" >>"${PRE}"
-        elif [ -z "${SRCBAD}" ]; then
-            SRCBAD="${ln}:${raw}"
-        fi
-    done < <(awk '{ sub(/\r$/, "") }
-        /^[ \t]*(\.|source)[ \t]+[^ \t]/ { v = $2; gsub(/["'"'"']/, "", v); printf "%d\t%s\n", NR, v }' "${g}")
+    scan_sources "${g}" '' 0
     read_gate_sets "${g}" "scripts/${s}.sh" "${KNOWN}" "${DEFSET}" "${ROOT}" \
         "${PRE}" "${SRCBAD}" '' >>"${RECORDS}"
 done
@@ -783,7 +849,7 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
             tag = TORD[i]
             nrun++
             runs[nrun] = sprintf("FAIL %s: the gate run at %s %s image tag %s, which production is recreated from\n", \
-                root, SETSRC[k], (TBUILT[tag] ? "builds" : "runs"), tag)
+                root, SETSRC[k], ((SETBUILDS[k] == 1 && TBUILT[tag]) ? "builds" : "runs"), tag)
             runs[nrun] = runs[nrun] sprintf("  gate run:   %s over %s (%s)\n", \
                 (SETSUB[k] == "-" ? "docker compose" : "docker compose " SETSUB[k]), pretty(k), SETORIGIN[k])
             runs[nrun] = runs[nrun] sprintf("  services:   %s\n", TSVC[tag])
@@ -811,7 +877,7 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         if (!(k in setseen)) { setseen[k] = 1; SETKEY[++nsets] = k; SETRANK[k] = -1 }
         if (r > SETRANK[k]) {
             SETRANK[k] = r; SETJUDGE[k] = $4; SETSRC[k] = $2 ":" $3
-            SETORIGIN[k] = $5; SETSUB[k] = $6
+            SETORIGIN[k] = $5; SETSUB[k] = $6; SETBUILDS[k] = $8; SETUNREAD[k] = $9
         }
         nf = split(k, FL, ",")
         for (i = 1; i <= nf; i++) if (FL[i] != "") INSET[FL[i]] = 1
@@ -861,7 +927,9 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         for (i = 1; i <= nsets; i++) {
             k = SETKEY[i]
             runsline = runsline (runsline ? "; " : "") sprintf("%s (%s, %s) %s", pretty(k), SETSRC[k], SETORIGIN[k], \
-                (SETJUDGE[k] ? (SETBUILT[k] ? "builds " SETBUILT[k] : "builds nothing") : "not judged — no subcommand read"))
+                (SETJUDGE[k] ? (SETBUILT[k] ? ((SETBUILDS[k] == 1 ? "builds " : "runs ") SETBUILT[k]) : "builds nothing") \
+                 : (SETUNREAD[k] == 1 ? "not judged — a file it names was not read" \
+                    : (SETSUB[k] == "-" ? "not judged — no subcommand read" : SETSUB[k] " builds nothing"))))
         }
         printf "  gate runs:        %s\n", (runsline ? runsline : "none read beside this root")
         if (nsetbad) printf "  unread -f values: %s\n", sblist
@@ -887,7 +955,7 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         if (loose) printf "  overlay tags:     %s — in no gate run read here\n", loose
         n = 0
         for (t in tags) if (built[t] && gn[t] && pn[t]) bad[++n] = t
-        if (n == 0 && noddfiles == 0 && nrun == 0) {
+        if (n == 0 && noddfiles == 0 && nrun == 0 && nsetbad == 0) {
             if (nbuilt == 0) {
                 printf "ok %s: no built image tag resolved here — nothing a gate run could overwrite\n", root
                 exit 0
@@ -908,6 +976,9 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
             printf "%s%s", g[t], p[t]
         }
         for (i = 1; i <= nrun; i++) printf "%s", runs[i]
+        if (nsetbad)
+            printf "FAIL %s: %d compose call(s) here name files this check could not read, so what they build is not judged\n", \
+                root, nsetbad
         if (noddfiles) {
             printf "FAIL %s: %s builds an image tag and is named neither for the gate nor for production", root, oddlist
             printf " — rename it *ci* or *e2e* if a gate run builds it, *prod* if production runs it\n"
@@ -915,5 +986,6 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         if (n) printf "gate-image-tags: %d shared tag(s) — a gate run can overwrite what production is recreated from (T9)\n", n
         if (nrun) printf "gate-image-tags: %d gate run(s) reach a tag production is recreated from (T9)\n", nrun
         if (noddfiles) printf "gate-image-tags: %d unrecognised compose file(s) build a tag — which side builds it is a guess (T9)\n", noddfiles
+        if (nsetbad) printf "gate-image-tags: %d unread compose call(s) — a set this check cannot read is a set it cannot clear (T9)\n", nsetbad
         exit 1
     }' "${RECORDS}"

@@ -16,10 +16,12 @@ way compose merges it: a later `image:` wins, a `build:` anywhere in the set bui
 read from the assignments *above* the call, not from whichever value the file sets last, and a
 call continued over several lines with `\` keeps every `-f` it names. Its report gains a
 `gate scripts:` line, a `gate runs:` line naming what each run builds, and a line for every call
-it could not resolve. Run against the eleven project roots on this box that have a compose file
-beside them it changes one verdict: the project whose gate passes no `-f`, which is now red with
-the script and line that reaches production's tag, and green again on the branch that fixes it.
-Nothing else moves.
+it could not resolve. Run against every root on this box with a compose file beside
+it — four project roots and the ten git worktrees under them — it changes one project's verdict:
+the project whose gate passes no `-f`, which is now red with the script and line that reaches
+production's tag, and green again on the branch that fixes it. Three stale worktrees of another
+project turn red on the same hole, which that project's own `main` has already closed. Nothing
+else moves.
 
 Three smaller changes ride with it. Any `.yml` or `.yaml` beside the root carrying a `services:`
 key at column 0 is now read, whatever its name, so a compose file renamed out of `docker-compose*`
@@ -33,15 +35,30 @@ And a gate line naming `docker compose` that yields no call this reader can foll
 `sh -c`, a wrapper built from a string — is printed as an unjudged call rather than looking like a
 gate that never calls compose; it does not change the exit code, and `docs/DECISIONS.md` says why.
 
-Thirty-one new cases in `scripts/gate-image-tags-test.sh` (169 checks in all). Twenty-seven of
-them go red against a copy of the script from `main` — twenty-eight cases in all, counting case 7b,
-which is not new but whose expected output changed — and seventeen deliberate mutations of the new
-script cover the four that cannot go red against `main`, including the two the review found could
-not be shown to fail at all. The long-form why is in `docs/DECISIONS.md`.
+**A call this check cannot read is a refusal, not a note.** Reading a shell by regex leaves holes,
+and a hole printed under a green exit is a hole nobody reads. A `-f` naming a file that is not
+here, a variable given two values above the call, a wrapper defined one way in one branch and
+another way in the next, or a `source` line that resolves to nothing now end the run with exit 1
+and a line naming the call. A directory written into a `-f` value is this root only where the
+script computes it from its own path: one only the environment names, `-f "$SHARED/compose.yml"`,
+is no longer matched to the file of that name beside this root. Four more shapes are read rather
+than guessed at — a chain of `source` four deep, `$(dirname "$0")/lib.sh` and
+`${BASH_SOURCE[0]%/*}/lib.sh`, a call continued over any number of lines, and a `docker compose`
+line inside a heredoc body, which is text and not a call. The report now says which subcommand it
+read instead of "no subcommand read", says nothing at all on a line that only defines a wrapper
+judged further down, and reports a call that cannot build — `exec`, `start`, `restart` — as
+*running* a tag rather than building it. The verdicts over the roots on this box are unchanged.
+
+Forty-one new cases in `scripts/gate-image-tags-test.sh` (197 checks in all). Thirty-six of them
+go red against a copy of the script from `main` — thirty-seven cases in all, counting case 7b,
+which is not new but whose expected output changed. Seventeen deliberate mutations of the script
+cover four of the five that cannot go red against `main`, and every case added or changed in the
+last round goes red against the commit before it. The long-form why is in `docs/DECISIONS.md`.
 
 **Order of merge.** The one project this turns red has its own fix open. Merge that project's pull
-request first: this repository's clone is what every gate calls by path, so fast-forwarding it
-before the project fix lands leaves that project's gate red on a hole it has already closed.
+request first: every gate on this box runs the copy of this check that lives in the deployed clone
+of this repository, so updating that clone before the project fix lands leaves that project's gate
+red on a hole it has already closed.
 
 ## 2026-09-28 — the image-tag check refuses a root it found no compose file in (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 **Nothing examined is no longer a pass.** Given a root with no `docker-compose*.yml` or
