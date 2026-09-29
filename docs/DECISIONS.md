@@ -329,8 +329,9 @@ untouched: `<sha> <kind> <utc> <rc> <log>`, so a project re-vendoring this needs
 change to any reader.
 
 **Why arming is a call the gate makes, not something sourcing does.** Every gate on this
-box sources `ledger.sh` and then sets `GATE_LEDGER_GIT="${GIT}"` on the next line —
-`git-as <app> -C <worktree>`, because root's own git refuses an app-owned tree. Arming at
+box that names a git seam sets `GATE_LEDGER_GIT="${GIT}"` after sourcing `ledger.sh` —
+`git-as <app> -C <worktree>`, because root's own git refuses an app-owned tree (memento's
+and orbit's `e2e.sh` name none, so run as root they cannot name HEAD either way). Arming at
 source time would therefore read HEAD through the wrong git, get nothing, and refuse every
 row afterwards. So `gate_ledger_arm` is explicit and belongs after the seam and before the
 first step, which is where health-tracker's `scripts/ci.sh` already puts its own copy of
