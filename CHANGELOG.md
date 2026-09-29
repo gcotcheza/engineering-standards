@@ -1,5 +1,72 @@
 # Changelog
 
+## 2026-09-29 — the image-tag check judges the file sets a gate really runs (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+**A compose file judged alone is not what a gate runs.** The check read each file beside a root on
+its own, so two shapes were invisible. An overlay that only sets `image:` for a service, with no
+`build:` next to it, read as a tag nothing builds — while `docker compose -f base -f overlay`
+inherits the base's `build:` and really does build under the overlay's tag. And a gate that passes
+no `-f` at all runs compose over the production file itself: one project's gate built and ran
+production's own tag for weeks under a green *"none shared"*, and when that hole was fixed the
+check could not credit the fix either, because the new overlay's tag still looked unbuilt.
+
+The check now reads `scripts/check.sh`, `ci.sh`, `e2e.sh` and `gate.sh` for the files each
+`docker compose` call passes — `-f`, an exported `COMPOSE_FILE` (including one set in a file the
+gate sources), or compose's own default base-and-override pair — and judges each set merged the
+way compose merges it: a later `image:` wins, a `build:` anywhere in the set builds. A variable is
+read from the assignments *above* the call, not from whichever value the file sets last, and a
+call continued over several lines with `\` keeps every `-f` it names. Its report gains a
+`gate scripts:` line, a `gate runs:` line naming what each run builds, and a line for every call
+it could not resolve. It was run over every root on this box with a compose file beside it — 47 of
+them, 11 project roots and 36 git worktrees, as listed by
+
+    find /var/www -maxdepth 3 \( -name 'docker-compose*.y*ml' -o -name 'compose.y*ml' \) -printf '%h\n' | sort -u
+
+45 of which carry a gate script this check reads. Four roots change verdict against `main`, all on
+the same hole — `orbit`, whose gate passes no `-f` and so reaches production's tag, and three stale
+memento worktrees (`deploy-lib-102`, `secrets-scan-102`, `standards-bump`), which that project's
+own `main` has already closed; orbit is green again on the branch that fixes it. `date-picker` was
+already red before this change. No root goes red on the new unread-call rule, and the later commits
+of this branch move no verdict at all: 47/47 identical to `79188c1`. Nothing else moves.
+
+Three smaller changes ride with it. Any `.yml` or `.yaml` beside the root carrying a `services:`
+key at column 0 is now read, whatever its name, so a compose file renamed out of `docker-compose*`
+is judged rather than invisible — case 7b of the test therefore ends in a FAIL naming the file
+(exit 1) instead of the whole-root refusal (exit 2), which still stands for a root where nothing
+carries `services:`. The column matters: an indented `services:` belongs to a `.gitlab-ci.yml`
+job, not to compose. A call whose subcommand only inspects or tears down (`down`, `ps`, `logs`, …)
+is printed as read but not judged, whatever named its files, because a teardown is not a build —
+and a wrapper that carries a file set but no subcommand of its own is judged where it is *used*.
+And a gate line naming `docker compose` that yields no call this reader can follow — an `eval`, an
+`sh -c`, a wrapper built from a string — is printed as an unjudged call rather than looking like a
+gate that never calls compose; it does not change the exit code, and `docs/DECISIONS.md` says why.
+
+**A call this check cannot read is a refusal, not a note.** Reading a shell by regex leaves holes,
+and a hole printed under a green exit is a hole nobody reads. A `-f` naming a file that is not
+here, a variable given two values above the call, a wrapper defined one way in one branch and
+another way in the next, or a `source` line that resolves to nothing now end the run with exit 1
+and a line naming the call. A directory written into a `-f` value is this root unless only the
+environment supplies it: `-f "$SHARED/compose.yml"` is no longer matched to the file of that name
+beside this root, while a directory the script assigns is still taken to be this tree — including
+one a command substitution computes and one assigned inside a single branch, the known limit
+`docs/DECISIONS.md` now names. Four more shapes are read rather
+than guessed at — a chain of `source` four deep, `$(dirname "$0")/lib.sh` and
+`${BASH_SOURCE[0]%/*}/lib.sh`, a call continued over any number of lines, and a `docker compose`
+line inside a heredoc body, which is text and not a call. The report now says which subcommand it
+read instead of "no subcommand read", says nothing at all on a line that only defines a wrapper
+judged further down, and reports a call that cannot build — `exec`, `start`, `restart` — as
+*running* a tag rather than building it. The verdicts over the roots on this box are unchanged.
+
+Forty-one new cases in `scripts/gate-image-tags-test.sh` (197 checks in all). Thirty-six of them
+go red against a copy of the script from `main` — thirty-seven cases in all, counting case 7b,
+which is not new but whose expected output changed. Seventeen deliberate mutations of the script
+cover four of the five that cannot go red against `main`, and every case added or changed in the
+last round goes red against the commit before it. The long-form why is in `docs/DECISIONS.md`.
+
+**Order of merge.** The one project this turns red has its own fix open. Merge that project's pull
+request first: every gate on this box runs the copy of this check that lives in the deployed clone
+of this repository, so updating that clone before the project fix lands leaves that project's gate
+red on a hole it has already closed.
+
 ## 2026-09-28 — the image-tag check refuses a root it found no compose file in (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 **Nothing examined is no longer a pass.** Given a root with no `docker-compose*.yml` or
 `compose*.yml` beside it, the check printed *"no compose file beside this root — nothing was

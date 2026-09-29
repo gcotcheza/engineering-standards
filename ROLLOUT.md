@@ -84,6 +84,12 @@ production's tag is the one collision shape the check still cannot report.
 
 One of the four is clean by its gate script rather than by the check: its compose files carry `${CI_APP_IMAGE:?…}`, which has no default and so resolves to nothing, and the per-branch tag is set in that project's `scripts/ci.sh`. The check says so itself — it counts and names every value it could not resolve, and never reports a clean sweep over values it did not judge — and that row was read from the gate script, not inferred from a clean-looking verdict.
 
+**Merge order.** This repository's clone on the host is what every project gate calls by path, so
+a change to `scripts/gate-image-tags.sh` reaches all of them the moment that clone fast-forwards.
+Where a check change turns one project red and that project's own fix is already open, the project
+fix merges **first**; otherwise that project's gate is red, on this box, on a hole it has already
+closed. That is the order for the 2026-09-29 check change and the open project PR it names.
+
 The one remaining fix is that project's own pull request, not this repo's: the gate compose file takes a tag of its own (`<app>/app:ci`, or `${CI_APP_IMAGE:-<app>/app:ci}` so a worktree can hold one per branch), and the project's gate calls the check. Until then the standing risk is the one that has already happened once — a gate run on any branch leaves production one `up -d` away from a container built from unmerged code.
 
 ### T9's second half is not mechanised
