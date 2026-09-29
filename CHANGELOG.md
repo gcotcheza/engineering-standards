@@ -16,12 +16,17 @@ way compose merges it: a later `image:` wins, a `build:` anywhere in the set bui
 read from the assignments *above* the call, not from whichever value the file sets last, and a
 call continued over several lines with `\` keeps every `-f` it names. Its report gains a
 `gate scripts:` line, a `gate runs:` line naming what each run builds, and a line for every call
-it could not resolve. Run against every root on this box with a compose file beside
-it — four project roots and the ten git worktrees under them — it changes one project's verdict:
-the project whose gate passes no `-f`, which is now red with the script and line that reaches
-production's tag, and green again on the branch that fixes it. Three stale worktrees of another
-project turn red on the same hole, which that project's own `main` has already closed. Nothing
-else moves.
+it could not resolve. It was run over every root on this box with a compose file beside it — 47 of
+them, 11 project roots and 36 git worktrees, as listed by
+
+    find /var/www -maxdepth 3 \( -name 'docker-compose*.y*ml' -o -name 'compose.y*ml' \) -printf '%h\n' | sort -u
+
+45 of which carry a gate script this check reads. Four roots change verdict against `main`, all on
+the same hole — `orbit`, whose gate passes no `-f` and so reaches production's tag, and three stale
+memento worktrees (`deploy-lib-102`, `secrets-scan-102`, `standards-bump`), which that project's
+own `main` has already closed; orbit is green again on the branch that fixes it. `date-picker` was
+already red before this change. No root goes red on the new unread-call rule, and the later commits
+of this branch move no verdict at all: 47/47 identical to `79188c1`. Nothing else moves.
 
 Three smaller changes ride with it. Any `.yml` or `.yaml` beside the root carrying a `services:`
 key at column 0 is now read, whatever its name, so a compose file renamed out of `docker-compose*`
@@ -39,9 +44,11 @@ gate that never calls compose; it does not change the exit code, and `docs/DECIS
 and a hole printed under a green exit is a hole nobody reads. A `-f` naming a file that is not
 here, a variable given two values above the call, a wrapper defined one way in one branch and
 another way in the next, or a `source` line that resolves to nothing now end the run with exit 1
-and a line naming the call. A directory written into a `-f` value is this root only where the
-script computes it from its own path: one only the environment names, `-f "$SHARED/compose.yml"`,
-is no longer matched to the file of that name beside this root. Four more shapes are read rather
+and a line naming the call. A directory written into a `-f` value is this root unless only the
+environment supplies it: `-f "$SHARED/compose.yml"` is no longer matched to the file of that name
+beside this root, while a directory the script assigns is still taken to be this tree — including
+one a command substitution computes and one assigned inside a single branch, the known limit
+`docs/DECISIONS.md` now names. Four more shapes are read rather
 than guessed at — a chain of `source` four deep, `$(dirname "$0")/lib.sh` and
 `${BASH_SOURCE[0]%/*}/lib.sh`, a call continued over any number of lines, and a `docker compose`
 line inside a heredoc body, which is text and not a call. The report now says which subcommand it

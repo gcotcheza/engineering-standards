@@ -458,16 +458,27 @@ on this box with a compose file beside it, no gate produces one, so nothing turn
 on this alone. A mention is the one thing left that is printed and not failed, for the
 reason above.
 
-**A `-f` directory is this root only where the script computes it.** `-f "$X/x.yml"`
+**A `-f` directory is this root unless only the environment sets it.** `-f "$X/x.yml"`
 used to be matched on its basename, so a file in someone else's tree was judged as the
 file of that name here — and the reverse, `-f infra/x.yml`, was refused. The rule is
-now the origin of the directory, not its spelling: where the path expands entirely
-from assignments the script makes above the call, it is this tree and the basename
-stands; where a variable in it is one only the environment sets, the directory is
-unknown and the call is unread. Both live shapes stay judged — `-f "${COMPOSE_FILE}"`
-over `COMPOSE_FILE="${REPO_ROOT}/docker-compose.ci.yml"`, and a bare `-f x.yml` — while
-`-f "$SHARED/docker-compose.yml"` is not read as the `docker-compose.yml` beside this
-root. A directory written out in full must still be this root.
+now the origin of the directory, not its spelling: a directory the script itself
+assigns is taken to be this tree and the basename stands; one whose value only the
+environment supplies is unknown, and the call is unread. Both live shapes stay
+judged — `-f "${COMPOSE_FILE}"` over `COMPOSE_FILE="${REPO_ROOT}/docker-compose.ci.yml"`,
+and a bare `-f x.yml` — while `-f "$SHARED/docker-compose.yml"` is not read as the
+`docker-compose.yml` beside this root. A directory written out in full must still be
+this root.
+
+The known limit is what "the script assigns it" does not check: the value is never
+traced back to a literal. A directory a command substitution produces — `$(cd … && pwd)`,
+`$(mktemp -d)`, `$(git rev-parse --show-toplevel)` — is *assumed* to be this tree, and an
+assignment made only inside a branch is read as if that branch had run. A gate pointing
+`-f` at a computed directory in another tree is therefore judged against the file of that
+name here. The stricter rule — the basename stands only where the path expands to a
+literal — was written and run over the live gates: it reds 23 correct calls across
+`/var/www/fineprint` and `/var/www/kidsquest`, every one of them the ordinary
+`COMPOSE_FILE="${REPO_ROOT}/docker-compose.ci.yml"` shape. False reds on working gates
+cost more than a gap no gate on this box has, so the gap stays and is written down here.
 
 **A wrapper is read the way a variable is.** The file set under a name was kept
 last-write-wins, so an `if`/`else` that built `DC=(…)` two ways passed on whichever
