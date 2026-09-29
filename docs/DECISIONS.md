@@ -314,3 +314,71 @@ and no production tag to share. The one place the refusal is newly visible is th
 fleet-wide tally in `ROLLOUT.md`, run by hand from this clone against every project
 root: the two projects in its *no compose file beside the root* row now answer exit 2
 with the reason, which is the honest reading and was always what that row meant.
+
+
+## What a gate runs is a set of compose files, not one file (2026-09-29)
+
+**What the check could not see.** `scripts/gate-image-tags.sh` read every compose
+file beside a root on its own. Two shapes fall straight through that. An overlay
+that sets only `image:` for a service, with no `build:` next to it, counted as a
+tag nothing builds — but `docker compose -f base -f overlay` merges the pair, and
+the merged service builds from the base's `build:` under the overlay's tag. And a
+gate that passes no `-f` at all does not run its own file: compose resolves its
+default file, which is the production one. Both ways the report said *"none shared"*
+over an open hole, and — the tell — it said exactly the same thing after the hole
+was fixed, because an overlay's tag still read as unbuilt. A check that cannot tell
+the fix from the fault is measuring the wrong thing.
+
+**Where the file sets come from: the gate scripts.** Three candidates were weighed.
+A *convention* — an overlay named `*ci*` layers on `docker-compose.yml` when it
+declares no build of its own — invents a pairing nobody wrote, and would have
+missed the case that started this, where the gate passes no overlay at all and
+there is nothing to pair. A *declared manifest* is a second place that has to be
+kept true, and it is empty exactly where it matters: the project with a T9 hole is
+the one that never wrote it. What remains is the running thing (W9): the gate's own
+compose calls. `scripts/check.sh`, `ci.sh`, `e2e.sh` and `gate.sh` are the names T1
+and T6 give those entry points; each `docker compose` call in them yields a file
+set from its `-f` flags, from an exported `COMPOSE_FILE`, or — naming nothing —
+from compose's own default-file precedence. Each set is merged as compose merges
+it: a later `image:` wins, a `build:` anywhere in the set builds, and the set's own
+`name:` decides an implicit `<project>-<service>` tag. A gate that lives under
+another name is not guessed at; the report names the scripts it read.
+
+**The shell is lexed, not run.** Quote and heredoc state is tracked across lines, so
+`printf '  docker compose up -d app\n'` in a help string is not read as a gate run.
+Reading quoted text as code was tried against the nine roots on this box: one project's
+usage text invents a run over the production file, and on the project that really is red
+the finding moves off the call that causes it and onto a line of help. A `-f` value naming a file this root does not have, a subcommand that was
+never reached, a call whose files could not be resolved: each is printed on its own
+line and none is judged. Loud beats quiet, but a guess is neither.
+
+**A bare call that only tears down is not a build.** `down`, `ps`, `logs`, `config`
+and their like are read as idle, and a wrapper that carries no subcommand of its own
+(`DOWN=(docker compose -p "$PROJECT")`) is read as idle too, because the alternative
+is a red gate for a teardown. Every idle bare call is still printed — *not judged, no
+subcommand read* — so the gap is visible rather than silent. A bare call with a real
+subcommand (`up`, `run`, `build`, `exec`) is judged against the production files.
+
+**An overlay with `image:` and no `build:` is not refused outright.** Where the tag
+it names is one production builds, nothing new is needed: the shared-tag rule that
+has been here since the start already refuses it, and the test says so. Where it
+names a tag of its own and no gate run read here passes that file, a refusal would
+red a project whose gate is safe and merely written somewhere this check does not
+look — one such stack is on this box today. That case is printed as an unjudged
+overlay, naming the file, the tag and the build it would merge over, and the pair is
+judged the moment a gate script names it.
+
+**Discovery widened to any `services:` file.** A compose file renamed out of
+`docker-compose*.yml` / `compose*.yml` was invisible: the root refusal only fired
+when there was no recognised file at all, so a root holding one recognised file and
+one renamed one judged half of itself. Any `.yml` or `.yaml` beside the root
+carrying a top-level `services:` key is now read and classified by name, which means
+a renamed builder ends in the existing *named for neither side* FAIL (exit 1) rather
+than the whole-root refusal (exit 2). The refusal still stands where nothing beside
+the root carries `services:`, which is what "wrong root" now means. A `.yml` that is
+not a compose file at all — a `deptrac.yaml` — is left alone, because the
+`services:` key is what makes a file one compose can be pointed at.
+
+**The limit that stays.** A gate that passes `-p` or `COMPOSE_PROJECT_NAME` at run
+time still builds implicit tags this check cannot name; that is the limit the
+2026-09-25 entry above records, and reading the gate scripts does not lift it.

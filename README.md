@@ -43,8 +43,14 @@ service that builds and names no `image:` is not untagged either: compose tags i
 `<project>-<service>`, so that tag is resolved from the file's `name:` or its directory and
 compared like a written one. A compose file whose name places it on neither side and that builds a
 tag is refused, because that is the file whose side decides whether a collision is reported. A
-root with no compose file beside it at all is refused too — exit 2, one line — because a renamed
-file or a wrong root would otherwise read as nothing-to-overwrite.
+root where no `.yml` carries a top-level `services:` is refused too — exit 2, one line — because a
+wrong root would otherwise read as nothing-to-overwrite.
+
+A compose file on its own is not what a gate runs, so the check also reads `scripts/check.sh`,
+`ci.sh`, `e2e.sh` and `gate.sh` for the files each `docker compose` call passes — `-f`, an
+exported `COMPOSE_FILE`, or compose's own default file — and judges each merged set the way
+compose merges it: a later `image:` wins, a `build:` anywhere in the set builds. It prints what
+each gate run builds, and names every call it could not read rather than assuming it away.
 
 ## Vendored scripts
 

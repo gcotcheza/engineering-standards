@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-09-29 — the image-tag check judges the file sets a gate really runs (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+**A compose file judged alone is not what a gate runs.** The check read each file beside a root on
+its own, so two shapes were invisible. An overlay that only sets `image:` for a service, with no
+`build:` next to it, read as a tag nothing builds — while `docker compose -f base -f overlay`
+inherits the base's `build:` and really does build under the overlay's tag. And a gate that passes
+no `-f` at all runs compose over the production file itself: one project's gate built and ran
+production's own tag for weeks under a green *"none shared"*, and when that hole was fixed the
+check could not credit the fix either, because the new overlay's tag still looked unbuilt.
+
+The check now reads `scripts/check.sh`, `ci.sh`, `e2e.sh` and `gate.sh` for the files each
+`docker compose` call passes — `-f`, an exported `COMPOSE_FILE`, or compose's own default file —
+and judges each set merged the way compose merges it: a later `image:` wins, a `build:` anywhere
+in the set builds. Its report gains a `gate scripts:` line, a `gate runs:` line naming what each
+run builds, and a line for every call it could not resolve. Run against the nine project roots on
+this box it changes one verdict: the project whose gate passes no `-f`, which is now red with the
+script and line that reaches production's tag, and green again on the branch that fixes it.
+Nothing else moves.
+
+Two smaller changes ride with it. Any `.yml` or `.yaml` beside the root carrying a top-level
+`services:` is now read, whatever its name, so a compose file renamed out of `docker-compose*` is
+judged rather than invisible — case 7b of the test therefore ends in a FAIL naming the file (exit
+1) instead of the whole-root refusal (exit 2), which still stands for a root where nothing carries
+`services:`. And a bare call whose subcommand only inspects or tears down (`down`, `ps`, `logs`,
+…) is printed as read but not judged, because a teardown that names a project and no file is not
+a build. Eleven new cases in `scripts/gate-image-tags-test.sh`, all proved red first against a
+copy of the script from `main` and against four deliberate mutations of the new one. The long-form
+why is in `docs/DECISIONS.md`.
+
 ## 2026-09-28 — the image-tag check refuses a root it found no compose file in (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 **Nothing examined is no longer a pass.** Given a root with no `docker-compose*.yml` or
 `compose*.yml` beside it, the check printed *"no compose file beside this root — nothing was
