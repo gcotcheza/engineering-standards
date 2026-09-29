@@ -33,10 +33,11 @@ And a gate line naming `docker compose` that yields no call this reader can foll
 `sh -c`, a wrapper built from a string — is printed as an unjudged call rather than looking like a
 gate that never calls compose; it does not change the exit code, and `docs/DECISIONS.md` says why.
 
-Thirty-one new cases in `scripts/gate-image-tags-test.sh` (169 checks in all), twenty-eight of
-them proved red against a copy of the script from `main`, and seventeen deliberate mutations of
-the new one covering the rest — including the two cases that previously could not be shown to
-fail. The long-form why is in `docs/DECISIONS.md`.
+Thirty-one new cases in `scripts/gate-image-tags-test.sh` (169 checks in all). Twenty-seven of
+them go red against a copy of the script from `main` — twenty-eight cases in all, counting case 7b,
+which is not new but whose expected output changed — and seventeen deliberate mutations of the new
+script cover the four that cannot go red against `main`, including the two the review found could
+not be shown to fail at all. The long-form why is in `docs/DECISIONS.md`.
 
 **Order of merge.** The one project this turns red has its own fix open. Merge that project's pull
 request first: this repository's clone is what every gate calls by path, so fast-forwarding it
