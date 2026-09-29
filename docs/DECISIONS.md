@@ -246,9 +246,15 @@ must not look alike.
 **Why `unrecognised:` still exits 0 unless it builds.** A compose file named
 outside `*ci*`/`*e2e*`/`*prod*` is read as production on its filename alone. Failing
 closed on that name was the recommendation, and it is not what this change does:
-Fineprint's `docker-compose.realip.yml` is a genuine production-side proof stack
-whose name says neither, and an unconditional refusal would have turned a green
-project red for a file that builds nothing. The narrower rule is the one that
+Fineprint's real-ip proof stack was then named `docker-compose.realip.yml`, a
+genuine production-side stack whose name said neither, and an unconditional
+refusal would have turned a green project red for a file that builds nothing.
+That example has since moved: Fineprint's PR #92 renamed the file
+`docker-compose.ci-realip.yml` and put it on the gate's side, because
+`scripts/ci.sh` drives it and it runs the tag that gate builds — the `ci-`
+prefix is there so this check reads the side off the name instead of guessing
+at it. The example is history; the rule it argues for is not.
+The narrower rule is the one that
 matters — an unrecognised file that **builds** a tag now fails, because that is the
 file whose side decides whether a real collision is reported. A non-building
 unrecognised file can still hide the case-6 finding (a gate that only *runs*
