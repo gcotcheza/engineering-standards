@@ -51,6 +51,20 @@ builder() {
 # over the directory.
 named() { mkdir -p "${WORK}/$1"; printf 'name: %s\n' "$3" >"${WORK}/$1/$2"; }
 
+# An overlay service: an image: with no build: beside it, the shape a gate lays
+# over a production base. $4 adds a build: of the file's own.
+overlay() {
+    mkdir -p "${WORK}/$1"
+    [ -s "${WORK}/$1/$2" ] || printf 'services:\n' >>"${WORK}/$1/$2"
+    { printf '  %s:\n' "$3"
+      [ "${5:-}" = build ] && printf '    build:\n      context: ./docker/app\n'
+      printf '    image: %s\n' "$4"
+    } >>"${WORK}/$1/$2"
+}
+
+# A gate script the check reads for the compose files a gate run passes.
+gate_script() { mkdir -p "${WORK}/$1/scripts"; printf '%s\n' "$3" >"${WORK}/$1/scripts/$2"; }
+
 append() { printf '%s\n' "$3" >>"${WORK}/$1/$2"; }
 
 run() { OUT="$("${CHECK}" "${WORK}/$1" 2>&1)"; RC=$?; }
@@ -121,12 +135,21 @@ matches 'case 7: a root with nothing to read is refused in one line' "${OUT}" \
     '^gate-image-tags: no compose file beside this root — nothing was examined, so .*/empty is refused, not passed \(T9\)$'
 equals  'case 7: exit code' "${RC}" 2
 
-# --- 7b. the compose file renamed out of the pattern -> the same refusal ------
+# --- 7b. a compose file renamed out of the pattern -> read, and judged --------
 mkdir -p "${WORK}/renamed"
 printf 'services:\n  app:\n    build: ./docker/app\n    image: demo/app:latest\n' >"${WORK}/renamed/stack.yml"
 run renamed
-matches 'case 7b: a renamed compose file does not read as nothing to overwrite' "${OUT}" 'is refused, not passed \(T9\)$'
-equals  'case 7b: exit code' "${RC}" 2
+matches 'case 7b: a yml carrying services: is read whatever its name' "${OUT}" 'production files: +stack\.yml$'
+matches 'case 7b: and a tag it builds is refused, not hidden' "${OUT}" 'FAIL .*: stack\.yml builds an image tag and is named neither for the gate nor for production'
+equals  'case 7b: exit code' "${RC}" 1
+
+# --- 7c. a yml that is not a compose file at all -> not read, root refused ----
+mkdir -p "${WORK}/notcompose"
+printf 'paths:\n  only_dir_groups:\n    app: ["src/App"]\n' >"${WORK}/notcompose/deptrac.yaml"
+run notcompose
+matches 'case 7c: a yml with no top-level services: is not read as compose' "${OUT}" \
+    '^gate-image-tags: no compose file beside this root — nothing was examined, so .*/notcompose is refused, not passed \(T9\)$'
+equals  'case 7c: exit code' "${RC}" 2
 
 # --- 8. the build is inherited through a merge key on both sides -> FAIL ------
 merged anchored docker-compose.e2e.yml 'demo/app:latest'
@@ -326,6 +349,137 @@ run flowvalue
 matches 'case 30: a value left holding flow punctuation is not resolved' "${OUT}" 'images: +1 resolved, 2 unresolved'
 matches 'case 30: and no mangled tag is counted' "${OUT}" 'built tags: +1$'
 equals  'case 30: exit code' "${RC}" 0
+
+# --- 31. an overlay that only retags, merged over the base that builds -> PASS -
+service overlaid docker-compose.yml 'x/app:latest' build
+overlay overlaid docker-compose.ci.yml app 'x/app:ci'
+gate_script overlaid check.sh 'docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d'
+run overlaid
+matches 'case 31: the two files a gate passes are read as one run' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:1, -f\) builds x/app:ci$'
+matches 'case 31: an image: with no build: beside it is not a tag nothing builds' "${OUT}" '^ok '
+equals  'case 31: exit code' "${RC}" 0
+
+# --- 32. the overlay retags one service and leaves its sibling -> FAIL ---------
+service halfway docker-compose.yml 'x/app:latest' build
+append  halfway docker-compose.yml '  queue:
+    build:
+      context: ./docker/app
+    image: x/app:latest'
+overlay halfway docker-compose.ci.yml app 'x/app:ci'
+gate_script halfway check.sh 'docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d'
+run halfway
+matches 'case 32: the service the overlay forgot still builds production tag' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:1 builds image tag x/app:latest, which production is recreated from'
+matches 'case 32: and the service is named' "${OUT}" 'services: +queue \(build at docker-compose\.yml:[0-9]+\)$'
+equals  'case 32: exit code' "${RC}" 1
+
+# --- 33. a gate that passes no -f at all runs the production file -> FAIL ------
+service bare docker-compose.yml     'orb/app:latest' build
+service bare docker-compose.e2e.yml 'orb/app:e2e' build
+gate_script bare check.sh 'docker compose run --rm --no-deps app php artisan test'
+run bare
+matches 'case 33: a bare compose call is read as compose reads it' "${OUT}" \
+    'gate runs: +docker-compose\.yml \(scripts/check\.sh:1, default\) builds orb/app:latest'
+matches 'case 33: and building production tag in the gate fails' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:1 builds image tag orb/app:latest'
+matches 'case 33: the call is quoted back' "${OUT}" 'gate run: +docker compose run over docker-compose\.yml \(default\)$'
+equals  'case 33: exit code' "${RC}" 1
+
+# --- 34. the same gate with an exported COMPOSE_FILE pair -> PASS, and credited -
+service fixed docker-compose.yml 'orb/app:latest' build
+overlay fixed docker-compose.ci.yml app 'orb/app:ci'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script fixed check.sh 'here=$(dirname "$0")
+export COMPOSE_FILE="$here/docker-compose.yml:$here/docker-compose.ci.yml"
+docker compose run --rm --no-deps app php artisan test'
+run fixed
+matches 'case 34: an exported COMPOSE_FILE is the file set of a bare call' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:3, COMPOSE_FILE\) builds orb/app:ci$'
+matches 'case 34: and the gate tag of its own passes' "${OUT}" '^ok '
+equals  'case 34: exit code' "${RC}" 0
+
+# --- 34b. COMPOSE_FILE assigned but never exported -> compose reads its default -
+service unexported docker-compose.yml 'orb/app:latest' build
+overlay unexported docker-compose.ci.yml app 'orb/app:ci'
+gate_script unexported check.sh 'COMPOSE_FILE="docker-compose.yml:docker-compose.ci.yml"
+docker compose up -d'
+run unexported
+matches 'case 34b: a variable compose never sees does not decide the file set' "${OUT}" \
+    'gate runs: +docker-compose\.yml \(scripts/check\.sh:2, default\) builds orb/app:latest'
+equals  'case 34b: exit code' "${RC}" 1
+
+# --- 35. the overlay carries its own build:, passed as a pair -> PASS ----------
+service withbuild docker-compose.yml 'mem/app:latest' build
+overlay withbuild docker-compose.ci.yml app 'mem/app:ci' build
+gate_script withbuild check.sh 'compose() { docker compose -f docker-compose.yml -f docker-compose.ci.yml "$@"; }
+compose up -d'
+run withbuild
+matches 'case 35: a -f pair inside a wrapper is read' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:1, -f\) builds mem/app:ci$'
+equals  'case 35: exit code' "${RC}" 0
+
+# --- 36. a bare call that only tears down -> named, not judged, and passes -----
+service teardown docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script teardown e2e.sh 'DOWN=(docker compose -p "$PROJECT")
+"${DOWN[@]}" down -v --remove-orphans'
+run teardown
+matches 'case 36: a call whose subcommand was never read is not judged' "${OUT}" \
+    'gate runs: +docker-compose\.yml \(scripts/e2e\.sh:1, default\) not judged — no subcommand read$'
+equals  'case 36: exit code' "${RC}" 0
+
+# --- 37. an overlay naming production's own built tag -> FAIL, as it always did -
+service takesprod docker-compose.yml 'x/app:latest' build
+overlay takesprod docker-compose.ci.yml app 'x/app:latest'
+run takesprod
+matches 'case 37: an overlay on production tag is a shared tag with no gate script' "${OUT}" \
+    'FAIL .*: image tag x/app:latest is built for the gate and run in production'
+equals  'case 37: exit code' "${RC}" 1
+
+# --- 38. an overlay in no gate run this check can read -> named, and passes ----
+service unpaired docker-compose.yml 'x/app:latest' build
+overlay unpaired docker-compose.ci.yml app 'x/app:ci'
+run unpaired
+matches 'case 38: an overlay no gate run here pairs is named, not assumed' "${OUT}" \
+    'overlay tags: +docker-compose\.ci\.yml:2 tags app x/app:ci, over the build at docker-compose\.yml:2 — in no gate run read here$'
+matches 'case 38: and the root still passes' "${OUT}" '^ok '
+equals  'case 38: exit code' "${RC}" 0
+
+# --- 39. a -f value naming a file that is not here -> printed, never dropped ---
+service missingf docker-compose.yml 'x/app:latest' build
+gate_script missingf check.sh 'docker compose -f docker-compose.gone.yml up -d'
+run missingf
+matches 'case 39: a -f value this root has no file for is named' "${OUT}" \
+    'unread -f values: +docker-compose\.gone\.yml in scripts/check\.sh:1$'
+equals  'case 39: exit code' "${RC}" 0
+
+# --- 40. a compose call inside a quoted help string is not a gate run ----------
+service helptext docker-compose.yml 'x/app:latest' build
+gate_script helptext check.sh "printf '  docker compose up -d app\n'
+printf \"  or: docker compose run --rm app sh\n\"
+echo 'nothing here runs compose'"
+run helptext
+matches 'case 40: a compose line inside a string is not read as a run' "${OUT}" 'gate runs: +none read beside this root$'
+equals  'case 40: exit code' "${RC}" 0
+
+# --- 40b. a service in a gate run that extends: -> no tag invented for it -----
+builder extset docker-compose.ci.yml app extends
+service extset docker-compose.yml 'extset-app' build
+gate_script extset check.sh 'docker compose -f docker-compose.ci.yml up -d'
+run extset
+matches 'case 40b: a gate run invents no tag the file alone would not carry' "${OUT}" \
+    'images: +1 resolved, 1 unresolved — the image of app \(extends a service, whose image: is not read here\) in docker-compose\.ci\.yml:2$'
+matches 'case 40b: so the gate run claims no built tag' "${OUT}" \
+    'gate runs: +docker-compose\.ci\.yml \(scripts/check\.sh:1, -f\) builds nothing$'
+equals  'case 40b: exit code' "${RC}" 0
+
+# --- 41. the gate scripts read are named, even when there are none ------------
+service noscripts docker-compose.yml 'x/app:latest' build
+run noscripts
+matches 'case 41: a root with no gate script says which names it looked for' "${OUT}" \
+    'gate scripts: +none — scripts/\{check,ci,e2e,gate\}\.sh$'
+equals  'case 41: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
