@@ -314,3 +314,40 @@ and no production tag to share. The one place the refusal is newly visible is th
 fleet-wide tally in `ROLLOUT.md`, run by hand from this clone against every project
 root: the two projects in its *no compose file beside the root* row now answer exit 2
 with the reason, which is the honest reading and was always what that row meant.
+
+## The ledger row names the commit the run was armed on (2026-09-29)
+
+**A row was stamped with whatever HEAD said minutes later.** `gate_ledger_record` runs
+from the gate's EXIT trap and read HEAD there, so a commit that landed in the tree while
+the gate was working was handed a green row no step had ever read — the gate judged one
+tree and cleared another. `gate_ledger_arm` now reads HEAD before the first step, and the
+trap compares: if HEAD has moved, nothing is recorded and both commits are named. A
+dirty tree is still stamped `<sha>-dirty`, unchanged, because `gated()` matches the
+ledger's first field against a sha `resolve` names and `<sha>-dirty` is not one — such a
+row leaves evidence a gate ran without ever clearing a deploy. The row format is
+untouched: `<sha> <kind> <utc> <rc> <log>`, so a project re-vendoring this needs no
+change to any reader.
+
+**Why arming is a call the gate makes, not something sourcing does.** Every gate on this
+box sources `ledger.sh` and then sets `GATE_LEDGER_GIT="${GIT}"` on the next line —
+`git-as <app> -C <worktree>`, because root's own git refuses an app-owned tree. Arming at
+source time would therefore read HEAD through the wrong git, get nothing, and refuse every
+row afterwards. So `gate_ledger_arm` is explicit and belongs after the seam and before the
+first step, which is where health-tracker's `scripts/ci.sh` already puts its own copy of
+this guard; the name is health-tracker's too, deliberately, because two spellings of one
+idea is how a re-vendor drops one of them.
+
+**A gate that never arms records nothing, loudly.** The alternative — record as before when
+`GATE_ARMED` is unset — would let a project take this version and keep the bug it fixes,
+silently. A missing row refuses a deploy and says why on stderr; a wrong row clears one. So
+the un-armed case fails closed (C9), and re-vendoring this library into a project means
+adding one `gate_ledger_arm` line to that project's gate. Sourcing discards an inherited
+`GATE_ARMED` for the same reason it discards `GATE_SUITE_PASSED`: neither may be bought from
+the environment.
+
+**Pre-flight's own test stopped asserting the serializer's mood.** `preflight()` prints
+`heavy-work $($HEAVY --status | head -1)` and the test pinned the literal `heavy-work free`,
+which is only ever green because the fixture's stub answers `free`. The stub now answers
+whatever the case asks for, the case asks for a busy slot, and the assertion reads that
+string back — so the test proves pre-flight quotes the serializer rather than proving the
+stub's default. The stub always answers on two lines as well, so `head -1` has a test.

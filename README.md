@@ -78,7 +78,10 @@ First landing, once per project, from a clone: `DEPLOY_ROOT=/var/www/<app> bash
 any `GATE_SUITE_PASSED` inherited from the environment, so an operator's `export` or a CI
 wrapper's cannot fake a pass; a gate script must set `GATE_SUITE_PASSED=1` itself, in its own
 shell, immediately after its suite returns 0. Without that flag an rc of 0 is recorded as a
-failure and says so on stderr. Reading is
+failure and says so on stderr. A gate also calls `gate_ledger_arm` itself, on the line after
+it sets `GATE_LEDGER_GIT` and before its first step: that pins the commit the run is judging,
+and the trap records nothing if HEAD has moved under it — a gate that never arms records
+nothing either, and says which of the two it was. Reading is
 newest-wins: the last line for a (sha, kind) decides, so a later red overrides an earlier green
 and a genuine re-run's green overrides an earlier red.
 

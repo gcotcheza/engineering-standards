@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-09-29 — the gate ledger records the commit a run was armed on (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+**A green row for a tree no step read.** `gate_ledger_record` is called from a gate's EXIT
+trap and read HEAD there, minutes after the gate decided what it was judging — so a commit
+landing in the checkout mid-run was handed the run's green row and a deploy could ship it
+on evidence from the commit before it. `gate_ledger_arm` now pins HEAD before the first
+step and the writer compares at trap time: HEAD moved, or it could not be read at arming,
+and nothing is recorded — the run says which commit it began on and which one HEAD is now.
+A dirty tree is still stamped `<sha>-dirty` rather than refused, because that is a sha no
+deploy can resolve and it leaves evidence the gate ran. The row stays
+`<sha> <kind> <utc> <rc> <log>`, so no reader anywhere changes. A gate that never calls
+`gate_ledger_arm` records nothing and says so: fail-closed, because the silent alternative
+is a project taking this version and keeping the bug. Sourcing discards an inherited
+`GATE_ARMED` the way it already discards `GATE_SUITE_PASSED`. `scripts/check.sh` arms on the
+line after `GATE_LEDGER_GIT`. The guard and its name are health-tracker's (`scripts/ci.sh`),
+which Reflection #34 and Scribly #19 each hand-rolled into their own gates; this is the same
+guard moved into the library those three vendor.
+**Pre-flight's test no longer pins the stub's mood.** `preflight-clean` asserted the literal
+`heavy-work free` while `preflight()` prints whatever `$HEAVY --status` answers; the fixture's
+stub now answers what the case asks for, the case asks for a busy slot, and the assertion
+reads that back — the seam is stubbed rather than the match loosened. The stub answers on two
+lines as well, so `head -1` has a test. `scripts/lib/deploy/test.sh` gains four ledger cases
+and twelve assertions; five mutations were watched go red first (the armed comparison, the
+un-armed guard, the `unset`, the `heavy-work` half of the pre-flight line, and `head -1`).
+deploy-lib VERSION is 2026-09-29 and all four vendored headers are re-stamped, so
+`fleet-versions.sh` reports every project's vendored copy STALE until it re-vendors;
+re-vendoring is its own round per project, and the pinned `SUITE_SHA256` those projects hold
+becomes `1b22cd85d770f93e6f6196a69305b54c2ea0d5feeaf32316b1cb01a8998907be`. The long-form why
+is in `docs/DECISIONS.md`.
+
 ## 2026-09-28 — the image-tag check refuses a root it found no compose file in (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 **Nothing examined is no longer a pass.** Given a root with no `docker-compose*.yml` or
 `compose*.yml` beside it, the check printed *"no compose file beside this root — nothing was
