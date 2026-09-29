@@ -87,9 +87,11 @@ esac
 [ -n "${FAKE_GH_FAIL:-}" ] && { echo 'gh: no such pull request' >&2; exit 1; }
 cat "${FAKE_GH_JSON}"
 SH
+    # --status answers whatever the case asked for, and always on more than one line:
+    # pre-flight quotes the serializer's first line, not its report.
     cat >"${BIN}/heavy-work" <<'SH'
 #!/bin/sh
-[ "$1" = '--status' ] && { echo 'free'; exit 0; }
+[ "$1" = '--status' ] && { printf '%s\nlast: label=noise\n' "${FAKE_HEAVY_STATUS:-free}"; exit 0; }
 exit 0
 SH
     chmod 0755 "${BIN}"/*
@@ -158,6 +160,9 @@ run_lib() {
     # Simulates an operator's `export GATE_SUITE_PASSED=1` (or a CI wrapper's) already
     # present in the environment BEFORE driver.sh sources ledger.sh.
     suiteenv="${SUITE_PASSED_ENV:+GATE_SUITE_PASSED=${SUITE_PASSED_ENV}}"
+    # The same move for the arming guard: set in the environment before driver.sh
+    # sources ledger.sh, GATE_ARMED would buy a row for a run that armed nothing.
+    armedenv="${ARMED_ENV:+GATE_ARMED=1}"
     ARGVFILE="${CASE}/gh-argv.log"
     # shellcheck disable=SC2086  # repoenv is empty or one NAME=value; "" would be env's command
     OUT="$(env \
@@ -165,6 +170,7 @@ run_lib() {
         FAKE_GH_JSON="${CASE}/gh.json" \
         FAKE_GH_FAIL="${GH_FAIL:-}" \
         FAKE_GH_ARGV_LOG="${ARGVFILE}" \
+        FAKE_HEAVY_STATUS="${HEAVY_STATUS:-free}" \
         FAKE_PR="${PR_NUMBER}" \
         FAKE_BY_HAND="${BY_HAND:-0}" \
         FAKE_BEFORE="${LIVE_SHORT}" \
@@ -177,6 +183,7 @@ run_lib() {
         DEPLOY_LEDGER="${LEDGER}" \
         ${repoenv} \
         ${suiteenv} \
+        ${armedenv} \
         "${logenv}" \
         bash "${CASE}/lib/driver.sh" 2>&1)"
     LOGFILE="$(find "${LOGS}" "${CASE}/logroot" -name '*.log' -printf '%T@ %p\n' 2>/dev/null \
@@ -187,7 +194,15 @@ run_lib() {
     LOG_DIR_UNSET=''
     REPO_OVERRIDE=''
     SUITE_PASSED_ENV=''
+    ARMED_ENV=''
+    HEAVY_STATUS=''
 }
+
+# The row count of a ledger a refusal may have left un-created.
+rows() { if [ -s "$1" ]; then wc -l <"$1"; else printf '0'; fi; }
+
+# Every writer case arms the way a gate does: the git seam first, then the sha.
+armed() { printf "GATE_LEDGER_GIT='git -C %s'; gate_ledger_arm; %s" "${ROOT}" "$1"; }
 
 BY_HAND=''
 GH_FAIL=''
@@ -195,6 +210,8 @@ EXTRA=''
 LOG_DIR_UNSET=''
 REPO_OVERRIDE=''
 SUITE_PASSED_ENV=''
+ARMED_ENV=''
+HEAVY_STATUS=''
 
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
@@ -428,7 +445,7 @@ contains 'the later-appended line decides even though its own timestamp is earli
 fixture killed-run-regression
 printf '%s ci 2026-09-19T05:00:00Z 0 -\n%s e2e 2026-09-19T05:30:00Z 0 -\n' \
     "${LIVE_SHA}" "${LIVE_SHA}" >"${LEDGER}"
-run_lib "GATE_LEDGER=${LEDGER} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record e2e 0 - >&3 2>&3; HEAD_SHA=${LIVE_SHA}; gated"
+run_lib "$(armed "GATE_LEDGER=${LEDGER} gate_ledger_record e2e 0 - >&3 2>&3; HEAD_SHA=${LIVE_SHA}; gated")"
 contains 'the killed run is recorded as a failure' "${OUT}" \
     'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
 contains 'and the head it was green on before is no longer gated' "${OUT}" \
@@ -437,23 +454,23 @@ contains 'and the head it was green on before is no longer gated' "${OUT}" \
 # --- 4. the ledger writer --------------------------------------------------------
 fixture ledger-writer
 WRITTEN="${CASE}/written"
-run_lib "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 /tmp/ci.log >&3"
+run_lib "$(armed "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3")"
 contains 'the writer says where it wrote' "${OUT}" "gate-ledger: ${LIVE_SHA:0:7} ci rc=0 -> ${WRITTEN}"
 matches 'the ledger line is <sha> <kind> <utc> <rc> <log>' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA} ci [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z 0 /tmp/ci\.log$"
 printf 'uncommitted\n' >>"${ROOT}/app/base.txt"
-run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record e2e 1 /tmp/e2e.log >&3"
+run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 1 /tmp/e2e.log >&3")"
 matches 'a dirty tree records <sha>-dirty' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA}-dirty e2e [0-9-]+T[0-9:]+Z 1 /tmp/e2e\.log$"
 
 fixture ledger-unwritable
-run_lib "GATE_LEDGER=/proc/nope/ledger GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 - >&3 2>&3; printf 'STILL HERE\n' >&3"
+run_lib "$(armed "GATE_LEDGER=/proc/nope/ledger gate_ledger_record ci 0 - >&3 2>&3; printf 'STILL HERE\n' >&3")"
 contains 'a ledger it cannot write is said out loud' "${OUT}" 'is NOT recorded'
 contains 'and the gate carries on regardless' "${OUT}" 'STILL HERE'
 
 fixture ledger-writer-flag
 WRITTEN="${CASE}/written"
-run_lib "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3"
+run_lib "$(armed "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3")"
 contains 'rc 0 with GATE_SUITE_PASSED is recorded green' "${OUT}" \
     "gate-ledger: ${LIVE_SHA:0:7} ci rc=0 -> ${WRITTEN}"
 matches 'and the line it writes says rc 0' "$(tail -1 "${WRITTEN}")" \
@@ -461,7 +478,7 @@ matches 'and the line it writes says rc 0' "$(tail -1 "${WRITTEN}")" \
 
 fixture ledger-writer-no-flag
 WRITTEN="${CASE}/written"
-run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record e2e 0 - >&3 2>&3"
+run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 0 - >&3 2>&3")"
 contains 'rc 0 without the flag says the run did not finish' "${OUT}" \
     'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
 matches 'and a failure is what it writes' "$(tail -1 "${WRITTEN}")" \
@@ -469,7 +486,7 @@ matches 'and a failure is what it writes' "$(tail -1 "${WRITTEN}")" \
 
 fixture ledger-writer-nonzero
 WRITTEN="${CASE}/written"
-run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 7 - >&3 2>&3"
+run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record ci 7 - >&3 2>&3")"
 matches 'a non-zero rc is written unchanged' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 7 -$"
 absent 'and the flag is never mentioned for it' "${OUT}" 'GATE_SUITE_PASSED'
@@ -477,17 +494,60 @@ absent 'and the flag is never mentioned for it' "${OUT}" 'GATE_SUITE_PASSED'
 fixture ledger-env-exported-before-source
 WRITTEN="${CASE}/written"
 SUITE_PASSED_ENV=1
-run_lib "GATE_LEDGER=${WRITTEN} GATE_LEDGER_GIT='git -C ${ROOT}' gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3"
+run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3")"
 contains 'an operator export inherited before sourcing is discarded, not honoured' "${OUT}" \
     'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
 matches 'and it is written as a failure' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 1 /tmp/ci\.log$"
 
+# --- 4b. the armed sha: a row names the commit the run began on, or there is no row ---
+# A commit landing between gate_ledger_arm and the EXIT trap. The row would otherwise
+# clear a tree no step ever read.
+fixture ledger-head-moved
+WRITTEN="${CASE}/written"
+FIXGIT="git -C ${ROOT} -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@example.invalid"
+run_lib "$(armed "printf 'late\n' >${ROOT}/app/late.txt; ${FIXGIT} add app/late.txt; ${FIXGIT} commit -q --no-verify -m late; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3")"
+LATE_SHA="$(git_at rev-parse HEAD)"
+contains 'a commit landing mid-run is refused, naming both commits' "${OUT}" \
+    "gate-ledger: HEAD is ${LATE_SHA} but the run began at ${LIVE_SHA}, so the ci run (rc=0) is NOT recorded"
+equals 'and the ledger stays empty' "$(rows "${WRITTEN}")" '0'
+absent 'no green row for the commit the gate never read' "$(cat "${WRITTEN}" 2>/dev/null)" "${LATE_SHA}"
+absent 'and none for the commit it was armed on either' "$(cat "${WRITTEN}" 2>/dev/null)" "${LIVE_SHA}"
+
+fixture ledger-never-armed
+WRITTEN="${CASE}/written"
+run_lib "GATE_LEDGER_GIT='git -C ${ROOT}'; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 - >&3 2>&3; printf 'STILL HERE\n' >&3"
+contains 'a gate that never armed gets no row' "${OUT}" \
+    'gate-ledger: gate_ledger_arm was never called, so the ci run (rc=0) is NOT recorded'
+equals 'and nothing is written' "$(rows "${WRITTEN}")" '0'
+contains 'and the gate carries on regardless' "${OUT}" 'STILL HERE'
+
+fixture ledger-armed-env-before-source
+WRITTEN="${CASE}/written"
+ARMED_ENV=1
+run_lib "GATE_LEDGER_GIT='git -C ${ROOT}'; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 - >&3 2>&3"
+contains 'an inherited GATE_ARMED is discarded on sourcing, not honoured' "${OUT}" \
+    'gate-ledger: gate_ledger_arm was never called, so the ci run (rc=0) is NOT recorded'
+equals 'and it buys no row' "$(rows "${WRITTEN}")" '0'
+
+fixture ledger-arm-unreadable
+WRITTEN="${CASE}/written"
+run_lib "GATE_LEDGER_GIT='git -C ${CASE}/nope'; gate_ledger_arm 2>&3; GATE_LEDGER_GIT='git -C ${ROOT}'; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 - >&3 2>&3"
+contains 'arming that cannot name HEAD says so at once' "${OUT}" \
+    'gate-ledger: arming could not name HEAD, so this run will record nothing'
+contains 'and the row is refused rather than guessed' "${OUT}" \
+    "gate-ledger: HEAD is ${LIVE_SHA} but the run began at an unreadable HEAD, so the ci run (rc=0) is NOT recorded"
+equals 'and nothing is written' "$(rows "${WRITTEN}")" '0'
+
 # --- 5. pre-flight ----------------------------------------------------------------
 fixture preflight-clean
+# A busy slot, because the line quotes whatever the serializer answers — pinning the
+# word 'free' here would tie the test to the stub's mood rather than to pre-flight.
+HEAVY_STATUS='busy pid=4242 label=another-gate'
 run_lib 'preflight; refuse_if_dirty; printf "PAST THE DIRTY CHECK\n" >&3'
-matches 'pre-flight prints load, memory and the serializer' "${OUT}" \
-    'PRE-FLIGHT load [0-9.]+ [0-9.]+ [0-9.]+ available [0-9]+MB heavy-work free'
+matches 'pre-flight prints load, memory and whatever the serializer answers' "${OUT}" \
+    'PRE-FLIGHT load [0-9.]+ [0-9.]+ [0-9.]+ available [0-9]+MB heavy-work busy pid=4242 label=another-gate'
+absent 'and its first line only' "${OUT}" 'last: label=noise'
 contains 'a clean checkout passes' "${OUT}" 'PAST THE DIRTY CHECK'
 
 fixture preflight-dirty

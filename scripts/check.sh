@@ -15,6 +15,8 @@
 #                                so nothing is recorded (the ledger only hears
 #                                about a full gate run)
 #
+# A row names the commit the run was armed on; if HEAD moved under the gate, or the
+# gate never armed, nothing is recorded and the run says so.
 # Prints === GATE OK === or === GATE FAILED (step N: name) ===, exit 0/1.
 # CHECK_GIT and GATE_LEDGER are scripts/lib/deploy/ledger.sh's own seams.
 set -uo pipefail
@@ -31,6 +33,8 @@ SHELLCHECK_IMAGE='koalaman/shellcheck:v0.10.0'
 # shellcheck source=scripts/lib/deploy/ledger.sh
 . "${SCRIPT_DIR}/lib/deploy/ledger.sh"
 GATE_LEDGER_GIT="${GIT}"
+# The commit this run judges, pinned before step 1 can move it.
+gate_ledger_arm
 
 step_name() {
     case "$1" in

@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-09-29 — the gate ledger records the commit a run was armed on (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
+**A green row for a tree no step read.** `gate_ledger_record` is called from a gate's EXIT
+trap and read HEAD there, minutes after the gate decided what it was judging — so a commit
+landing in the checkout mid-run was handed the run's green row and a deploy could ship it
+on evidence from the commit before it. `gate_ledger_arm` now pins HEAD before the first
+step and the writer compares at trap time: HEAD moved, or it could not be read at arming,
+and nothing is recorded — the run says which commit it began on and which one HEAD is now.
+A dirty tree is still stamped `<sha>-dirty` rather than refused, because that is a sha no
+deploy can resolve and it leaves evidence the gate ran. The row stays
+`<sha> <kind> <utc> <rc> <log>`, so no reader anywhere changes. A gate that never calls
+`gate_ledger_arm` records nothing and says so: fail-closed, because the silent alternative
+is a project taking this version and keeping the bug. Sourcing discards an inherited
+`GATE_ARMED` the way it already discards `GATE_SUITE_PASSED`. `scripts/check.sh` arms on the
+line after `GATE_LEDGER_GIT`. The guard and its name are health-tracker's (`scripts/ci.sh`),
+which Reflection #34 and Scribly #19 each hand-rolled into their own gates; this is the same
+guard moved into the library those three vendor.
+**Pre-flight's test no longer pins the stub's mood.** `preflight-clean` asserted the literal
+`heavy-work free` while `preflight()` prints whatever `$HEAVY --status` answers; the fixture's
+stub now answers what the case asks for, the case asks for a busy slot, and the assertion
+reads that back — the seam is stubbed rather than the match loosened. The stub answers on two
+lines as well, so `head -1` has a test. `scripts/lib/deploy/test.sh` gains four ledger cases
+and twelve assertions; five mutations were watched go red first (the armed comparison, the
+un-armed guard, the `unset`, the `heavy-work` half of the pre-flight line, and `head -1`).
+deploy-lib VERSION is 2026-09-29 and all four vendored headers are re-stamped, so
+`fleet-versions.sh` reports every project's vendored copy STALE until it re-vendors;
+re-vendoring is its own round per project, and the pinned `SUITE_SHA256` those projects hold
+becomes `d838dc7f6e132e172be0bb3ba682e5f7005f9a38ce603e6b5ee0520da6d23904`. The long-form why
+is in `docs/DECISIONS.md`.
+
 ## 2026-09-29 — the image-tag check judges the file sets a gate really runs (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 **A compose file judged alone is not what a gate runs.** The check read each file beside a root on
 its own, so two shapes were invisible. An overlay that only sets `image:` for a service, with no
@@ -211,7 +240,6 @@ what was done, not what was wrong" — and the word "title" appears nowhere in i
 untouched. It was found by reading the merged text rather than the PR (W9), which is the same class of
 mistake the standard's own audit was hunting: a claim nobody exercised.
 
-
 ## 2026-09-19 — S7: nothing is deleted in bulk until its read-only twin has run (VERSION 2026-09-19.2)
 Ghie, on being handed a `docker volume prune` line to type: **"Make this fleetwide, very important."**
 
@@ -254,7 +282,6 @@ reaches STALE only when the declared version differs, so a project that vendored
 merge and this one reads DIVERGED — "local edit re-stamped?" — when it has done nothing wrong. Today's
 five adopters all declare `2026-08-23` and correctly read STALE. Land this before the next adoption, and
 no project ever sits in the window.
-
 
 ## 2026-09-19 — a gate must not build the image production runs (new rule T9; VERSION moves to 2026-09-19)
 Backlog 80, found by the personal-vps session reviewing Memento #99: Memento's live container was
