@@ -368,16 +368,83 @@ look — one such stack is on this box today. That case is printed as an unjudge
 overlay, naming the file, the tag and the build it would merge over, and the pair is
 judged the moment a gate script names it.
 
-**Discovery widened to any `services:` file.** A compose file renamed out of
+**Discovery widened to any top-level `services:` file.** A compose file renamed out of
 `docker-compose*.yml` / `compose*.yml` was invisible: the root refusal only fired
 when there was no recognised file at all, so a root holding one recognised file and
 one renamed one judged half of itself. Any `.yml` or `.yaml` beside the root
-carrying a top-level `services:` key is now read and classified by name, which means
+carrying a `services:` key **at column 0** is now read and classified by name, which means
 a renamed builder ends in the existing *named for neither side* FAIL (exit 1) rather
 than the whole-root refusal (exit 2). The refusal still stands where nothing beside
 the root carries `services:`, which is what "wrong root" now means. A `.yml` that is
 not a compose file at all — a `deptrac.yaml` — is left alone, because the
-`services:` key is what makes a file one compose can be pointed at.
+`services:` key is what makes a file one compose can be pointed at. The column
+matters: `read_images` only finds a `services:` at indent 0, so a discovery that
+accepted an indented one read a `.gitlab-ci.yml` (whose `services:` sits under a
+job, beside an `image:`) as a compose file and compared a CI job's image with
+production's tags. The two now ask the same question.
+
+**`docker compose config` was weighed as the merge authority, and not adopted.**
+The obvious way to stop hand-writing compose's merge rules is to let compose do
+it: `docker compose config --no-interpolate` over each discovered set. It does
+run without a daemon — proved here with `DOCKER_HOST` pointed at a dead socket —
+and it is what proved the default-file order below. It is not the right thing to
+*depend* on, for three measured reasons. It is all-or-nothing per set: a service
+whose `extends:` names a missing file makes it exit 1 with no output at all, so
+every other service in that set goes unread, where this check reports the one it
+could not read and judges the rest. It can fail *quietly*: `-f base -f bad.yml`
+with an unknown YAML anchor printed `go-yaml load error …` and still exited 0, and
+a merge authority that returns nothing on success is worse than none. And it
+inlines `env_file` paths into the model it prints, which is a poor thing to hold
+in a check whose whole output is a gate log. Against that, the rules it would
+replace are small, and a check made of bash and awk runs wherever a gate does,
+with no CLI version to pin (S5). So compose stays the *authority we test against*,
+not a dependency: the default-file order below was read out of it, and every rule
+here is a fixture in `scripts/gate-image-tags-test.sh`.
+
+**Compose's default files are two searches, not one.** When a call names no file,
+compose picks a base — the first of `compose.yaml`, `compose.yml`,
+`docker-compose.yaml`, `docker-compose.yml` — and then, *independently*, an
+override: the first of `compose.override.yaml`, `compose.override.yml`,
+`docker-compose.override.yaml`, `docker-compose.override.yml`. The two searches do
+not have to agree on an extension, so `compose.yaml` + `docker-compose.override.yml`
+is a merged pair, which the check used to miss and read as the base alone. Read out
+of `docker compose config --no-interpolate`, which names the file it picked in a
+warning when several match (W9), not out of the documentation.
+
+**A variable is read from above the call, not from the file's last line.** The
+reader collected every assignment in a gate script and kept the last, so
+`export COMPOSE_FILE=base` … call … `export COMPOSE_FILE=base:ci` … call judged the
+*first* call on the second value — passing a root whose first call runs production's
+own file. Assignments now carry their line, and a call reads only those above it. An
+assignment inside a branch (`if … then F=x; fi`) may or may not have run, so it adds
+a possible value rather than replacing one: where two values remain possible the call
+is printed as unread rather than resolved to whichever the file mentions last. The
+same line ordering is what lets a `COMPOSE_FILE` set in a sourced file be followed —
+one level, the path's leading variable dropped and the rest resolved under the root —
+and what makes a bare call under a sourced file this check *cannot* read unjudged
+instead of falling through to compose's default.
+
+**A line naming compose that yields no call is printed, and does not fail.**
+`eval "docker compose …"`, `sh -c '…'` and a wrapper built from a string read as
+*no compose call at all*, which looks exactly like a gate that never calls compose.
+Every such line — outside a comment, which the shell provably never runs — is now
+printed as an unjudged call. It does not change the exit code, for two reasons. It
+would be inconsistent: every other thing this check cannot read (an unresolved
+`image:`, an unread `-f` value, an unpaired overlay) is printed and not failed, and
+a mention is the weakest of them, because it may not be a call at all. And it was
+measured: across the nine gate scripts on this box every single unjudged mention is
+help text — `printf '  docker compose up -d app\n'` and its kin — and nothing else.
+A check that goes red on a project's own documentation gets switched off. The line
+is named and stable, so a project that wants it fatal greps its gate for
+`unjudged calls:`.
+
+**A wrapper is judged where it is used.** `DC=(docker compose -f docker-compose.yml)`
+and `dc() { docker compose -f "$FILE" "$@"; }` carry a file set and no subcommand.
+Judging them where they are built is wrong both ways: a teardown wrapper reds a gate
+that only tears down, and treating them as idle would lose the gate that really does
+`"${DC[@]}" up -d`. The file set is remembered under the name and judged at each use,
+with the subcommand read there; a wrapper never used, or used somewhere this reader
+cannot follow, keeps the idle verdict and is printed as *not judged*.
 
 **The limit that stays.** A gate that passes `-p` or `COMPOSE_PROJECT_NAME` at run
 time still builds implicit tags this check cannot name; that is the limit the
