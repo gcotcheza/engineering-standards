@@ -159,7 +159,6 @@ names" on its own. Ghie, reviewing it on 2026-09-20: a file name in the
 title is fine when the change is one file, and the tense is not the rule — *Fix the
 flicker* is as good as *Added caching*. The rule is that the title is the action.
 
-
 ## A build with no `image:` key still has a tag (2026-09-25)
 
 **What the check could not see.** `scripts/gate-image-tags.sh` compared `image:`
@@ -285,7 +284,6 @@ The third refusal, an rc that is neither 0 nor 1, carries no command: a store th
 the commits but not their tree is a repair for `git fsck`, not for one line a deploy can
 hand over.
 
-
 ## A root with no compose file is refused, not passed (2026-09-28)
 
 **What it did.** `scripts/gate-image-tags.sh` printed *"no compose file beside this
@@ -352,3 +350,179 @@ which is only ever green because the fixture's stub answers `free`. The stub now
 whatever the case asks for, the case asks for a busy slot, and the assertion reads that
 string back — so the test proves pre-flight quotes the serializer rather than proving the
 stub's default. The stub always answers on two lines as well, so `head -1` has a test.
+
+## What a gate runs is a set of compose files, not one file (2026-09-29)
+
+**What the check could not see.** `scripts/gate-image-tags.sh` read every compose
+file beside a root on its own. Two shapes fall straight through that. An overlay
+that sets only `image:` for a service, with no `build:` next to it, counted as a
+tag nothing builds — but `docker compose -f base -f overlay` merges the pair, and
+the merged service builds from the base's `build:` under the overlay's tag. And a
+gate that passes no `-f` at all does not run its own file: compose resolves its
+default file, which is the production one. Both ways the report said *"none shared"*
+over an open hole, and — the tell — it said exactly the same thing after the hole
+was fixed, because an overlay's tag still read as unbuilt. A check that cannot tell
+the fix from the fault is measuring the wrong thing.
+
+**Where the file sets come from: the gate scripts.** Three candidates were weighed.
+A *convention* — an overlay named `*ci*` layers on `docker-compose.yml` when it
+declares no build of its own — invents a pairing nobody wrote, and would have
+missed the case that started this, where the gate passes no overlay at all and
+there is nothing to pair. A *declared manifest* is a second place that has to be
+kept true, and it is empty exactly where it matters: the project with a T9 hole is
+the one that never wrote it. What remains is the running thing (W9): the gate's own
+compose calls. `scripts/check.sh`, `ci.sh`, `e2e.sh` and `gate.sh` are the names T1
+and T6 give those entry points; each `docker compose` call in them yields a file
+set from its `-f` flags, from an exported `COMPOSE_FILE`, or — naming nothing —
+from compose's own default-file precedence. Each set is merged as compose merges
+it: a later `image:` wins, a `build:` anywhere in the set builds, and the set's own
+`name:` decides an implicit `<project>-<service>` tag. A gate that lives under
+another name is not guessed at; the report names the scripts it read.
+
+**The shell is lexed, not run.** Quote and heredoc state is tracked across lines, so
+`printf '  docker compose up -d app\n'` in a help string is not read as a gate run.
+Reading quoted text as code was tried against the nine roots on this box: one project's
+usage text invents a run over the production file, and on the project that really is red
+the finding moves off the call that causes it and onto a line of help. A `-f` value naming a file this root does not have, a subcommand that was
+never reached, a call whose files could not be resolved: each is printed on its own
+line and none is judged. Loud beats quiet, but a guess is neither.
+
+**A bare call that only tears down is not a build.** `down`, `ps`, `logs`, `config`
+and their like are read as idle, and a wrapper that carries no subcommand of its own
+(`DOWN=(docker compose -p "$PROJECT")`) is read as idle too, because the alternative
+is a red gate for a teardown. Every idle bare call is still printed — *not judged, no
+subcommand read* — so the gap is visible rather than silent. A bare call with a real
+subcommand (`up`, `run`, `build`, `exec`) is judged against the production files.
+
+**An overlay with `image:` and no `build:` is not refused outright.** Where the tag
+it names is one production builds, nothing new is needed: the shared-tag rule that
+has been here since the start already refuses it, and the test says so. Where it
+names a tag of its own and no gate run read here passes that file, a refusal would
+red a project whose gate is safe and merely written somewhere this check does not
+look — one such stack is on this box today. That case is printed as an unjudged
+overlay, naming the file, the tag and the build it would merge over, and the pair is
+judged the moment a gate script names it.
+
+**Discovery widened to any top-level `services:` file.** A compose file renamed out of
+`docker-compose*.yml` / `compose*.yml` was invisible: the root refusal only fired
+when there was no recognised file at all, so a root holding one recognised file and
+one renamed one judged half of itself. Any `.yml` or `.yaml` beside the root
+carrying a `services:` key **at column 0** is now read and classified by name, which means
+a renamed builder ends in the existing *named for neither side* FAIL (exit 1) rather
+than the whole-root refusal (exit 2). The refusal still stands where nothing beside
+the root carries `services:`, which is what "wrong root" now means. A `.yml` that is
+not a compose file at all — a `deptrac.yaml` — is left alone, because the
+`services:` key is what makes a file one compose can be pointed at. The column
+matters: `read_images` only finds a `services:` at indent 0, so a discovery that
+accepted an indented one read a `.gitlab-ci.yml` (whose `services:` sits under a
+job, beside an `image:`) as a compose file and compared a CI job's image with
+production's tags. The two now ask the same question.
+
+**`docker compose config` was weighed as the merge authority, and not adopted.**
+The obvious way to stop hand-writing compose's merge rules is to let compose do
+it: `docker compose config --no-interpolate` over each discovered set. It does
+run without a daemon — proved here with `DOCKER_HOST` pointed at a dead socket —
+and it is what proved the default-file order below. It is not the right thing to
+*depend* on, for three measured reasons. It is all-or-nothing per set: a service
+whose `extends:` names a missing file makes it exit 1 with no output at all, so
+every other service in that set goes unread, where this check reports the one it
+could not read and judges the rest. It can fail *quietly*: `-f base -f bad.yml`
+with an unknown YAML anchor printed `go-yaml load error …` and still exited 0, and
+a merge authority that returns nothing on success is worse than none. And it
+inlines `env_file` paths into the model it prints, which is a poor thing to hold
+in a check whose whole output is a gate log. Against that, the rules it would
+replace are small, and a check made of bash and awk runs wherever a gate does,
+with no CLI version to pin (S5). So compose stays the *authority we test against*,
+not a dependency: the default-file order below was read out of it, and every rule
+here is a fixture in `scripts/gate-image-tags-test.sh`.
+
+**Compose's default files are two searches, not one.** When a call names no file,
+compose picks a base — the first of `compose.yaml`, `compose.yml`,
+`docker-compose.yaml`, `docker-compose.yml` — and then, *independently*, an
+override: the first of `compose.override.yaml`, `compose.override.yml`,
+`docker-compose.override.yaml`, `docker-compose.override.yml`. The two searches do
+not have to agree on an extension, so `compose.yaml` + `docker-compose.override.yml`
+is a merged pair, which the check used to miss and read as the base alone. Read out
+of `docker compose config --no-interpolate`, which names the file it picked in a
+warning when several match (W9), not out of the documentation.
+
+**A variable is read from above the call, not from the file's last line.** The
+reader collected every assignment in a gate script and kept the last, so
+`export COMPOSE_FILE=base` … call … `export COMPOSE_FILE=base:ci` … call judged the
+*first* call on the second value — passing a root whose first call runs production's
+own file. Assignments now carry their line, and a call reads only those above it. An
+assignment inside a branch (`if … then F=x; fi`) may or may not have run, so it adds
+a possible value rather than replacing one: where two values remain possible the call
+is printed as unread rather than resolved to whichever the file mentions last. The
+same line ordering is what lets a `COMPOSE_FILE` set in a sourced file be followed —
+four levels deep, `$(dirname "$0")/lib.sh` and `${BASH_SOURCE[0]%/*}/lib.sh` resolved
+against the sourcing script, any other path's leading variable dropped and the rest
+resolved under the root — and what makes a bare call under a sourced file this check
+*cannot* read unjudged instead of falling through to compose's default.
+
+**A line naming compose that yields no call is printed, and does not fail.**
+`eval "docker compose …"`, `sh -c '…'` and a wrapper built from a string read as
+*no compose call at all*, which looks exactly like a gate that never calls compose.
+Every such line — outside a comment, which the shell provably never runs — is now
+printed as an unjudged call. It does not change the exit code, for two reasons. It
+is the weakest thing here, because it may not be a call at all: an unread call names
+files and will run, a mention may be a sentence in a help string. And it was
+measured: across the nine gate scripts on this box every single unjudged mention is
+help text — `printf '  docker compose up -d app\n'` and its kin — and nothing else.
+A check that goes red on a project's own documentation gets switched off. The line
+is named and stable, so a project that wants it fatal greps its gate for
+`unjudged calls:`.
+
+**A wrapper is judged where it is used.** `DC=(docker compose -f docker-compose.yml)`
+and `dc() { docker compose -f "$FILE" "$@"; }` carry a file set and no subcommand.
+Judging them where they are built is wrong both ways: a teardown wrapper reds a gate
+that only tears down, and treating them as idle would lose the gate that really does
+`"${DC[@]}" up -d`. The file set is remembered under the name and judged at each use,
+with the subcommand read there; a wrapper never used, or used somewhere this reader
+cannot follow, keeps the idle verdict and is printed as *not judged*.
+
+**A call whose file set cannot be read fails the check.** The first cut printed such a
+call and exited 0, on the reasoning that this reader should not red a gate over its
+own blind spot. That is backwards for anything that names files and will run: a `-f`
+pointing at a file that is not here, a variable with two possible values above the
+call, a wrapper defined differently in two branches, a `source` that resolves to
+nothing — each is a set that really is merged at run time and might carry
+production's tag, reported under a green exit nobody reads (C9). They now end the run
+with exit 1 and a line naming the call. Measured before the change: across every root
+on this box with a compose file beside it, no gate produces one, so nothing turns red
+on this alone. A mention is the one thing left that is printed and not failed, for the
+reason above.
+
+**A `-f` directory is this root unless only the environment sets it.** `-f "$X/x.yml"`
+used to be matched on its basename, so a file in someone else's tree was judged as the
+file of that name here — and the reverse, `-f infra/x.yml`, was refused. The rule is
+now the origin of the directory, not its spelling: a directory the script itself
+assigns is taken to be this tree and the basename stands; one whose value only the
+environment supplies is unknown, and the call is unread. Both live shapes stay
+judged — `-f "${COMPOSE_FILE}"` over `COMPOSE_FILE="${REPO_ROOT}/docker-compose.ci.yml"`,
+and a bare `-f x.yml` — while `-f "$SHARED/docker-compose.yml"` is not read as the
+`docker-compose.yml` beside this root. A directory written out in full must still be
+this root.
+
+The known limit is what "the script assigns it" does not check: the value is never
+traced back to a literal. A directory a command substitution produces — `$(cd … && pwd)`,
+`$(mktemp -d)`, `$(git rev-parse --show-toplevel)` — is *assumed* to be this tree, and an
+assignment made only inside a branch is read as if that branch had run. A gate pointing
+`-f` at a computed directory in another tree is therefore judged against the file of that
+name here. The stricter rule — the basename stands only where the path expands to a
+literal — was written and run over the live gates: it reds 23 correct calls across
+`/var/www/fineprint` and `/var/www/kidsquest`, every one of them the ordinary
+`COMPOSE_FILE="${REPO_ROOT}/docker-compose.ci.yml"` shape. False reds on working gates
+cost more than a gap no gate on this box has, so the gap stays and is written down here.
+
+**A wrapper is read the way a variable is.** The file set under a name was kept
+last-write-wins, so an `if`/`else` that built `DC=(…)` two ways passed on whichever
+branch came last in the file — the safe one, if the unsafe one came first. Definitions
+now carry their line and whether they sit inside a branch, exactly as assignments do:
+an unconditional one replaces what is possible, one inside a branch adds to it, and two
+possible file sets are not a file set. The line that only *defines* a wrapper judged
+further down says nothing of its own, so one run is reported once.
+
+**The limit that stays.** A gate that passes `-p` or `COMPOSE_PROJECT_NAME` at run
+time still builds implicit tags this check cannot name; that is the limit the
+2026-09-25 entry above records, and reading the gate scripts does not lift it.
