@@ -9,8 +9,12 @@
 # A compose file judged alone is not what a gate runs: `-f base -f ci` merges
 # them, so the tag the gate builds is the overlay's on the base's `build:`. The
 # check reads scripts/{check,ci,e2e,gate}.sh for the file sets their compose
-# calls pass (-f, an exported COMPOSE_FILE, or compose's own default file) and
-# judges each merged set. Everything it cannot read is printed, never assumed.
+# calls pass (-f, an exported COMPOSE_FILE — including one set in a file they
+# source — or compose's own default base-and-override pair) and judges each
+# merged set. A variable is read from the assignments above the call, never
+# from the file's last one. Everything it cannot read is printed, never
+# assumed: an unresolved -f value, a call whose subcommand was never reached,
+# and any line naming `docker compose` that yielded no call at all.
 #
 # A pinned third-party image (postgres:18-alpine) is shared on purpose and is
 # never a finding — only a tag something here builds can be overwritten. The
@@ -23,9 +27,10 @@
 # with the project taken from the file's `name:`, or — when it declares none —
 # from the names the production files beside it declare and the directory,
 # because one invocation carries one project name; a name only a gate file
-# declares is that gate invocation's own and is never offered to production. Its file:line is the service's own line, the only
-# line there is. `build.tags` entries are built tags too; a service body these
-# line-regexes cannot read is reported unresolved rather than skipped.
+# declares is that gate invocation's own and is never offered to production.
+# Its file:line is the service's own line, the only line there is. `build.tags`
+# entries are built tags too; a service body these line-regexes cannot read is
+# reported unresolved rather than skipped.
 set -uo pipefail
 
 usage() { printf 'usage: gate-image-tags.sh [project-root]\n' >&2; exit 2; }
@@ -42,7 +47,7 @@ FILES=()
 while IFS= read -r f; do
     case "$(basename -- "${f}")" in
         docker-compose*.yml|docker-compose*.yaml|compose*.yml|compose*.yaml) ;;
-        *) grep -qE '^[ ]*"?services"? *:' "${f}" || continue ;;
+        *) grep -qE '^"?services"? *:' "${f}" || continue ;;
     esac
     FILES+=("${f}")
 done < <(
@@ -324,10 +329,11 @@ read_images() {
 # whether they can be judged. A shell read by regex is read in part, so what this
 # cannot resolve becomes a `setbad` record and is printed, never assumed away.
 read_gate_sets() {
-    awk -v script="$2" -v known="$3" -v defset="$4" '
+    awk -v script="$2" -v known="$3" -v defset="$4" -v root="$5" \
+        -v prefile="$6" -v srcbad="$7" -v emit="$8" '
         function pad(c, n,   s, i) { s = ""; for (i = 0; i < n; i++) s = s c; return s }
         # C code, S single-quoted, D double-quoted, N comment, H heredoc body.
-        function lex(   i, line, n, m, j, c, st, hd, nhd, rest, tok, hre) {
+        function lex(   i, line, n, m, j, c, st, hd, nhd, tok, hre) {
             st = 0; hd = ""
             hre = "^<<[-~]?[ \t]*[\\\\\"" q "]?[A-Za-z_][A-Za-z0-9_]*[\"" q "]?"
             for (i = 1; i <= NR; i++) {
@@ -393,61 +399,150 @@ read_gate_sets() {
             if (tok != "") T[++cnt] = tok
             return cnt
         }
-        function expand(v,   r, nm) {
+        # Every assignment in file order, so a call reads what was set above it
+        # rather than whatever the file happened to set last.
+        function note(nm, val, ex, cond, ln) {
+            nasg++; AN[nasg] = nm; AV[nasg] = val; AE[nasg] = ex; AC[nasg] = cond; AL[nasg] = ln
+        }
+        # The value a call reads: the assignments above it, in order. An
+        # unconditional one replaces what is possible, one inside a branch adds
+        # to it, and two possible values are not a value (VARSPLIT).
+        function varval(nm, ln,   z, poss, np, S) {
+            S = sprintf("%c", 1)
+            poss = ""; np = 0; VARHAVE = 0; VARSPLIT = 0; VARIDX = 0
+            for (z = 1; z <= nasg; z++) {
+                if (AL[z] > ln || AN[z] != nm) continue
+                VARHAVE = 1; VARIDX = z
+                if (!AC[z]) { poss = AV[z]; np = 1; continue }
+                if (index(S poss S, S AV[z] S) == 0) { poss = poss (np ? S : "") AV[z]; np++ }
+            }
+            VARSPLIT = (np > 1)
+            return (VARSPLIT ? "" : poss)
+        }
+        function varexp(nm, ln,   z, e) {
+            e = 0
+            for (z = 1; z <= nasg; z++) if (AL[z] <= ln && AN[z] == nm && AE[z]) e = 1
+            return e
+        }
+        function expand(v,   r, nm, val) {
             for (r = 0; r < 4; r++) {
                 if (!match(v, /\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/)) break
                 nm = substr(v, RSTART, RLENGTH)
                 gsub(/[${}]/, "", nm)
-                if (!(nm in VAL)) break
-                v = substr(v, 1, RSTART - 1) VAL[nm] substr(v, RSTART + RLENGTH)
+                val = varval(nm, CURLN)
+                if (VARSPLIT) { SPLITVAR = nm; return "" }
+                if (!VARHAVE) break
+                v = substr(v, 1, RSTART - 1) val substr(v, RSTART + RLENGTH)
             }
             return v
         }
-        # A compose file is named by its basename here: the path is the caller`s.
-        function addfile(v,   b) {
+        function bad(t) { BAD = BAD (BAD ? "; " : "") t }
+        # A compose file is named by its basename here, but a directory written
+        # out must be this root: `-f infra/x.yml` is not the x.yml beside it.
+        function addfile(v,   b, d) {
+            SPLITVAR = ""
             b = expand(v)
             gsub("[\"" q "]", "", b)
+            if (SPLITVAR != "") {
+                bad(v " (" SPLITVAR " takes more than one value above this line)"); return
+            }
+            if (index(b, "/")) {
+                d = b; sub(/\/[^\/]*$/, "", d)
+                if (d !~ /\$/ && d != "." && d != root) { bad(b " (not beside this root)"); return }
+            }
             sub(/.*\//, "", b)
-            if (b == "" || b ~ /\$/) { BAD = BAD (BAD ? "; " : "") v; return }
-            if (index(known, "\t" b "\t") == 0) { BAD = BAD (BAD ? "; " : "") b; return }
+            if (b == "" || b ~ /\$/) { bad(v); return }
+            if (index(known, "\t" b "\t") == 0) { bad(b); return }
             if (index("," FSET, "," b ",") == 0) FSET = FSET b ","
         }
-        BEGIN { q = sprintf("%c", 39) }
+        # `docker compose` as a command word, outside a comment. A line holding
+        # one and yielding no call is printed, not read as no call at all.
+        function mentions(s, mk,   p, seg) {
+            seg = ""
+            for (p = 1; p <= length(s); p++)
+                seg = seg (substr(mk, p, 1) == "N" ? " " : substr(s, p, 1))
+            return (seg ~ /docker[ \t]+compose([ \t]|$)/ || seg ~ /docker-compose([ \t;&|)]|$)/)
+        }
+        BEGIN {
+            q = sprintf("%c", 39)
+            while (prefile != "" && (getline pl < prefile) > 0)
+                if (split(pl, PF, "\t") >= 5) note(PF[2], PF[3], PF[4], PF[5], PF[1])
+            srcln = srcbad; sub(/:.*$/, "", srcln); srcln += 0
+            srcpath = srcbad; sub(/^[0-9]*:/, "", srcpath)
+        }
         { sub(/\r$/, ""); L[NR] = $0 }
         END {
             lex()
             for (i = 1; i <= NR; i++) {
                 s = L[i]; mk = M[i]; j = i
-                while (j < NR && needjoin(s, mk) && j - i < 8) { j++; s = s " " L[j]; mk = mk "C" M[j] }
-                LS[i] = s; LM[i] = mk
+                while (j < NR && needjoin(s, mk) && j - i < 8) {
+                    # The \ that joined the lines is not a token of the command.
+                    if (substr(s, length(s), 1) == "\\" && substr(mk, length(mk), 1) == "C") {
+                        s = substr(s, 1, length(s) - 1); mk = substr(mk, 1, length(mk) - 1)
+                    }
+                    j++; s = s " " L[j]; mk = mk "C" M[j]
+                }
+                LS[i] = s; LM[i] = mk; LE[i] = j
             }
+            dep = 0
             for (i = 1; i <= NR; i++) {
                 cnt = tokenize(LS[i], LM[i])
-                k = 1
-                if (T[1] == "export") { k = 2; if (T[2] ~ /^[A-Za-z_][A-Za-z0-9_]*$/) EXP[T[2]] = 1 }
-                while (k <= cnt && T[k] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
-                    nm = T[k]; sub(/=.*$/, "", nm)
-                    vv = T[k]; sub(/^[^=]*=/, "", vv)
-                    gsub("[\"" q "]", "", vv)
-                    VAL[nm] = vv
-                    if (k > 1 || cnt > k) EXP[nm] = 1
-                    k++
+                head = 1; ex = 0
+                for (k = 1; k <= cnt; k++) {
+                    t = T[k]
+                    if (t ~ /^(if|case|for|while|until|\{)$/) dep++
+                    else if (t ~ /^(fi|esac|done|\})$/) { if (dep) dep-- }
+                    if (head && t == "export") { ex = 1; head = 0; continue }
+                    if ((head || ex) && t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+                        nm = t; sub(/=.*$/, "", nm)
+                        vv = t; sub(/^[^=]*=/, "", vv); gsub("[\"" q "]", "", vv)
+                        note(nm, vv, (ex || (k < cnt && T[k + 1] !~ /^[;()&|{}<>]$/)) ? 1 : 0, \
+                            (dep > 0) ? 1 : 0, i)
+                        head = 0; continue
+                    }
+                    ex = 0
+                    head = (t ~ /^[;()&|{}<>]$/ || t ~ /^(then|else|elif|do)$/) ? 1 : 0
                 }
             }
+            if (emit == "assign") {
+                for (z = 1; z <= nasg; z++)
+                    printf "asg\t%s\t%s\t%d\t%d\n", AN[z], AV[z], AE[z], AC[z]
+                exit
+            }
             for (i = 1; i <= NR; i++) {
+                CURLN = i
                 cnt = tokenize(LS[i], LM[i])
                 for (k = 1; k <= cnt; k++) {
-                    start = 0
+                    start = 0; wrap = ""
                     if (T[k] == "docker" && T[k + 1] == "compose") start = k + 2
                     else if (T[k] == "docker-compose") start = k + 1
+                    else {
+                        nm = T[k]
+                        gsub("[\"" q "]", "", nm)
+                        sub(/^\$\{?/, "", nm); sub(/\[[@*]\]\}?$/, "", nm); sub(/\}$/, "", nm)
+                        if (nm != T[k] && nm ~ /^[A-Za-z_][A-Za-z0-9_]*$/) {
+                            vv = varval(nm, i)
+                            if (VARHAVE && (vv ~ /^docker[ \t]+compose$/ || vv == "docker-compose")) {
+                                start = k + 1; SEEN[AL[VARIDX]] = 1
+                            } else if (nm in WRAPF) { start = k + 1; wrap = nm }
+                        } else if ((nm in WRAPF) && (k == 1 || T[k - 1] ~ /^[;()&|{}<>]$/ ||
+                                   T[k - 1] ~ /^(then|else|elif|do)$/)) { start = k + 1; wrap = nm }
+                    }
                     if (!start) continue
                     FSET = ""; BAD = ""; subc = ""; named = 0
+                    if (wrap != "") {
+                        FSET = WRAPF[wrap]; BAD = WRAPB[wrap]; named = WRAPN[wrap]
+                        SEEN[WRAPL[wrap]] = 1
+                    }
                     for (p = start; p <= cnt; p++) {
                         t = T[p]
                         if (t ~ /^[;()}|&<>]$/) break
                         if (t == "-f" || t == "--file") { named = 1; addfile(T[++p]); continue }
                         if (t ~ /^--file=/) { named = 1; addfile(substr(t, 8)); continue }
-                        if (t ~ /^-f./) { named = 1; addfile(substr(t, 3)); continue }
+                        if (t ~ /^-f./) {
+                            vv = substr(t, 3); sub(/^=/, "", vv)
+                            named = 1; addfile(vv); continue
+                        }
                         if (t == "-p" || t == "--project-name" || t == "--env-file" || t == "--profile" ||
                             t == "--project-directory" || t == "--progress" || t == "--ansi" ||
                             t == "--parallel" || t == "-c" || t == "--context") { p++; continue }
@@ -455,30 +550,56 @@ read_gate_sets() {
                         if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue
                         subc = t; break
                     }
-                    origin = "-f"
+                    if (subc == "" || subc ~ /\$[@*]/) subc = "-"
+                    # An array or function holding a file set but no subcommand
+                    # of its own is judged where it is used, not where it is set.
+                    if (wrap == "" && subc == "-") {
+                        nm = ""
+                        if (T[1] ~ /^[A-Za-z_][A-Za-z0-9_]*=$/ && T[2] == "(") { nm = T[1]; sub(/=$/, "", nm) }
+                        else if (T[1] ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && T[2] == "(" && T[3] == ")") nm = T[1]
+                        else if (T[1] == "function" && T[2] ~ /^[A-Za-z_][A-Za-z0-9_]*$/) nm = T[2]
+                        if (nm != "") {
+                            WRAPF[nm] = FSET; WRAPB[nm] = BAD; WRAPN[nm] = named; WRAPL[nm] = i
+                        }
+                    }
+                    origin = (named ? "-f" : "")
                     if (!named) {
-                        if (("COMPOSE_FILE" in VAL) && ("COMPOSE_FILE" in EXP)) {
+                        vv = varval("COMPOSE_FILE", i)
+                        if (VARHAVE && varexp("COMPOSE_FILE", i)) {
                             origin = "COMPOSE_FILE"
-                            nsep = split(VAL["COMPOSE_FILE"], SEP, ":")
-                            for (z = 1; z <= nsep; z++) addfile(SEP[z])
+                            if (VARSPLIT)
+                                bad("COMPOSE_FILE (more than one value is set above this line)")
+                            else {
+                                nsep = split(vv, SEP, ":")
+                                for (z = 1; z <= nsep; z++) addfile(SEP[z])
+                            }
+                        } else if (srcln && srcln < i) {
+                            origin = "sourced"
+                            bad("COMPOSE_FILE, which " srcpath " (sourced at line " srcln ") may set")
                         } else {
                             origin = "default"
                             nsep = split(defset, SEP, ",")
                             for (z = 1; z <= nsep; z++) if (SEP[z] != "") addfile(SEP[z])
                         }
                     }
-                    if (subc == "" || subc ~ /\$[@*]/) subc = "-"
-                    # A bare call whose subcommand this reader never saw is not
-                    # judged against production: it is printed as unjudged.
-                    idle = (subc ~ /^(down|ps|logs|config|version|ls|images|top|port|kill|stop|rm|pause|unpause|events|wait|cp|convert|push|pull|-)$/)
-                    judged = (origin != "default" || !idle) ? 1 : 0
+                    # A call that inspects or tears down builds nothing, whatever
+                    # named its files; a subcommand never read is not judged either.
+                    idle = (subc ~ "^(down|ps|logs|config|version|ls|images|top|port|kill|stop|rm|" \
+                                    "pause|unpause|events|wait|cp|convert|push|pull|-)$")
+                    judged = idle ? 0 : 1
                     # A file this reader could not resolve is a file missing from
                     # the merge, so the rest of the set is not judged either.
                     if (BAD != "") judged = 0
-                    if (FSET != "") printf "set\t%s\t%d\t%d\t%s\t%s\t%s\n", script, i, judged, origin, subc, FSET
+                    builds = (subc ~ /^(build|up|run|create)$/) ? 1 : 0
+                    if (FSET != "")
+                        printf "set\t%s\t%d\t%d\t%s\t%s\t%s\t%d\n", \
+                            script, i, judged, origin, subc, FSET, builds
                     if (BAD != "") printf "setbad\t%s\t%d\t%s\n", script, i, BAD
+                    if (FSET != "" || BAD != "") for (z = i; z <= LE[i]; z++) SEEN[z] = 1
                 }
             }
+            for (i = 1; i <= NR; i++)
+                if (!SEEN[i] && mentions(L[i], M[i])) printf "mention\t%s\t%d\n", script, i
         }' "$1"
 }
 
@@ -527,23 +648,62 @@ done
 KNOWN="${TAB}"
 for f in "${FILES[@]}"; do KNOWN="${KNOWN}${f#"${ROOT}"/}${TAB}"; done
 
-# Compose's own precedence when a call names no file, plus the override beside it.
+# Compose's two searches when a call names no file: a base, then an override.
+# Each runs its own extension order and neither depends on the other, so
+# compose.yaml pairs with docker-compose.override.yml — see docs/DECISIONS.md.
 DEFSET=''
 for c in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
-    [ -f "${ROOT}/${c}" ] || continue
-    DEFSET="${c}"
-    o="${c%.*}.override.${c##*.}"
-    [ ! -f "${ROOT}/${o}" ] || DEFSET="${DEFSET},${o}"
-    break
+    [ ! -f "${ROOT}/${c}" ] || { DEFSET="${c}"; break; }
 done
+for o in compose.override.yaml compose.override.yml \
+         docker-compose.override.yaml docker-compose.override.yml; do
+    [ -n "${DEFSET}" ] || break
+    [ ! -f "${ROOT}/${o}" ] || { DEFSET="${DEFSET},${o}"; break; }
+done
+
+# A gate script may set COMPOSE_FILE in a file it sources. One level is followed:
+# the leading variable of the path is dropped and the rest resolved under this
+# root; a path that resolves to nothing readable makes that script's bare calls
+# unjudged rather than falling through to compose's default file.
+resolve_sourced() {
+    local v="$1" rest c
+    rest="${v}"
+    case "${v}" in *'$'*) rest="${v#*/}" ;; esac
+    case "${rest}" in *'$'*|'') return 1 ;; esac
+    for c in "${rest}" "${ROOT}/${rest}" "${ROOT}/scripts/${rest}"; do
+        [ -f "${c}" ] || continue
+        c="$(cd -- "$(dirname -- "${c}")" && pwd)/$(basename -- "${c}")"
+        case "${c}" in "${ROOT}"/*) printf '%s' "${c}"; return 0 ;; esac
+    done
+    return 1
+}
+
+PRE="$(mktemp)"
+ASG="$(mktemp)"
+trap 'rm -f "${RECORDS}" "${PRE}" "${ASG}"' EXIT
 
 # The gate entry points T1 and T6 name. A gate that lives under another name is
 # not guessed at: the output says which scripts were read and which were not.
 GATE_SCRIPTS=()
 for s in check ci e2e gate; do
-    [ -f "${ROOT}/scripts/${s}.sh" ] || continue
+    g="${ROOT}/scripts/${s}.sh"
+    [ -f "${g}" ] || continue
     GATE_SCRIPTS+=("scripts/${s}.sh")
-    read_gate_sets "${ROOT}/scripts/${s}.sh" "scripts/${s}.sh" "${KNOWN}" "${DEFSET}" >>"${RECORDS}"
+    : >"${PRE}"
+    SRCBAD=''
+    while IFS="${TAB}" read -r ln raw; do
+        [ -n "${ln}" ] || continue
+        if sp="$(resolve_sourced "${raw}")"; then
+            read_gate_sets "${sp}" "${sp#"${ROOT}"/}" '' '' "${ROOT}" '' '' assign >"${ASG}"
+            awk -F'\t' -v ln="${ln}" 'BEGIN { OFS = "\t" }
+                $1 == "asg" { print ln, $2, $3, $4, $5 }' "${ASG}" >>"${PRE}"
+        elif [ -z "${SRCBAD}" ]; then
+            SRCBAD="${ln}:${raw}"
+        fi
+    done < <(awk '{ sub(/\r$/, "") }
+        /^[ \t]*(\.|source)[ \t]+[^ \t]/ { v = $2; gsub(/["'"'"']/, "", v); printf "%d\t%s\n", NR, v }' "${g}")
+    read_gate_sets "${g}" "scripts/${s}.sh" "${KNOWN}" "${DEFSET}" "${ROOT}" \
+        "${PRE}" "${SRCBAD}" '' >>"${RECORDS}"
 done
 
 ODD_LIST='|'
@@ -642,16 +802,24 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         next
     }
     $1 == "fname" { PROJOF[$2] = $4; next }
+    # Several calls can pass the same set. The one named in a finding is the one
+    # that can build it (build, up, run, create), and a judged call before an
+    # unjudged one — otherwise the report points at a call that rebuilds nothing.
     $1 == "set" {
         k = $7
-        if (!(k in setseen)) {
-            setseen[k] = 1; SETKEY[++nsets] = k
-            SETSRC[k] = $2 ":" $3; SETJUDGE[k] = $4; SETORIGIN[k] = $5; SETSUB[k] = $6
-        } else if ($4 > SETJUDGE[k]) {
-            SETJUDGE[k] = $4; SETSRC[k] = $2 ":" $3; SETORIGIN[k] = $5; SETSUB[k] = $6
+        r = $4 * 2 + $8
+        if (!(k in setseen)) { setseen[k] = 1; SETKEY[++nsets] = k; SETRANK[k] = -1 }
+        if (r > SETRANK[k]) {
+            SETRANK[k] = r; SETJUDGE[k] = $4; SETSRC[k] = $2 ":" $3
+            SETORIGIN[k] = $5; SETSUB[k] = $6
         }
         nf = split(k, FL, ",")
         for (i = 1; i <= nf; i++) if (FL[i] != "") INSET[FL[i]] = 1
+        next
+    }
+    $1 == "mention" {
+        nment++
+        mlist = mlist (mlist ? "; " : "") sprintf("%s:%d", $2, $3)
         next
     }
     $1 == "setbad" {
@@ -697,6 +865,11 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         }
         printf "  gate runs:        %s\n", (runsline ? runsline : "none read beside this root")
         if (nsetbad) printf "  unread -f values: %s\n", sblist
+        # A line naming docker compose that yielded no call — an eval, a wrapper
+        # this reader cannot follow, or plain help text. Printed, never counted.
+        if (nment)
+            printf "  unjudged calls:   %s — a line naming docker compose that this reader could not read as a call\n", \
+                mlist
         # An overlay tagging a service it does not build takes that build from the
         # file beside it. Naming production`s own tag there is already a shared
         # tag below; naming another is only as safe as the pairing, so say so.

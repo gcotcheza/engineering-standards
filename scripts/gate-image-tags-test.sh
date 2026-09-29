@@ -15,6 +15,7 @@ pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
 matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+lacks()   { if printf '%s' "$2" | grep -qE "$3"; then fail "$1 — [$2] matches /$3/"; else pass "$1"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -415,8 +416,8 @@ overlay withbuild docker-compose.ci.yml app 'mem/app:ci' build
 gate_script withbuild check.sh 'compose() { docker compose -f docker-compose.yml -f docker-compose.ci.yml "$@"; }
 compose up -d'
 run withbuild
-matches 'case 35: a -f pair inside a wrapper is read' "${OUT}" \
-    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:1, -f\) builds mem/app:ci$'
+matches 'case 35: a -f pair inside a wrapper is read at the line that runs it' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:2, -f\) builds mem/app:ci$'
 equals  'case 35: exit code' "${RC}" 0
 
 # --- 36. a bare call that only tears down -> named, not judged, and passes -----
@@ -480,6 +481,194 @@ run noscripts
 matches 'case 41: a root with no gate script says which names it looked for' "${OUT}" \
     'gate scripts: +none — scripts/\{check,ci,e2e,gate\}\.sh$'
 equals  'case 41: exit code' "${RC}" 0
+
+# --- 42. a call continued over lines keeps every -f it names -> PASS -----------
+service contpair docker-compose.yml 'x/app:latest' build
+overlay contpair docker-compose.ci.yml app 'x/app:ci'
+gate_script contpair check.sh 'docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.ci.yml \
+  up -d'
+run contpair
+matches 'case 42: a call continued over lines keeps its -f flags' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:1, -f\) builds x/app:ci$'
+equals  'case 42: exit code' "${RC}" 0
+
+# --- 43. the same, with production named last -> FAIL (the hole a \ was hiding) -
+service contlast docker-compose.yml 'x/app:latest' build
+overlay contlast docker-compose.ci.yml app 'x/app:ci'
+gate_script contlast check.sh 'docker compose -f docker-compose.ci.yml \
+  -f docker-compose.yml \
+  up -d'
+run contlast
+matches 'case 43: the later file of a continued call still wins the tag' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:1 builds image tag x/app:latest'
+equals  'case 43: exit code' "${RC}" 1
+
+# --- 44. COMPOSE_FILE re-exported -> each call reads what was set above it -----
+service cfseq docker-compose.yml 'x/app:latest' build
+overlay cfseq docker-compose.ci.yml app 'x/app:ci'
+gate_script cfseq check.sh 'export COMPOSE_FILE="docker-compose.yml"
+docker compose up -d
+export COMPOSE_FILE="docker-compose.yml:docker-compose.ci.yml"
+docker compose run --rm app phpunit'
+run cfseq
+matches 'case 44: a call reads the COMPOSE_FILE set above it, not the last in the file' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:2 builds image tag x/app:latest'
+matches 'case 44: and the later pair is judged on its own' "${OUT}" \
+    'docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:4, COMPOSE_FILE\) builds x/app:ci'
+equals  'case 44: exit code' "${RC}" 1
+
+# --- 45. a -f variable reassigned between two calls -> both read in order ------
+service fseq docker-compose.yml 'x/app:latest' build
+overlay fseq docker-compose.ci.yml app 'x/app:ci'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script fseq check.sh 'F=docker-compose.yml
+docker compose -f "$F" up -d
+F=docker-compose.ci.yml
+docker compose -f "$F" run --rm app phpunit'
+run fseq
+matches 'case 45: the first call reads the first value, not the last' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:2 builds image tag x/app:latest'
+equals  'case 45: exit code' "${RC}" 1
+
+# --- 46. a -f variable set twice in an order this cannot read -> not resolved --
+service fbranch docker-compose.yml 'x/app:latest' build
+overlay fbranch docker-compose.ci.yml app 'x/app:ci'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script fbranch check.sh 'F=docker-compose.ci.yml
+if [ -n "${CI:-}" ]; then F=docker-compose.yml; fi
+docker compose -f "$F" up -d'
+run fbranch
+# shellcheck disable=SC2016  # the expected text quotes the fixture's own $F
+matches 'case 46: a variable given two values this cannot order is printed, not picked' "${OUT}" \
+    'unread -f values: +"\$F" \(F takes more than one value above this line\) in scripts/check\.sh:3$'
+equals  'case 46: exit code' "${RC}" 0
+
+# --- 47. COMPOSE_FILE set in a sourced file -> followed one level -------------
+service srcset docker-compose.yml 'x/app:latest' build
+overlay srcset docker-compose.ci.yml app 'x/app:ci'
+gate_script srcset lib.sh 'export COMPOSE_FILE="docker-compose.yml:docker-compose.ci.yml"'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script srcset check.sh 'here="$(cd "$(dirname "$0")/.." && pwd)"
+. "$here/scripts/lib.sh"
+docker compose up -d'
+run srcset
+matches 'case 47: a COMPOSE_FILE set in a sourced file decides the file set' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:3, COMPOSE_FILE\) builds x/app:ci$'
+equals  'case 47: exit code' "${RC}" 0
+
+# --- 48. a sourced file this check cannot read -> unjudged, not the default set -
+service srcgone docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script srcgone check.sh '. "$here/scripts/missing-lib.sh"
+docker compose up -d'
+run srcgone
+# shellcheck disable=SC2016  # the expected text quotes the fixture's own $here
+matches 'case 48: a bare call under an unreadable sourced file is named' "${OUT}" \
+    'unread -f values: +COMPOSE_FILE, which \$here/scripts/missing-lib\.sh \(sourced at line 1\) may set in scripts/check\.sh:2$'
+matches 'case 48: and no default file set is invented for it' "${OUT}" 'gate runs: +none read beside this root$'
+equals  'case 48: exit code' "${RC}" 0
+
+# --- 49. a -f wrapper carrying no subcommand -> not judged, whatever it names --
+service teardownf docker-compose.yml 'x/app:latest' build
+overlay teardownf docker-compose.ci.yml app 'x/app:ci'
+gate_script teardownf e2e.sh 'DOWN=(docker compose -f docker-compose.yml -p acme)
+docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d'
+run teardownf
+matches 'case 49: a -f wrapper with no subcommand of its own is not judged' "${OUT}" \
+    'docker-compose\.yml \(scripts/e2e\.sh:1, -f\) not judged — no subcommand read'
+matches 'case 49: and the run that names one carries the verdict' "${OUT}" '^ok '
+equals  'case 49: exit code' "${RC}" 0
+
+# --- 49b. the same wrapper used with up -> judged where it is used -------------
+service wrapup docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script wrapup check.sh 'DC=(docker compose -f docker-compose.yml)
+"${DC[@]}" up -d app'
+run wrapup
+matches 'case 49b: a wrapper is judged by the subcommand it is used with' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:2 builds image tag x/app:latest'
+equals  'case 49b: exit code' "${RC}" 1
+
+# --- 50. services: indented under a CI job -> not a compose file --------------
+service gitlabci docker-compose.yml 'x/app:latest' build
+printf 'stages: [test]\ntest:\n  image: x/app:latest\n  services:\n    - name: postgres:18-alpine\n' \
+    >"${WORK}/gitlabci/.gitlab-ci.yml"
+run gitlabci
+matches 'case 50: a services: key under a job is not a top-level one' "${OUT}" 'production files: +docker-compose\.yml$'
+matches 'case 50: so the image: beside it is not read as a tag' "${OUT}" 'images: +1 resolved, 0 unresolved$'
+equals  'case 50: exit code' "${RC}" 0
+
+# --- 51. the default set pairs a base and an override across extensions -------
+service overpair compose.yaml 'x/app:latest' build
+overlay overpair docker-compose.override.yml app 'x/app:over'
+gate_script overpair check.sh 'docker compose up -d'
+run overpair
+matches 'case 51: compose.yaml pairs with docker-compose.override.yml' "${OUT}" \
+    'gate runs: +compose\.yaml \+ docker-compose\.override\.yml \(scripts/check\.sh:1, default\) builds x/app:over$'
+matches 'case 51: and an override is production, not an unrecognised name' "${OUT}" \
+    'production files: +compose\.yaml, docker-compose\.override\.yml$'
+equals  'case 51: exit code' "${RC}" 0
+
+# --- 52. a call this reader cannot read -> printed, never silent --------------
+service invisible docker-compose.yml 'x/app:latest' build
+gate_script invisible check.sh 'eval "docker compose -f docker-compose.yml up -d"
+sh -c "docker compose -f docker-compose.yml up -d"'
+run invisible
+matches 'case 52: an eval and an sh -c naming compose are printed as unjudged' "${OUT}" \
+    'unjudged calls: +scripts/check\.sh:1; scripts/check\.sh:2 — a line naming docker compose that this reader could not read as a call$'
+matches 'case 52: and neither is read as a gate run' "${OUT}" 'gate runs: +none read beside this root$'
+equals  'case 52: exit code' "${RC}" 0
+
+# --- 52b. a commented-out call is not an unjudged one ------------------------
+service commentedout docker-compose.yml 'x/app:latest' build
+gate_script commentedout check.sh '# docker compose -f docker-compose.yml up -d
+true'
+run commentedout
+lacks   'case 52b: a line the shell never runs is not printed as unjudged' "${OUT}" 'unjudged calls:'
+equals  'case 52b: exit code' "${RC}" 0
+
+# --- 53. a build: contributed by a later file in the set still builds ---------
+service laterbuild docker-compose.yml 'x/app:latest' build
+overlay laterbuild docker-compose.e2e.yml app 'x/app:latest'
+printf 'services:\n  app:\n    build:\n      context: ./docker/app\n' \
+    >"${WORK}/laterbuild/docker-compose.ci.yml"
+gate_script laterbuild check.sh 'docker compose -f docker-compose.e2e.yml -f docker-compose.ci.yml up -d'
+run laterbuild
+matches 'case 53: a build: from the later file of a set is credited to the set' "${OUT}" \
+    'docker-compose\.e2e\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:1, -f\) builds x/app:latest'
+matches 'case 53: so the run builds the tag rather than merely running it' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:1 builds image tag x/app:latest, which production is recreated from'
+equals  'case 53: exit code' "${RC}" 1
+
+# --- 54. two calls over one set -> the finding names the one that can build ----
+service whichcall docker-compose.yml 'x/app:latest' build
+gate_script whichcall check.sh 'docker compose -f docker-compose.yml exec -T app php artisan test
+docker compose -f docker-compose.yml up -d app'
+run whichcall
+matches 'case 54: the finding names the call that can build the set' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:2 builds image tag x/app:latest'
+matches 'case 54: and quotes that call, not the one beside it' "${OUT}" \
+    'gate run: +docker compose up over docker-compose\.yml \(-f\)$'
+equals  'case 54: exit code' "${RC}" 1
+
+# --- 55. -f=value names a file the way -f value does -> FAIL ------------------
+service feqval docker-compose.yml 'x/app:latest' build
+gate_script feqval check.sh 'docker compose -f=docker-compose.yml up -d'
+run feqval
+matches 'case 55: -f=value is read as a file name' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:1 builds image tag x/app:latest'
+equals  'case 55: exit code' "${RC}" 1
+
+# --- 56. -f in another directory is not the file of the same name here --------
+service subdirf docker-compose.yml 'x/app:latest' build
+gate_script subdirf check.sh 'docker compose -f infra/docker-compose.yml up -d'
+run subdirf
+matches 'case 56: a -f under another directory is named, not resolved here' "${OUT}" \
+    'unread -f values: +infra/docker-compose\.yml \(not beside this root\) in scripts/check\.sh:1$'
+matches 'case 56: and the root is not judged on it' "${OUT}" '^ok '
+equals  'case 56: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
