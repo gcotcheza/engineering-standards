@@ -26,7 +26,7 @@ un-armed guard, the `unset`, the `heavy-work` half of the pre-flight line, and `
 deploy-lib VERSION is 2026-09-29 and all four vendored headers are re-stamped, so
 `fleet-versions.sh` reports every project's vendored copy STALE until it re-vendors;
 re-vendoring is its own round per project, and the pinned `SUITE_SHA256` those projects hold
-becomes `1b22cd85d770f93e6f6196a69305b54c2ea0d5feeaf32316b1cb01a8998907be`. The long-form why
+becomes `d838dc7f6e132e172be0bb3ba682e5f7005f9a38ce603e6b5ee0520da6d23904`. The long-form why
 is in `docs/DECISIONS.md`.
 
 ## 2026-09-28 — the image-tag check refuses a root it found no compose file in (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
