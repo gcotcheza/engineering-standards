@@ -99,3 +99,39 @@ The one remaining fix is that project's own pull request, not this repo's: the g
 | "a deploy builds the production tag itself and proves the running container by image id" | No project compares `docker inspect -f '{{.Image}}'` against the image id its deploy built. The deploy verifiers read `{{.State.StartedAt}}` instead, which a gate-built image satisfies exactly as well, and the nearest thing to a content check counts PHP extensions the offending image also had. The rule binds today; nothing checks it. | each project, in its own PR |
 
 **How a project runs it.** From the canonical clone, not a vendored copy: the check reads only the compose files it is pointed at, so there is no project state to drift and nothing to re-stamp — unlike `scripts/lib/deploy/`, which a deploy script must source. A project whose gate must run without the canonical clone present vendors it like any other script and says so in its `CLAUDE.md`.
+
+## T1's dependency-advisory step — where each project stands
+
+The audit clause added to T1 on 2026-09-30 needs a change in several repositories, so it
+needs a status rather than a schedule. This is a survey of the nine project gates as they
+stood on 2026-09-30, read out of their gate scripts. A tally and not a list of names, for
+the reason the T9 tally gives: this repository is public, and which live system is blind
+*today* is not something to publish. The named detail lives with the owner, in the backlog
+card this came from.
+
+| Where a project's gate stands | Projects |
+|---|---|
+| Audits the front end with `--omit=dev` — blind to what the bundle ships from `devDependencies` | 5 |
+| Runs no front-end dependency audit in the gate at all | 2 |
+| Audits, but outside the gate, in a separate security script nothing gates on | 2 |
+
+Not all five in the first row ship a bundle, so the first row is the population to look at,
+not the count of projects that are wrong. The clause binds only where the deploy ships a
+bundle built out of `node_modules`; a project that ships no bundle keeps `--omit=dev` and
+is already correct. Each project settles its own row by reading its deploy, not this table.
+
+**How this one landed.** A gate in the first row exited 0 while a package under a published
+High advisory sat in its shipped bundle — imported by an entrypoint, listed under
+`devDependencies`. That is the failure the clause is written against, and it is why the
+second and third rows are not "nearly fine": a check that runs outside the gate is a check
+the merge does not wait for.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| T1's audit clause reaches each project's gate | Each gate adds (or corrects) its front-end advisory step, and proves it the way T1 asks: one devDependency the bundle imports pinned to a published High advisory, the gate run, **the gate's own** failure line quoted, then reverted. Nothing here can do that for a project — only its own gate can say whether its own step fails loudly. | each project, in its own PR |
+
+**Merge order.** Unlike the T9 check, nothing in this change reaches a project by itself: the
+clause is text, and a project reads it when it re-vendors `docs/STANDARDS.md`. Two gates do
+compare their vendored copy against the canonical clone on this host by path, so those two go
+red on this repository's merge until their re-vendor PR lands — their bump PRs should be ready
+to merge in the same batch. The rest notice nothing until they bump.
