@@ -563,11 +563,10 @@ a module graph against the two lockfile sections; it would need a new tool, wire
 every gate, that resolves the bundler's entrypoints and maps each resolved package back
 to its section, and that tool would have to understand aliases, conditional imports and
 the bundler's own injected runtime. It also starts from a debt rather than a clean
-sheet: the front-end scaffold these projects start from puts an HTTP client under
-`devDependencies` by default, and three of the nine surveyed projects still list one
-there today — so (b) means a reclassification pass across those manifests before the
-first green run, a dependency rewrite to make safe a flag that (a) simply removes. If such a tool is ever wired, (b) is the
-better rule and this entry is the argument for revisiting it.
+sheet: three of the nine surveyed front-end manifests list an HTTP client under
+`devDependencies` today — so (b) would first need those three reclassified, a
+dependency rewrite to keep a flag that (a) simply drops. If such a tool is ever
+wired, (b) is the better rule and this entry is the argument for revisiting it.
 
 **Why the rule does not simply say "no `--omit=dev`, everywhere".** On a project with no
 bundle, `--omit=dev` is the right flag and says something true: what production installs

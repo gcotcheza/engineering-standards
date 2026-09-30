@@ -6,8 +6,9 @@
 it: T1's list of what the gate runs went style, static analysis, boundaries, front-end lint,
 unit tests, the suite, secrets — and stopped. The only text anywhere was the proposal itself
 in `SOURCES.md`, which is not a rule and which projects do not vendor. T1's checked-by now
-carries the step, failing on High and above, with `composer audit --locked --no-dev
---abandoned=report` and `npm audit --audit-level=high` named.
+carries the step: `composer audit --locked --no-dev --abandoned=report` and `npm audit
+--audit-level=high`. The npm floor is High; composer's is deliberately absent, so that
+half fails on any advisory and is not to be narrowed with `--ignore-severity`.
 
 **And the flag in the proposal was the bug.** P1 wrote `npm audit --omit=dev`. A gate running
 exactly that exited 0 while a package under a published High advisory was in its shipped
@@ -20,9 +21,11 @@ revert. The more precise alternative (keep the flag, require every bundled impor
 `dependency`) is in `docs/DECISIONS.md` with what it would have cost: a tool no project has.
 
 `SOURCES.md` P1 is annotated rather than rewritten — it stays the proposal as it was argued.
-`ROLLOUT.md` carries the 2026-09-30 survey of the nine gates as a tally, not a list of names,
-and an open-work row per project. Two project gates compare their vendored copy against the
-canonical clone on this host by path, so they go red on this merge until they re-vendor; that
+`ROLLOUT.md` carries the 2026-09-30 survey of the nine gates as a tally, not a list of names —
+both halves of the step, and the same four gates are short in each — with an open-work row per
+project. Two project gates compare their vendored copy against this host's canonical clone by
+path, so they go red the moment that clone fast-forwards, not when this merges, and on every
+branch of both; their re-vendor pull requests are not written yet. That the step fails loudly
 is proved in the pull request, not assumed.
 
 ## 2026-09-29 — the unrecognised-filename example names the file Fineprint actually has (docs only; the standard is unchanged and VERSION is not bumped)
