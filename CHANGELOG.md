@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-29 — the unrecognised-filename example names the file Fineprint actually has (docs only; the standard is unchanged and VERSION is not bumped)
+Backlog 164. `docs/DECISIONS.md` argued the narrow `unrecognised:` rule from Fineprint's
+`docker-compose.realip.yml` — a production-side proof stack whose name said neither side. Fineprint's
+PR #92 has since renamed that file `docker-compose.ci-realip.yml` and moved it to the gate's side:
+`scripts/ci.sh` drives it and it runs the tag that gate builds, and the `ci-` prefix is deliberate so
+the check reads the side off the name instead of guessing at it. The entry now says which name was
+which and when, so a reader checking the example against Fineprint's tree finds it. The rule itself
+is unchanged.
+
 ## 2026-09-29 — the gate ledger records the commit a run was armed on (tooling only; the standard is unchanged and VERSION stays 2026-09-20.2)
 **A green row for a tree no step read.** `gate_ledger_record` is called from a gate's EXIT
 trap and read HEAD there, minutes after the gate decided what it was judging — so a commit
