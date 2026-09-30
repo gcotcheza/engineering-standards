@@ -115,10 +115,12 @@ card this came from.
 | Runs no front-end dependency audit in the gate at all | 2 |
 | Audits, but outside the gate, in a separate security script nothing gates on | 2 |
 
-Not all five in the first row ship a bundle, so the first row is the population to look at,
-not the count of projects that are wrong. The clause binds only where the deploy ships a
-bundle built out of `node_modules`; a project that ships no bundle keeps `--omit=dev` and
-is already correct. Each project settles its own row by reading its deploy, not this table.
+All five in the first row do build a bundle — each carries a bundler config beside its
+manifest — so that row is work, not a population still to be filtered. It is each project's
+own deploy that settles it, though, not this table: the clause is about what the deploy
+ships, and a project that ships no bundle keeps `--omit=dev` and is already correct. A
+tenth project on the fleet list has no front-end manifest and no gate script at all; it is
+outside this survey rather than a clean row in it.
 
 **How this one landed.** A gate in the first row exited 0 while a package under a published
 High advisory sat in its shipped bundle — imported by an entrypoint, listed under
