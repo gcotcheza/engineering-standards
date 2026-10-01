@@ -589,10 +589,12 @@ by hand prints `GATE NOT GREEN <verdict>` and records `by hand over [<verdict>]`
 health-tracker's `deploy.sh` already used over its `gate-row.sh`. What by hand still does **not** do
 is refuse: it is the path out of a hole, so a missing ledger, an unresolved commit and a red row are
 all printed and all deploy. The one case that is not an override is a by-hand deploy of a tip the
-ledger does clear: that records as `ledger <what> <sha>`, because the ledger did clear it, and the
-flag is told it was not needed. Reading the ledger on a path that previously did not touch it is why
-the per-kind lookup carries `|| v=unreadable` — every caller runs under `set -e`, and a command
-substitution that dies would have turned the rescue path into a silent exit.
+ledger does clear: that records `by hand over [GREEN <verdict>]`, so `DONE` carries a verdict either
+way, and the flag is told it was not needed. Reading the ledger on a path that previously did not
+touch it is why the per-kind lookup carries `|| v=unreadable` — every caller runs under `set -e`, and
+a command substitution that dies there would have turned the rescue path into a silent exit. That is
+why the by-hand cases in the suite run under `set -e` too, and why one of them shims `awk` to exit 2:
+without the guard, the deploy never reaches the line after `gated`.
 
 **The old refusal named a remedy that could not be followed.** `gate that $what, then deploy` is an
 instruction to gate a commit that, by the time `gated()` runs, `resolve()` has already proved is

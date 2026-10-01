@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-01 sha256:2729837fe85b31a415bf5ce586133c06aa1ab6d60b8aee38a295e48138dbbaeb
+# fleet-deploy-lib 2026-10-01 sha256:a281580a116832242a2d0535bbe625acdb36a12db10603c07e0755f964a25a4f
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it is in there green —
@@ -106,5 +106,9 @@ gated() {
     # shellcheck disable=SC2034  # the project's finish() prints it
     GATED="ledger $what ${sha:0:7}"
     say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
-    [ "$BY_HAND" -eq 0 ] || say "GATE BY HAND: --gated-by-hand was passed and the verdict above is green anyway."
+    if [ "$BY_HAND" -eq 1 ]; then
+        # shellcheck disable=SC2034  # the project's finish() prints it
+        GATED="by hand over [GREEN $verdict]"
+        say "GATE BY HAND: --gated-by-hand was passed and the verdict above is green anyway."
+    fi
 }

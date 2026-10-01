@@ -417,7 +417,7 @@ contains 'a -dirty sha never matches a deploy' "${OUT}" 'the ledger holds no gre
 fixture by-hand
 rm -f "${LEDGER}"
 BY_HAND=1
-run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
+run_lib 'set -e; resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
 contains '--gated-by-hand says so out loud' "${OUT}" \
     "GATED BY HAND: #73 deploys on a human's word over the verdict above — transition and rescue only."
 contains 'and by hand names the verdict it overrode, not an unread ledger' "${OUT}" \
@@ -432,7 +432,7 @@ fixture by-hand-over-red
 printf '%s ci 2026-09-30T20:00:00Z 1 -\n%s e2e 2026-09-30T20:30:00Z 0 -\n' \
     "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
 BY_HAND=1
-run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
+run_lib 'set -e; resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
 contains 'by hand over a red ci row prints the row it overrides' "${OUT}" \
     "GATE NOT GREEN head ${HEAD_SHA:0:7}: ci red, e2e green"
 contains 'and DONE carries the verdict by hand overrode' "${OUT}" \
@@ -442,23 +442,36 @@ absent 'and a red row is not a refusal by hand either' "${OUT}" 'REFUSED'
 fixture by-hand-over-absent
 : >"${LEDGER}"
 BY_HAND=1
-run_lib 'resolve; gated'
+run_lib 'set -e; resolve; gated'
 contains 'by hand over a head no gate ever judged says absent, per kind' "${OUT}" \
     "GATE NOT GREEN head ${HEAD_SHA:0:7}: ci absent, e2e absent"
 
 fixture by-hand-over-merge trees-differ
 BY_HAND=1
-run_lib 'resolve; gated'
+run_lib 'set -e; resolve; gated'
 contains 'by hand over an ungated merge names the merge, not the head' "${OUT}" \
     "GATE NOT GREEN merge ${MERGE_SHA:0:7}: ci absent, e2e absent"
 
 fixture by-hand-over-green
 BY_HAND=1
-run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
-contains 'by hand over a green ledger is recorded as the ledger gating it' "${OUT}" \
-    "GATED_IS ledger head ${HEAD_SHA:0:7}"
+run_lib 'set -e; resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'by hand over a green ledger records the green verdict it did not override' "${OUT}" \
+    "GATED_IS by hand over [GREEN head ${HEAD_SHA:0:7}: ci green, e2e green]"
 contains 'and the flag is told it was not needed' "${OUT}" \
     'GATE BY HAND: --gated-by-hand was passed and the verdict above is green anyway.'
+
+# The one lookup on a path that never used to read the ledger: a reader that cannot read a
+# row says so, and under the set -e every caller runs it does not take the deploy with it.
+fixture by-hand-unreadable-row
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\nexit 2\n' >"${CASE}/shim/awk"
+chmod 0755 "${CASE}/shim/awk"
+BY_HAND=1
+run_lib "set -e; resolve; PATH=${CASE}/shim:\$PATH; "'gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'a row the reader cannot read is unreadable, never green' "${OUT}" \
+    "GATE NOT GREEN head ${HEAD_SHA:0:7}: ci unreadable, e2e unreadable"
+contains 'and the line after gated still runs' "${OUT}" \
+    "GATED_IS by hand over [NOT GREEN head ${HEAD_SHA:0:7}: ci unreadable, e2e unreadable]"
 
 # The refusal has to be followable by every caller: a commit already in main cannot be
 # gated where it stands by a gate that scans origin/main..HEAD.
