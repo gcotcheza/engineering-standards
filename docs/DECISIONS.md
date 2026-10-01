@@ -558,15 +558,15 @@ narrowing that `--omit=dev` was doing badly: the floor stays High.
 
 **The option not taken (b): keep `--omit=dev`, require every package the bundle imports
 to be a `dependency`.** It is the more precise statement — it audits exactly what ships
-and nothing else — and it is the one we could not check. Nothing in the fleet classifies
-a module graph against the two lockfile sections; it would need a new tool, wired into
-every gate, that resolves the bundler's entrypoints and maps each resolved package back
-to its section, and that tool would have to understand aliases, conditional imports and
-the bundler's own injected runtime. It also starts from a debt rather than a clean
-sheet: three of the nine surveyed front-end manifests list an HTTP client under
-`devDependencies` today — so (b) would first need those three reclassified, a
-dependency rewrite to keep a flag that (a) simply drops. If such a tool is ever
-wired, (b) is the better rule and this entry is the argument for revisiting it.
+and nothing else — and it is the one we could not check. Nothing in the fleet
+classifies a module graph against the two lockfile sections; it would need a new tool,
+wired into every gate, that resolves the bundler's entrypoints and maps each resolved
+package back to its section, and that tool would have to understand aliases,
+conditional imports and the bundler's own injected runtime. It also starts from a debt
+rather than a clean sheet: three of the nine surveyed front-end manifests list an HTTP
+client under `devDependencies` today — so (b) would first need those three
+reclassified, a dependency rewrite to keep a flag that (a) simply drops. If such a tool
+is ever wired, (b) is the better rule and this entry is the argument for revisiting it.
 
 **Why the rule does not simply say "no `--omit=dev`, everywhere".** On a project with no
 bundle, `--omit=dev` is the right flag and says something true: what production installs
