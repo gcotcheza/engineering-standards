@@ -149,3 +149,22 @@ request merges — and red on every branch of that project, because the comparis
 the clone rather than against the branch. As of 2026-10-01 two of the three have re-vendored
 and merged; the third's re-vendor pull request is written and reviewed, and that gate stays
 red until it merges. The rest notice nothing until they bump.
+
+## The 2026-10-01 clauses — project-side work, not yet measured
+
+Three of the four clauses added on 2026-10-01 create work inside the projects rather than
+in this repository, and that work needs a status rather than a schedule. A tally and not a
+list of names, for the reason the T9 and T1 tallies give: this repository is public, and
+which checkout or runbook is loose *today* is not something to publish. The named detail
+lives with the owner, in the backlog card this came from.
+
+| Project-side work the clauses create | Projects affected |
+|---|---|
+| S1: checkouts carrying a repo-local `core.hooksPath` aimed anywhere but the fleet hooks directory | not yet measured |
+| W8: deploy runbooks to audit for a name set in one fenced block and read in another | not yet measured |
+| T5: existing guard suites whose red proof changed the input, to redo by deleting the guard | not yet measured |
+
+Every cell is honestly empty: no survey has been run, and a number nobody measured would be
+read as one somebody did. A blank is not a zero, and nothing downstream should infer either.
+The clauses bind on the next commit, the next runbook step and the next guard test whatever
+the survey eventually says — it measures the size of the backlog, not whether the rules apply.

@@ -630,16 +630,31 @@ pre-commit hook is already named as S1's check: a commit made with `--no-verify`
 convenience, it has left S1 itself unverified, and the rule and its check then describe one thing.
 The clause also names the behaviour and not only the flags — "any other way of standing a commit up
 without it" — because the flag list is open-ended (`HUSKY=0` today, the next tool's switch
-tomorrow) and a list is a thing to be outside of.
+tomorrow) and a list is a thing to be outside of. Two shapes are named anyway, against that
+preference, because they are not flags on a commit line and so are not what a reader checking a
+transcript for `--no-verify` would look for: a repo-local or global `core.hooksPath` aimed anywhere
+but the fleet hooks directory, and a throwaway `GIT_CONFIG_GLOBAL` that drops it. Both are set once
+and then every later commit in that clone is unguarded silently, with nothing in the command and
+nothing in the diff to show it — which is why S1's checked-by now reads the hooksPath in effect and
+not only the command.
 
 **Why W4's count is a command and not a review item.** "≤150 words of plain language" was checked
 by the reviewer reading the body, which is the kind of check that passes when the reader is the
 author. The count is mechanical and cheap, so it belongs in the checked-by as the command, run
-twice — before create and before ready, because the body is edited between those two points. The
-`sed '/Generated with/,$d'` is load-bearing: the attribution footer and session link add words
-nobody wrote, and counting them would either fail honest bodies or push authors to cut real prose
-to pay for a footer. The alternative considered was a shared script in `scripts/`; it was not
-taken, because a one-line pipe a reviewer can paste needs no vendoring round across ten repos.
+twice — before create and before ready, because the body is edited between those two points. It is
+two commands and not one: before create there is no `<n>` to query, so the count reads the body file
+the PR will be made from, and `gh pr view` is the source only for the second run.
+
+**What the 150 counts, and why every pattern is anchored.** The number is prose — the four `## `
+headings and the one closing pointer line are required by this same rule, so counting them would
+charge an author for obeying it, and the attribution footer and session link add words nobody wrote.
+The first form of this check cut the body with `sed '/Generated with/,$d'`, unanchored, and that is a
+false pass rather than a loose one: the phrase is ordinary English, so a body that mentions it in
+prose is truncated at that line and the count comes back as a passing handful — 19 on a probe whose
+real prose was 130. Each pattern is therefore anchored at the start of the line it means: the footer
+by `^🤖 Generated with \[Claude Code\]`, the headings by `^## `, the closing line by its whole text.
+The alternative considered was a shared script in `scripts/`; it was not taken, because a pipe a
+reviewer can paste needs no vendoring round across ten repos.
 
 **Why T5's new half names `<(...)` explicitly.** The general sentence ("the red proof runs against
 a saved file") is true but does not teach the trap, and the trap is subtle: a process substitution

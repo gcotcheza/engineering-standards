@@ -19,17 +19,29 @@ block used it; between the two, the variable was gone, and the line that would h
 `rm -rf`. The rule's own sentence carries it, and its checked-by asks for `${VAR:?}` on a
 destructive line, so an empty name stops the step rather than widening what it reaches.
 
-**S1 now says the hook always runs.** `-c core.hooksPath=…`, `--no-verify` and `HUSKY=0` were
+**S1 now says the hook always runs.** `-c core.hooksPath=…`, `--no-verify`, `HUSKY=0` — and the two
+persistent shapes of the same bypass, a repo-local or global `core.hooksPath` aimed anywhere but the
+fleet hooks directory and a throwaway `GIT_CONFIG_GLOBAL` that drops it, which differ from the flags
+only in lasting past one command — were
 placed with S1 rather than S2 or S6: the pre-commit hook is already S1's *check*, so a commit that
 goes around it has not merely skipped a tool, it has left S1 unchecked — whereas S2 governs what a
 guard may print once it fires and S6 governs where work happens. S1's checked-by adds review of
-the command that made the commit, because the flag is visible in the transcript and not in the diff.
+the command that made the commit and of the hooksPath in effect, because neither the flag nor the
+config is visible in the diff.
 
-**W4's 150 words is now counted by a command.** `gh pr view <n> --json body -q .body | sed
-'/Generated with/,$d' | wc -w`, before create and before ready, with the attribution footer cut so
-the prose is what is counted. The placement reasoning is in `docs/DECISIONS.md`; the rule count is
-unchanged at 38, so no project's drift test changes shape — only its vendored copy and its declared
-version.
+**W4's 150 words is now counted by a command, and the 150 is prose only** — the `## ` headings, the
+closing pointer line and the attribution footer are excluded. Before create the count reads the body
+file, because there is no `<n>` to query until the PR exists; before ready the same `sed` is fed by
+`gh pr view <n> --json body -q .body`. All three patterns are anchored: an unanchored
+`sed '/Generated with/,$d'` cuts at the first line of *prose* that mentions the phrase, which on a
+130-word probe printed 19 and passed. The placement reasoning is in `docs/DECISIONS.md`; the rule
+count is unchanged at 38, so no project's drift test changes shape — only its vendored copy and its
+declared version.
+
+**`ROLLOUT.md` now carries the project-side work these clauses create** — S1's checkouts, W8's
+runbooks, T5's existing guard suites — as a tally in the shape of the T1 entry above it, with every
+count honestly `not yet measured`. `VERSION` stays `2026-10-01`: it is a date, this is the same day's
+standard, and the entry above is amended rather than joined by a second one.
 
 ## 2026-10-01 — a by-hand deploy prints the gate verdict it overrides, and the ungated refusal names routes that exist (tooling only; the standard is unchanged and VERSION is not bumped)
 **The rescue path was a blindfold.** `gated()` returned on `--gated-by-hand` before it read the
