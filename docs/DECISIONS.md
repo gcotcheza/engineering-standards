@@ -702,6 +702,22 @@ stops running as root; that is its own item, not this one. `rootfiles` is the la
 removal because it is the most expensive: it walks the tree, and `find -print -quit` stops at the
 first hit.
 
+**What a removed tree takes with it, and what each check actually matches.** Probed on a throwaway
+fixture worktree holding an ignored `.env` and an ignored `node_modules/`: the dirty check's
+`status --porcelain` printed `porcelain=[]`, and a plain `git worktree remove` then printed
+`dotenv deleted with the worktree` and `node_modules deleted with the worktree` — so gitignored
+files go with the tree, and they are the disk this change reclaims. Root-owned ignored files are not
+an exception to that: `cleanup_rootfiles` walks the whole tree with `find -uid`, ignored paths
+included, so a tree carrying one is kept under `rootfiles` before any remove is attempted.
+`--ignored` is deliberately not added to the dirty check — the same probe printed
+`ignored-aware=[!! .env` / `!! node_modules/]`, and every project's tree carries a `node_modules`,
+`vendor` or `public/build`, so an ignored-aware dirty check would keep every tree for ever.
+`cleanup_mounts` matches a container's mount source against the tree and everything below it and
+never against an ancestor, because a container mounting `/var/www` says nothing about one worktree
+inside it. The `/proc/[0-9]*` glob in `cleanup_procs` only enumerates process directories so their
+`cwd` can be read: nothing it yields is ever a removal target, and a glob that matched nothing is
+itself a keep rather than a clean bill of health.
+
 **It is wired as an `EXIT` trap because `finish` exits.** `finish()` prints `DONE` and `PAPERWORK`
 and calls `exit 0`, so nothing written after a `finish` call ever runs; the trap is armed on the
 line before each success-path `finish`, which includes the docs-only landing that five of the eight
@@ -714,16 +730,22 @@ already trap `EXIT` on their success path (ghiecode closes its `APP_HOME`, kidsq
 root-owned files); a second `trap … EXIT` replaces the first, so in those two the existing handler
 calls `deploy_cleanup` rather than being replaced by it.
 
-**The library defaults none of the programs it runs.** `WT_GIT`, `REAP`, `DOCKER`, `PROC_ROOT` and
-`CLEANUP_ROOT_UID` are assigned by each project's `deploy.sh`, in the style the rest of the library
-already uses, and a `${REAP:-/usr/local/sbin/fleet-scratch-reap}` is deliberately absent: a test that
-forgot its fake would then run the real reaper with `--apply` against the real scratch root. A
-deploy that assigned nothing is told which name is missing and removes nothing.
+**The library defaults none of the names it reads.** `PR`, `GIT`, `GH`, `ROOT`, `WT_GIT`, `REAP`,
+`DOCKER`, `PROC_ROOT` and `CLEANUP_ROOT_UID` are assigned by each project's `deploy.sh`, in the style
+the rest of the library already uses, and a `${REAP:-/usr/local/sbin/fleet-scratch-reap}` is
+deliberately absent: a test that forgot its fake would then run the real reaper with `--apply`
+against the real scratch root. A deploy that assigned nothing is told which name is missing and
+removes nothing, and that is one check over one list rather than a seam check beside a separate
+argument check — `PR` unset is the same sentence as `REAP` unset, because to this handler they are
+the same kind of mistake.
 
 **Every zero says which zero it is.** No lane on the box carries a `.fleet-scratch` label today, so
 the reaper's candidate set is empty for every project; the summary therefore reads
 `scratch reaped 0 kept 0 (no lane is labelled <repo> #<PR>)` rather than a bare count that looks like
-a successful sweep of nothing. Labelling lanes is separate work. The same rule covers every half that
+a successful sweep of nothing. Labelling lanes is separate work. Once they are labelled, no candidate
+means the other zero instead — the reaper's own `kept:` count is above zero, every lane carrying the
+label was kept on purpose, and the summary says `every labelled lane was kept (N)`, so the two
+readings of `candidates: 0` are never printed as the same sentence. The same rule covers every half that
 could not run: a pull request that is not merged, a base that is not `main`, a merge commit that is
 not an ancestor of `origin/main`, an unreadable `worktree list` and an unreadable reaper run each put
 their reason where their counts would have gone, instead of printing zeros. The run prints one

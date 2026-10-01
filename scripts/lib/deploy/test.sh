@@ -769,6 +769,17 @@ contains 'a worktree carrying a file owned by the privileged uid is kept' "${OUT
     'worktrees removed 0 kept 1 (rootfiles)'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 
+# CLEANUP_FIND is the pin: a `find` earlier on PATH that answers nothing must not be
+# what decides a tree carries no root-owned file.
+cleanup_fixture cleanup-find-pinned
+ROOT_UID_SEAM="$(stat -c %u "${WT}/app/base.txt")"
+printf '#!/bin/sh\nexit 0\n' >"${BIN}/find"
+chmod 0755 "${BIN}/find"
+run_lib "${CLEAN_CALL}"
+contains 'a find on PATH that answers nothing does not decide the root-owned check' "${OUT}" \
+    'worktrees removed 0 kept 1 (rootfiles)'
+equals 'and the pin left that worktree on disk' "$(on_disk "${WT}")" 'there'
+
 cleanup_fixture cleanup-head-nowhere
 git_at worktree add -q "${CASE}/wt-side" side
 gh_json main side
@@ -873,6 +884,17 @@ contains 'a worktree list that fails says so rather than reading as no worktrees
     'CLEANUP #73 worktrees not listed (worktree list exited 3)'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
 
+# A worktree git lists without a HEAD line: the head is unknown, and an unknown head is
+# kept on doubt rather than put through the two ancestry questions with an empty sha.
+cleanup_fixture cleanup-head-unlisted
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ncase " $* " in *" worktree list "*) git "$@" | grep -v "^HEAD " ; exit 0 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; finish abc1234"
+contains 'a worktree listed with no HEAD line is kept on doubt, not judged' "${OUT}" \
+    'CLEANUP #73 worktrees removed 0 kept 1 (headInMain)'
+equals 'and that worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
 cleanup_fixture cleanup-reaper-error
 REAP_DRY_RC=2
 REAP_DRY_OUT='error:     /srv/worker-scratch/a-lane (label unreadable)'
@@ -908,6 +930,15 @@ contains 'a read-only run that printed no candidate set applies nothing' "${OUT}
     'printed no candidate set, so nothing was applied'
 contains 'and the summary says so' "${OUT}" 'scratch not reaped (unreadable read-only run)'
 equals 'and --apply was never called' "$(grep -c -- '--apply' "${REAPARGV}")" '0'
+
+# No candidate is two different zeros: no lane carries the label at all, or every lane
+# that does was kept on purpose. The second one is not "nothing is labelled".
+cleanup_fixture cleanup-scratch-all-kept
+REAP_DRY_OUT="candidates: 0  set: ${EMPTY_SET}  kept: 3  errors: 0"
+run_lib "${CLEAN_CALL}"
+contains 'no candidates but lanes kept says the lanes were kept, not that none is labelled' "${OUT}" \
+    'scratch reaped 0 kept 3 (every labelled lane was kept (3))'
+equals 'and --apply was never called for a kept lane' "$(grep -c -- '--apply' "${REAPARGV}")" '0'
 
 cleanup_fixture cleanup-apply-kept
 REAP_DRY_OUT="candidates: 1  set: ${FAKE_SET}  kept: 2  errors: 0"
@@ -946,6 +977,15 @@ run_lib "${CLEAN_CALL}"
 contains 'a deploy that assigned no reaper is told, and removes nothing' "${OUT}" \
     'CLEANUP #73 did not run: the deploy assigned no REAP.'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+# PR is caller-set like every seam, and the handler reads it as ${PR-}: unset, it says
+# which name is missing and keeps everything, rather than dying under its callers' set -u.
+cleanup_fixture cleanup-pr-unassigned
+run_lib 'REPO=gcotcheza/fixture; set -eo pipefail; trap deploy_cleanup EXIT; unset PR; exit 0'
+contains 'a deploy that assigned no PR is told, and removes nothing' "${OUT}" \
+    'CLEANUP # did not run: the deploy assigned no PR.'
+equals 'an unset PR leaves the worktree on disk' "$(on_disk "${WT}")" 'there'
+equals 'and an unset PR under set -u still ends the deploy 0' "${RC}" '0'
 
 cleanup_fixture cleanup-no-repo
 run_lib 'set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; finish abc1234'
