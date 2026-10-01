@@ -532,3 +532,45 @@ further down says nothing of its own, so one run is reported once.
 **The limit that stays.** A gate that passes `-p` or `COMPOSE_PROJECT_NAME` at run
 time still builds implicit tags this check cannot name; that is the limit the
 2026-09-25 entry above records, and reading the gate scripts does not lift it.
+
+## A bundled front end audits without `--omit=dev`, rather than policing its imports (2026-09-30)
+
+T1 now names a dependency-advisory step and says what it covers on a project whose
+deploy ships a bundle built out of `node_modules`. Two wordings were available and
+only one is in the standard; this is the other one and what it would have cost.
+
+**What went wrong first.** A gate audited with `npm audit --omit=dev --audit-level=high`
+and exited 0 while a package under a published **High** advisory was in the shipped
+bundle: the entrypoint the bundler starts from imports it, and the package is listed
+under `devDependencies`. `--omit=dev` asks the lockfile which section a package is in.
+A bundler never asks: it follows imports from the entrypoints and ships what it finds.
+The two answers agree for a server-rendered app and disagree for a bundled one, and it
+is the disagreement that reaches production.
+
+**The option taken (a): drop `--omit=dev` where a bundle is shipped.** One flag, in one
+line of one script, and it cannot be got wrong by a later edit somewhere else. Its cost
+is real and accepted: the audit then also judges packages that never leave the
+developer's machine — the dev server, the test runner, the build tool itself — so an
+advisory in one of those turns the gate red although nothing shipped. We take that
+trade because the failure is loud, legible and cheap to answer (bump, or record an
+exception), whereas the failure it replaces is silent and shipped. Severity does the
+narrowing that `--omit=dev` was doing badly: the floor stays High.
+
+**The option not taken (b): keep `--omit=dev`, require every package the bundle imports
+to be a `dependency`.** It is the more precise statement — it audits exactly what ships
+and nothing else — and it is the one we could not check. Nothing in the fleet
+classifies a module graph against the two lockfile sections; it would need a new tool,
+wired into every gate, that resolves the bundler's entrypoints and maps each resolved
+package back to its section, and that tool would have to understand aliases,
+conditional imports and the bundler's own injected runtime. It also starts from a debt
+rather than a clean sheet: three of the nine surveyed front-end manifests list an HTTP
+client under `devDependencies` today — so (b) would first need those three
+reclassified, a dependency rewrite to keep a flag that (a) simply drops. If such a tool
+is ever wired, (b) is the better rule and this entry is the argument for revisiting it.
+
+**Why the rule does not simply say "no `--omit=dev`, everywhere".** On a project with no
+bundle, `--omit=dev` is the right flag and says something true: what production installs
+is what `--no-dev` installs. The scope clause in T1 is the whole content of the rule, so
+it is stated as a property of the deploy ("ships a bundle built out of `node_modules`")
+rather than as a list of project names, which would go stale the first time a project
+adds or drops a front end.
