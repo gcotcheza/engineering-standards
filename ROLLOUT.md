@@ -104,28 +104,32 @@ The one remaining fix is that project's own pull request, not this repo's: the g
 
 The audit clause added to T1 on 2026-09-30 needs a change in several repositories, so it
 needs a status rather than a schedule. This is a survey of the nine project gates as they
-stood on 2026-09-30, read out of their gate scripts. A tally and not a list of names, for
+stood on 2026-10-01, read out of their gate scripts. A tally and not a list of names, for
 the reason the T9 tally gives: this repository is public, and which live system is blind
 *today* is not something to publish. The named detail lives with the owner, in the backlog
 card this came from.
 
 | Where a project's gate stands | Front end (`npm`) | Back end (`composer`) |
 |---|---|---|
-| Audits in the gate | 5 | 5 |
+| Audits in the gate | 6 | 6 |
 | Runs no dependency audit in the gate at all | 2 | 2 |
-| Audits, but outside the gate, in a separate security script nothing gates on | 2 | 2 |
+| Audits, but outside the gate, in a separate security script nothing gates on | 1 | 1 |
 
-The two columns come up short on the same four gates: the two that audit nothing audit
-neither half, and the two whose audit sits in a separate script run both halves there. Of
-the five that do audit in the gate, all five run the composer step in exactly the form T1
-names, so the back-end half of the clause is already met in those five; all five run the
-npm step with `--omit=dev`, and all five build a bundle — each carries a bundler config
-beside its manifest — so the front-end half is work, not a population still to be
-filtered. It is each project's own deploy that settles that, though, not this table: the
-clause is about what the deploy ships, and a project that ships no bundle keeps
-`--omit=dev` and is already correct. A tenth project on the fleet list has no front-end
-manifest and no gate script at all; it is outside this survey rather than a clean row in
-it.
+The two columns come up short on the same three gates: the two that audit nothing audit
+neither half, and the one whose audit sits in a separate script runs both halves there. Of
+the six that do audit in the gate, five run the composer step in exactly the form T1 names.
+The sixth leaves `--no-dev` off, so it reads the development tree as well — wider than the
+clause there — but its verdict comes from a report that passes any advisory below High and
+can waive a named High by id: narrower in what actually fails it, and a severity floor is
+the one thing T1 says the composer step never carries. That project's own file already
+records the half as T1-partial. Those same five run the npm step with `--omit=dev` and the
+sixth runs it without, which is the form T1 asks of a gate whose deploy ships a bundle. All
+six build a bundle — each carries a bundler config beside its manifest — so the front-end
+half is work for five of them, not a population still to be filtered. It is each project's
+own deploy that settles that, though, not this table: the clause is about what the deploy
+ships, and a project that ships no bundle keeps `--omit=dev` and is already correct. A tenth
+project on the fleet list has no front-end manifest and no gate script at all; it is outside
+this survey rather than a clean row in it.
 
 **How this one landed.** A gate in the first row exited 0 while a package under a published
 High advisory sat in its shipped bundle — imported by an entrypoint, listed under
@@ -135,14 +139,13 @@ the merge does not wait for.
 
 | Open work | What is missing | Owner |
 |---|---|---|
-| T1's audit clause reaches each project's gate, both halves | The four gates with no in-gate step add both — `composer audit --locked --no-dev --abandoned=report` and the front-end one. The five that already audit keep their composer step as it stands and drop `--omit=dev` from the npm step where the deploy ships a bundle. Each proves the front-end step the way T1 asks: one devDependency the bundle imports pinned to a published High advisory, the gate run, **the gate's own** failure line quoted, then reverted. Nothing here can do that for a project — only its own gate can say whether its own step fails loudly. | each project, in its own PR |
+| T1's audit clause reaches each project's gate, both halves | The three gates with no in-gate step add both — `composer audit --locked --no-dev --abandoned=report` and the front-end one. Five of the six that already audit keep their composer step as it stands and drop `--omit=dev` from the npm step where the deploy ships a bundle; the sixth's npm step already reads the whole tree and needs nothing; its composer step reads wider than T1's form but fails only at High and can waive a named High, so that floor comes off before that half meets the clause. Each proves the front-end step the way T1 asks: one devDependency the bundle imports pinned to a published High advisory, the gate run, **the gate's own** failure line quoted, then reverted. Nothing here can do that for a project — only its own gate can say whether its own step fails loudly. | each project, in its own PR |
 
 **Merge order.** Unlike the T9 check, nothing in this change reaches a project through
 GitHub: the clause is text, and a project reads it when it re-vendors `docs/STANDARDS.md`.
-Two gates do compare their vendored copy against this repository's canonical clone on this
-host by path, so those two go red the moment that clone fast-forwards — not when the pull
-request merges — and red on every branch of both projects, because the comparison is
-against the clone rather than against the branch. Their re-vendor pull requests are not
-written yet: there is no ready batch to land alongside this one, and both gates stay red
-until each of those two is written, reviewed and merged. The rest notice nothing until
-they bump.
+Three gates compare their vendored copy against this repository's canonical clone on this
+host by path, so each goes red the moment that clone's standard changes — not when the pull
+request merges — and red on every branch of that project, because the comparison is against
+the clone rather than against the branch. As of 2026-10-01 two of the three have re-vendored
+and merged; the third's re-vendor pull request is written and reviewed, and that gate stays
+red until it merges. The rest notice nothing until they bump.
