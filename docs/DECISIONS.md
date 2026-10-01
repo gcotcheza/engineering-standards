@@ -574,3 +574,34 @@ is what `--no-dev` installs. The scope clause in T1 is the whole content of the 
 it is stated as a property of the deploy ("ships a bundle built out of `node_modules`")
 rather than as a list of project names, which would go stale the first time a project
 adds or drops a front end.
+
+## By hand reads the ledger and overrides it out loud, and the refusal names routes that exist (2026-10-01)
+
+**The rescue path used to be a blindfold.** `gated()` returned on `BY_HAND` before it touched the
+ledger, so a tip whose `ci` row was red deployed and the log said only `GATED BY HAND: the ledger
+was not read`. Nothing printed the row that was being overridden, and `DONE` recorded the deploy as
+`gated by hand` — indistinguishable from a by-hand deploy of a tip every gate had passed. That
+mattered most where by-hand is the documented route rather than the exception: a project with no
+browser gate cannot satisfy `for kind in ci e2e` at all, so every one of its deploys took the
+blindfold. `gated()` now reads the rows first and builds one verdict — `green`, `red` or `absent`
+per kind, behind the commit it asked about and whether that commit was the head or the merge — then
+by hand prints `GATE NOT GREEN <verdict>` and records `by hand over [<verdict>]`, which is the shape
+health-tracker's `deploy.sh` already used over its `gate-row.sh`. What by hand still does **not** do
+is refuse: it is the path out of a hole, so a missing ledger, an unresolved commit and a red row are
+all printed and all deploy. The one case that is not an override is a by-hand deploy of a tip the
+ledger does clear: that records as `ledger <what> <sha>`, because the ledger did clear it, and the
+flag is told it was not needed. Reading the ledger on a path that previously did not touch it is why
+the per-kind lookup carries `|| v=unreadable` — every caller runs under `set -e`, and a command
+substitution that dies would have turned the rescue path into a silent exit.
+
+**The old refusal named a remedy that could not be followed.** `gate that $what, then deploy` is an
+instruction to gate a commit that, by the time `gated()` runs, `resolve()` has already proved is
+`origin/main` — and a gate that scans `origin/main..HEAD` refuses an empty range, so following the
+sentence burned a gate run and wrote a *red* row for the tree the operator wanted cleared, one step
+from hand-writing a row. The sentence now says what is missing (which kind, and what every row says)
+and names three routes: gate a commit before it is merged; once it is in main, whatever route that
+project's gate documents for it; or `--gated-by-hand`, which deploys and records the deploy as
+ungated. It deliberately does not name any project's flag. A base override is the shape such a route
+takes where one exists — one project's gate has it, others do not — and a library that claimed
+`--base` would send operators of the rest looking for a flag their gate never had. "Where it has
+one" is doing real work in that sentence, not hedging.

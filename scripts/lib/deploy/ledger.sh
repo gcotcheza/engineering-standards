@@ -1,7 +1,8 @@
-# fleet-deploy-lib 2026-09-29 sha256:99595cd0672c3498708d8fa15c9d49e5c4abb2bb017f768367c091f07fecde06
+# fleet-deploy-lib 2026-10-01 sha256:2729837fe85b31a415bf5ce586133c06aa1ab6d60b8aee38a295e48138dbbaeb
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
-# gated reads it, and the commit GATE_SHA names is refused unless it is in there green.
+# gated reads it, and the commit GATE_SHA names is refused unless it is in there green —
+# by hand reads the same rows and prints the verdict it overrides instead of refusing.
 # GATE_LEDGER_GIT is unquoted on purpose.
 # The EXIT trap records; sourcing this file discards any inherited GATE_SUITE_PASSED.
 # The gate script sets it itself, in its own shell, right after its suite returns 0.
@@ -67,25 +68,43 @@ gate_ledger_record() {
 }
 
 gated() {
-    local kind sha what
-    if [ "$BY_HAND" -eq 1 ]; then
-        GATED='by hand'
-        say "GATED BY HAND: the ledger was not read. #$PR deploys on a human's word — transition and rescue only."
-        return 0
-    fi
+    local kind sha what v kinds='' notgreen='' verdict='' refusal=''
     # Unset is a caller without the matching resolve.sh; set but empty is a resolve that
     # was skipped or did not finish, and that one is refused rather than read as the head.
     sha=${GATE_SHA-$HEAD_SHA}
     what=${GATE_WHAT-head}
-    [ -n "$sha" ] || refuse "GATE_SHA is set but empty: resolve did not finish, and gated cannot guess what deploys."
-    [ -f "$LEDGER" ] || refuse "no gate ledger at $LEDGER, so no head was ever gated on this box."
-    for kind in ci e2e; do
-        # Append-only, so the last line for (sha, kind) is the newest and it alone decides.
-        awk -v sha="$sha" -v kind="$kind" \
-            '$1 == sha && $2 == kind { rc = $4; seen = 1 } END { exit (seen && rc == "0") ? 0 : 1 }' "$LEDGER" \
-            || refuse "the ledger holds no green $kind for ${sha:0:7}: gate that $what, then deploy."
-    done
+    if [ -z "$sha" ]; then
+        verdict='NOT GREEN no commit resolved, so the ledger could not be read'
+        refusal="GATE_SHA is set but empty: resolve did not finish, and gated cannot guess what deploys."
+    elif [ ! -f "$LEDGER" ]; then
+        verdict="NOT GREEN $what ${sha:0:7}: no gate ledger at $LEDGER"
+        refusal="no gate ledger at $LEDGER, so no head was ever gated on this box."
+    else
+        for kind in ci e2e; do
+            # Append-only, so the last line for (sha, kind) is the newest and it alone decides.
+            v=$(awk -v sha="$sha" -v kind="$kind" \
+                '$1 == sha && $2 == kind { rc = $4; seen = 1 }
+                 END { printf "%s", (!seen ? "absent" : (rc == "0" ? "green" : "red")) }' "$LEDGER") \
+                || v=unreadable
+            kinds="${kinds:+$kinds, }$kind $v"
+            [ "$v" = green ] || notgreen=${notgreen:-$kind}
+        done
+        verdict="$what ${sha:0:7}: $kinds"
+        if [ -n "$notgreen" ]; then
+            verdict="NOT GREEN $verdict"
+            refusal="the ledger holds no green $notgreen for ${sha:0:7} ($kinds): a commit is gated before it is merged, and once it is in main only a route the gate documents for that (a base override, where it has one) can gate it — or deploy with --gated-by-hand, which records this as ungated."
+        fi
+    fi
+    if [ -n "$refusal" ] && [ "$BY_HAND" -eq 1 ]; then
+        # shellcheck disable=SC2034  # the project's finish() prints it
+        GATED="by hand over [$verdict]"
+        say "GATE $verdict"
+        say "GATED BY HAND: #$PR deploys on a human's word over the verdict above — transition and rescue only."
+        return 0
+    fi
+    [ -z "$refusal" ] || refuse "$refusal"
     # shellcheck disable=SC2034  # the project's finish() prints it
     GATED="ledger $what ${sha:0:7}"
     say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
+    [ "$BY_HAND" -eq 0 ] || say "GATE BY HAND: --gated-by-hand was passed and the verdict above is green anyway."
 }

@@ -94,7 +94,9 @@ it sets `GATE_LEDGER_GIT` and before its first step: that pins the commit the ru
 and the trap records nothing if HEAD has moved under it — a gate that never arms records
 nothing either, and says which of the two it was. Reading is
 newest-wins: the last line for a (sha, kind) decides, so a later red overrides an earlier green
-and a genuine re-run's green overrides an earlier red.
+and a genuine re-run's green overrides an earlier red. `--gated-by-hand` never refuses — it is the
+rescue path — but it reads the same rows first, prints the verdict it is overriding (`green`,
+`red` or `absent` per kind) and the deploy records `by hand over [<verdict>]`.
 
 **Who it is for.** Anyone running several small apps alone, or with AI agents doing the
 typing, who wants one answer to "how do we do things here" that is enforced rather than

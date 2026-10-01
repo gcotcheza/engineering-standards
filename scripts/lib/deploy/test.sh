@@ -198,6 +198,11 @@ run_lib() {
     HEAVY_STATUS=''
 }
 
+# The one not-green refusal, written out once: it names the kind that is missing, what
+# every row says, and the three routes — without claiming any project's flag exists.
+ROUTES='a commit is gated before it is merged, and once it is in main only a route the gate documents for that (a base override, where it has one) can gate it — or deploy with --gated-by-hand, which records this as ungated.'
+no_green() { printf 'REFUSED: the ledger holds no green %s for %s (%s): %s' "$1" "${2:0:7}" "$3" "${ROUTES}"; }
+
 # The row count of a ledger a refusal may have left un-created.
 rows() { if [ -s "$1" ]; then wc -l <"$1"; else printf '0'; fi; }
 
@@ -351,7 +356,7 @@ contains 'and it says so in GATED' "${OUT}" "GATED_IS ledger head ${HEAD_SHA:0:7
 fixture trees-differ-ungated trees-differ
 run_lib 'resolve; gated'
 contains 'a green head does not gate a merge the ledger never saw' "${OUT}" \
-    "REFUSED: the ledger holds no green ci for ${MERGE_SHA:0:7}: gate that merge, then deploy."
+    "$(no_green ci "${MERGE_SHA}" 'ci absent, e2e absent')"
 
 fixture trees-differ-gated trees-differ
 printf '%s ci 2026-09-19T07:00:00Z 0 -\n%s e2e 2026-09-19T07:30:00Z 0 -\n' \
@@ -389,7 +394,7 @@ fixture head-absent
 : >"${LEDGER}"
 run_lib 'resolve; gated'
 contains 'a head absent from the ledger is refused' "${OUT}" \
-    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7}: gate that head, then deploy."
+    "$(no_green ci "${HEAD_SHA}" 'ci absent, e2e absent')"
 
 fixture ledger-red
 printf '%s ci 2026-09-18T20:00:00Z 1 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' \
@@ -401,7 +406,7 @@ fixture ci-only
 printf '%s ci 2026-09-18T20:00:00Z 0 -\n' "${HEAD_SHA}" >"${LEDGER}"
 run_lib 'resolve; gated'
 contains 'ci without e2e is refused' "${OUT}" \
-    "REFUSED: the ledger holds no green e2e for ${HEAD_SHA:0:7}: gate that head, then deploy."
+    "$(no_green e2e "${HEAD_SHA}" 'ci green, e2e absent')"
 
 fixture dirty-sha
 printf '%s-dirty ci 2026-09-18T20:00:00Z 0 -\n%s-dirty e2e 2026-09-18T20:30:00Z 0 -\n' \
@@ -414,15 +419,68 @@ rm -f "${LEDGER}"
 BY_HAND=1
 run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
 contains '--gated-by-hand says so out loud' "${OUT}" \
-    "GATED BY HAND: the ledger was not read. #73 deploys on a human's word — transition and rescue only."
-contains 'and by hand is what DONE will record' "${OUT}" 'GATED_IS by hand'
+    "GATED BY HAND: #73 deploys on a human's word over the verdict above — transition and rescue only."
+contains 'and by hand names the verdict it overrode, not an unread ledger' "${OUT}" \
+    "GATE NOT GREEN head ${HEAD_SHA:0:7}: no gate ledger at ${LEDGER}"
+contains 'and that verdict is what DONE will record' "${OUT}" \
+    "GATED_IS by hand over [NOT GREEN head ${HEAD_SHA:0:7}: no gate ledger at ${LEDGER}]"
+absent 'and a ledger that is not there is still not a refusal by hand' "${OUT}" 'REFUSED'
+
+# By hand is the rescue path, so it never refuses — but it reads the rows first and
+# prints the verdict it is overriding, per kind, so DONE records what was overridden.
+fixture by-hand-over-red
+printf '%s ci 2026-09-30T20:00:00Z 1 -\n%s e2e 2026-09-30T20:30:00Z 0 -\n' \
+    "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
+BY_HAND=1
+run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'by hand over a red ci row prints the row it overrides' "${OUT}" \
+    "GATE NOT GREEN head ${HEAD_SHA:0:7}: ci red, e2e green"
+contains 'and DONE carries the verdict by hand overrode' "${OUT}" \
+    "GATED_IS by hand over [NOT GREEN head ${HEAD_SHA:0:7}: ci red, e2e green]"
+absent 'and a red row is not a refusal by hand either' "${OUT}" 'REFUSED'
+
+fixture by-hand-over-absent
+: >"${LEDGER}"
+BY_HAND=1
+run_lib 'resolve; gated'
+contains 'by hand over a head no gate ever judged says absent, per kind' "${OUT}" \
+    "GATE NOT GREEN head ${HEAD_SHA:0:7}: ci absent, e2e absent"
+
+fixture by-hand-over-merge trees-differ
+BY_HAND=1
+run_lib 'resolve; gated'
+contains 'by hand over an ungated merge names the merge, not the head' "${OUT}" \
+    "GATE NOT GREEN merge ${MERGE_SHA:0:7}: ci absent, e2e absent"
+
+fixture by-hand-over-green
+BY_HAND=1
+run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'by hand over a green ledger is recorded as the ledger gating it' "${OUT}" \
+    "GATED_IS ledger head ${HEAD_SHA:0:7}"
+contains 'and the flag is told it was not needed' "${OUT}" \
+    'GATE BY HAND: --gated-by-hand was passed and the verdict above is green anyway.'
+
+# The refusal has to be followable by every caller: a commit already in main cannot be
+# gated where it stands by a gate that scans origin/main..HEAD.
+fixture refusal-names-the-routes
+: >"${LEDGER}"
+run_lib 'resolve; gated'
+contains 'the refusal names the kind that is missing and what both rows say' "${OUT}" \
+    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7} (ci absent, e2e absent):"
+contains 'and gating the commit before the merge' "${OUT}" 'a commit is gated before it is merged'
+contains 'and the gate-documented route for a commit already in main' "${OUT}" \
+    'once it is in main only a route the gate documents for that (a base override, where it has one) can gate it'
+contains 'and --gated-by-hand as the stated-ungated route' "${OUT}" \
+    '--gated-by-hand, which records this as ungated.'
+absent 'and never asks for a head already in main to be gated where it stands' "${OUT}" \
+    'then deploy.'
 
 fixture ledger-green-then-red
 printf '%s ci 2026-09-18T20:00:00Z 0 -\n%s ci 2026-09-18T22:00:00Z 1 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' \
     "${HEAD_SHA}" "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
 run_lib 'resolve; gated'
 contains 'a later red overrides an earlier green' "${OUT}" \
-    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7}: gate that head, then deploy."
+    "$(no_green ci "${HEAD_SHA}" 'ci red, e2e green')"
 
 fixture ledger-red-then-green
 printf '%s ci 2026-09-18T20:00:00Z 1 -\n%s ci 2026-09-18T22:00:00Z 0 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' \
@@ -438,7 +496,7 @@ printf '%s ci 2026-09-19T22:00:00Z 0 -\n%s ci 2026-09-18T20:00:00Z 1 -\n%s e2e 2
     "${HEAD_SHA}" "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
 run_lib 'resolve; gated'
 contains 'the later-appended line decides even though its own timestamp is earlier' "${OUT}" \
-    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7}: gate that head, then deploy."
+    "$(no_green ci "${HEAD_SHA}" 'ci red, e2e green')"
 
 # 2026-09-19: a killed e2e recorded rc 0 over a head that was already green, and the
 # reader took any green. Both halves of that are proved here, together.
@@ -449,7 +507,7 @@ run_lib "$(armed "GATE_LEDGER=${LEDGER} gate_ledger_record e2e 0 - >&3 2>&3; HEA
 contains 'the killed run is recorded as a failure' "${OUT}" \
     'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
 contains 'and the head it was green on before is no longer gated' "${OUT}" \
-    "REFUSED: the ledger holds no green e2e for ${LIVE_SHA:0:7}: gate that head, then deploy."
+    "$(no_green e2e "${LIVE_SHA}" 'ci green, e2e red')"
 
 # --- 4. the ledger writer --------------------------------------------------------
 fixture ledger-writer

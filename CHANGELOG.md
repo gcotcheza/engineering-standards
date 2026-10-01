@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-10-01 — a by-hand deploy prints the gate verdict it overrides, and the ungated refusal names routes that exist (tooling only; the standard is unchanged and VERSION is not bumped)
+**The rescue path was a blindfold.** `gated()` returned on `--gated-by-hand` before it read the
+ledger, so a tip whose `ci` row was red deployed and the log said only `GATED BY HAND: the ledger
+was not read` — and `DONE` recorded it exactly as it recorded a by-hand deploy of a tip every gate
+had passed. It now reads the rows first and builds one verdict — `green`, `red` or `absent` per
+kind, behind the commit it asked about and whether that was the head or the merge — prints
+`GATE NOT GREEN <verdict>`, and records `by hand over [<verdict>]`, the shape health-tracker's
+`deploy.sh` already used over its own `gate-row.sh`. By hand still never refuses: a missing ledger,
+an unresolved commit and a red row are all printed and all deploy, because it is the path out of a
+hole. A by-hand deploy of a tip the ledger does clear records as `ledger <what> <sha>` and is told
+the flag was not needed.
+
+**And the refusal named a remedy nobody could follow.** `gate that <what>, then deploy` asked for a
+commit to be gated that `resolve()` has already proved is `origin/main`; a gate scanning
+`origin/main..HEAD` refuses an empty range, so following it burned a run and wrote a *red* row for
+the tree the operator wanted cleared. The sentence now says which kind is missing and what both rows
+say, then names three routes — gate a commit before it is merged, take whatever route that project's
+gate documents for one already in main (a base override, where it has one), or `--gated-by-hand`,
+which deploys and records the deploy as ungated. No project's flag is claimed to exist.
+`scripts/lib/deploy/test.sh` gains five by-hand cases and a refusal case, fifteen assertions, and
+re-states the six that quoted the old sentence through one `no_green` helper so the wording lives in
+the suite once; the whole list was watched go red against `main`'s library first (20 FAIL).
+deploy-lib VERSION is 2026-10-01 and all four vendored headers are re-stamped, so
+`fleet-versions.sh` reports every project's vendored copy STALE until it re-vendors; re-vendoring is
+its own round per project, and the pinned `SUITE_SHA256` those projects hold becomes
+`d816df9a66d18f1d842b312735790a6126c8173860e29a92d791a2e713b66f9a`. Each project's own `scripts/deploy-test.sh` asserts the old sentence too and is
+re-stated in that same round. The long-form why is in `docs/DECISIONS.md`.
+
 ## 2026-09-30 — T1 names the dependency-advisory step, and says what a bundled front end audits (VERSION 2026-09-30)
 **P1 was adopted and never written down.** The 2026-08-23 entry below records proposal P1
 (a dependency-advisory step in the gate) as adopted, but no rule in the standard mentioned
