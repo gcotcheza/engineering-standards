@@ -49,7 +49,7 @@ git_at() { git -C "$ROOT" -c core.hooksPath=/dev/null -c user.name=t -c user.ema
 write_driver() {
     mkdir -p "${CASE}/lib"
     cp "${LIB_DIR}/summary.sh" "${LIB_DIR}/resolve.sh" "${LIB_DIR}/ledger.sh" \
-       "${LIB_DIR}/preflight.sh" "${CASE}/lib/"
+       "${LIB_DIR}/preflight.sh" "${LIB_DIR}/cleanup.sh" "${CASE}/lib/"
     cat >"${CASE}/lib/driver.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -58,11 +58,17 @@ D="$(cd -- "$(dirname -- "$0")" && pwd)"
 . "${D}/resolve.sh"
 . "${D}/ledger.sh"
 . "${D}/preflight.sh"
+. "${D}/cleanup.sh"
 ROOT=$DEPLOY_ROOT
 GIT=$DEPLOY_GIT
 GH=$DEPLOY_GH
 HEAVY=$DEPLOY_HEAVY
 LEDGER=$DEPLOY_LEDGER
+WT_GIT=$DEPLOY_WT_GIT
+REAP=$DEPLOY_REAP
+DOCKER=$DEPLOY_DOCKER
+PROC_ROOT=$DEPLOY_PROC_ROOT
+CLEANUP_ROOT_UID=$DEPLOY_ROOT_UID
 PR=$FAKE_PR
 BY_HAND=$FAKE_BY_HAND
 BEFORE=$FAKE_BEFORE
@@ -93,6 +99,28 @@ SH
 #!/bin/sh
 [ "$1" = '--status' ] && { printf '%s\nlast: label=noise\n' "${FAKE_HEAVY_STATUS:-free}"; exit 0; }
 exit 0
+SH
+    # The reaper fake answers the read-only run and the --apply run separately, and
+    # records its argv: --expect is an argument, so only the argv proves it was passed.
+    cat >"${BIN}/reap" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${FAKE_REAP_ARGV_LOG}"
+case " $* " in
+    *' --apply '*) printf '%s\n' "${FAKE_REAP_APPLY_OUT}"; exit "${FAKE_REAP_APPLY_RC:-0}" ;;
+esac
+printf '%s\n' "${FAKE_REAP_DRY_OUT}"
+exit "${FAKE_REAP_DRY_RC:-0}"
+SH
+    # FAKE_DOCKER_DIRTY names a tracked file this fake appends to, which is how the
+    # dirty-after-the-check case reaches `worktree remove` with a modified tree.
+    cat >"${BIN}/docker" <<'SH'
+#!/bin/sh
+[ -n "${FAKE_DOCKER_DIRTY:-}" ] && printf 'dirtied after the dirty check\n' >>"${FAKE_DOCKER_DIRTY}"
+case "$1" in
+    ps) printf '%s\n' "${FAKE_DOCKER_IDS}" ;;
+    inspect) printf '%s\n' "${FAKE_DOCKER_MOUNTS}" ;;
+esac
+exit "${FAKE_DOCKER_RC:-0}"
 SH
     chmod 0755 "${BIN}"/*
 }
@@ -164,6 +192,7 @@ run_lib() {
     # sources ledger.sh, GATE_ARMED would buy a row for a run that armed nothing.
     armedenv="${ARMED_ENV:+GATE_ARMED=1}"
     ARGVFILE="${CASE}/gh-argv.log"
+    REAPARGV="${CASE}/reap-argv.log"
     # shellcheck disable=SC2086  # repoenv is empty or one NAME=value; "" would be env's command
     OUT="$(env \
         PATH="${BIN}:${PATH}" \
@@ -181,11 +210,26 @@ run_lib() {
         DEPLOY_GH="${BIN}/gh" \
         DEPLOY_HEAVY="${BIN}/heavy-work" \
         DEPLOY_LEDGER="${LEDGER}" \
+        DEPLOY_WT_GIT="${WT_GIT_SEAM-git}" \
+        DEPLOY_REAP="${REAP_SEAM-${BIN}/reap}" \
+        DEPLOY_DOCKER="${DOCKER_SEAM-${BIN}/docker}" \
+        DEPLOY_PROC_ROOT="${PROC_ROOT_SEAM-${CASE}/proc}" \
+        DEPLOY_ROOT_UID="${ROOT_UID_SEAM-61234}" \
+        FAKE_REAP_ARGV_LOG="${REAPARGV}" \
+        FAKE_REAP_DRY_OUT="${REAP_DRY_OUT-candidates: 0  set: ${EMPTY_SET}  kept: 0  errors: 0}" \
+        FAKE_REAP_DRY_RC="${REAP_DRY_RC-0}" \
+        FAKE_REAP_APPLY_OUT="${REAP_APPLY_OUT-reaped: 1  kept: 0}" \
+        FAKE_REAP_APPLY_RC="${REAP_APPLY_RC-0}" \
+        FAKE_DOCKER_IDS="${DOCKER_IDS-}" \
+        FAKE_DOCKER_MOUNTS="${DOCKER_MOUNTS-}" \
+        FAKE_DOCKER_RC="${DOCKER_RC-0}" \
+        FAKE_DOCKER_DIRTY="${DOCKER_DIRTY-}" \
         ${repoenv} \
         ${suiteenv} \
         ${armedenv} \
         "${logenv}" \
         bash "${CASE}/lib/driver.sh" 2>&1)"
+    RC=$?
     LOGFILE="$(find "${LOGS}" "${CASE}/logroot" -name '*.log' -printf '%T@ %p\n' 2>/dev/null \
         | sort -rn | head -1 | cut -d' ' -f2-)"
     BY_HAND=''
@@ -196,6 +240,11 @@ run_lib() {
     SUITE_PASSED_ENV=''
     ARMED_ENV=''
     HEAVY_STATUS=''
+    # Unset, not emptied: a case that assigns an empty seam means "the deploy assigned
+    # none", which is a different thing from a case that never mentioned it.
+    unset WT_GIT_SEAM REAP_SEAM DOCKER_SEAM PROC_ROOT_SEAM ROOT_UID_SEAM
+    unset REAP_DRY_OUT REAP_DRY_RC REAP_APPLY_OUT REAP_APPLY_RC
+    unset DOCKER_IDS DOCKER_MOUNTS DOCKER_RC DOCKER_DIRTY
 }
 
 # The one not-green refusal, written out once: it names the kind that is missing, what
@@ -221,7 +270,8 @@ HEAVY_STATUS=''
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
-for f in summary resolve ledger preflight; do
+EMPTY_SET="$(printf '' | sha256sum | cut -d' ' -f1)"
+for f in summary resolve ledger preflight cleanup; do
     line1="$(head -1 "${LIB_DIR}/${f}.sh")"
     body="$(tail -n +2 "${LIB_DIR}/${f}.sh" | sha256sum | cut -d' ' -f1)"
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
@@ -663,6 +713,241 @@ EXTRA='root-owned 0 drift none'
 run_lib 'GATED="by hand"; finish abc1234'
 contains 'a project adds its own facts to DONE' "${OUT}" \
     "DONE #73 live abc1234 was ${LIVE_SHORT} gated by hand root-owned 0 drift none log "
+
+# --- 7. the after-deploy cleanup ----------------------------------------------------
+on_disk() { if [ -d "$1" ]; then printf 'there'; else printf 'gone'; fi; }
+
+# base, headRef, and optionally the merge commit gh reports and the state.
+gh_json() {
+    printf '{"headRefOid":"%s","mergeCommit":{"oid":"%s"},"state":"%s","baseRefName":"%s","headRefName":"%s"}\n' \
+        "${HEAD_SHA}" "${3:-${MERGE_SHA}}" "${4:-MERGED}" "$1" "$2" >"${CASE}/gh.json"
+}
+
+# The fixture plus a linked worktree on the pull request's branch, a `side` branch whose
+# commit is on neither main nor a remote, and a process list holding one unrelated pid.
+cleanup_fixture() {
+    fixture "$1"
+    WT="${CASE}/wt-pr"
+    git_at worktree add -q "${WT}" pr
+    git_at checkout -q -b side "${LIVE_SHA}"
+    printf 'side\n' >"${ROOT}/app/side.txt"
+    git_at add app/side.txt
+    git_at commit -q --no-verify -m side
+    SIDE_SHA="$(git_at rev-parse HEAD)"
+    git_at checkout -q main
+    mkdir -p "${CASE}/proc/1"
+    ln -s "${CASE}" "${CASE}/proc/1/cwd"
+    gh_json main pr
+}
+
+CLEAN_CALL='REPO=gcotcheza/fixture; deploy_cleanup'
+FAKE_SET="$(printf 'a-lane\n' | sha256sum | cut -d' ' -f1)"
+
+cleanup_fixture cleanup-clean
+DOCKER_IDS='c1'
+DOCKER_MOUNTS="${CASE}/somewhere-else"
+run_lib "${CLEAN_CALL}"
+contains 'a merged, clean, unused worktree is removed' "${OUT}" \
+    "CLEANUP #73 worktrees removed 1 kept 0 (none) scratch reaped 0 kept 0 (no lane is labelled gcotcheza/fixture #73)"
+equals 'and it is gone from disk' "$(on_disk "${WT}")" 'gone'
+equals 'the cleanup prints one summary line' "$(printf '%s\n' "${OUT}" | grep -c '^CLEANUP #')" '1'
+
+cleanup_fixture cleanup-dirty
+printf 'uncommitted\n' >>"${WT}/app/feature.txt"
+run_lib "${CLEAN_CALL}"
+contains 'a dirty worktree is kept and the reason names the check' "${OUT}" \
+    'worktrees removed 0 kept 1 (dirty)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-rootfiles
+ROOT_UID_SEAM="$(stat -c %u "${WT}/app/base.txt")"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree carrying a file owned by the privileged uid is kept' "${OUT}" \
+    'worktrees removed 0 kept 1 (rootfiles)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-head-nowhere
+git_at worktree add -q "${CASE}/wt-side" side
+gh_json main side
+run_lib "${CLEAN_CALL}"
+contains 'a head on neither main nor a remote branch is kept' "${OUT}" \
+    'worktrees removed 0 kept 1 (headOnRemote)'
+equals 'and it is still on disk' "$(on_disk "${CASE}/wt-side")" 'there'
+
+cleanup_fixture cleanup-head-on-remote
+git_at push -q origin side:refs/heads/side
+git_at fetch -q origin
+git_at worktree add -q "${CASE}/wt-side" side
+gh_json main side
+run_lib "${CLEAN_CALL}"
+contains 'a head a remote branch still contains is removed' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and it is gone from disk' "$(on_disk "${CASE}/wt-side")" 'gone'
+
+cleanup_fixture cleanup-merge-not-in-main
+gh_json main pr "${SIDE_SHA}"
+run_lib "${CLEAN_CALL}"
+contains 'a merge commit that is not an ancestor of origin/main examines nothing' "${OUT}" \
+    "CLEANUP #73 worktrees not examined (mergeInMain: merge ${SIDE_SHA} is not an ancestor of origin/main) scratch not reaped (mergeInMain)"
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-base-not-main
+gh_json release-2026 pr
+run_lib "${CLEAN_CALL}"
+contains 'a pull request merged into another base examines nothing' "${OUT}" \
+    'CLEANUP #73 worktrees not examined (base: merged into release-2026, not main) scratch not reaped (base)'
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-not-merged
+gh_json main pr "${MERGE_SHA}" OPEN
+run_lib "${CLEAN_CALL}"
+contains 'an unmerged pull request examines nothing' "${OUT}" \
+    'CLEANUP #73 worktrees not examined (notMerged: state OPEN) scratch not reaped (notMerged)'
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-procs-inside
+mkdir -p "${CASE}/proc/4242"
+ln -s "${WT}/app" "${CASE}/proc/4242/cwd"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree a running process sits in is kept' "${OUT}" \
+    'worktrees removed 0 kept 1 (procs)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-procs-unreadable
+PROC_ROOT_SEAM="${CASE}/no-such-proc"
+run_lib "${CLEAN_CALL}"
+contains 'an unreadable process list keeps the worktree rather than reading as none' "${OUT}" \
+    'worktrees removed 0 kept 1 (procs)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-mounts
+DOCKER_IDS='c1'
+DOCKER_MOUNTS="${CASE}/wt-pr/storage"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree a running container mounts is kept' "${OUT}" \
+    'worktrees removed 0 kept 1 (mounts)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-mounts-unreadable
+DOCKER_RC=1
+run_lib "${CLEAN_CALL}"
+contains 'a docker that cannot be asked keeps the worktree' "${OUT}" \
+    'worktrees removed 0 kept 1 (mounts)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+# The dirty check passes, then the mounts step dirties the tree: the only shape in which
+# `worktree remove` itself refuses, and so the only shape a --force would rescue.
+cleanup_fixture cleanup-never-forced
+DOCKER_IDS='c1'
+DOCKER_MOUNTS="${CASE}/somewhere-else"
+DOCKER_DIRTY="${WT}/app/feature.txt"
+run_lib "${CLEAN_CALL}"
+contains 'a tree that went dirty after the dirty check is kept, never forced' "${OUT}" \
+    'worktrees removed 0 kept 1 (remove)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-main-worktree
+gh_json main main
+run_lib "${CLEAN_CALL}"
+contains 'the deployed checkout itself is never a candidate' "${OUT}" \
+    'CLEANUP #73 worktrees removed 0 kept 0 (none)'
+equals 'and the checkout is still on disk' "$(on_disk "${ROOT}")" 'there'
+
+cleanup_fixture cleanup-worktree-list-unreadable
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ncase " $* " in *" worktree "*) exit 3 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+run_lib "REPO=gcotcheza/fixture; GIT=\"${CASE}/shim/git -C ${ROOT}\"; deploy_cleanup"
+contains 'a worktree list that fails says so rather than reading as no worktrees' "${OUT}" \
+    'CLEANUP #73 worktrees not listed (worktree list exited 3)'
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-reaper-error
+REAP_DRY_RC=2
+REAP_DRY_OUT='error:     /srv/worker-scratch/a-lane (label unreadable)'
+run_lib 'REPO=gcotcheza/fixture; set -eo pipefail; trap deploy_cleanup EXIT; GATED=ledger; finish abc1234'
+contains 'a reaper that errors is loud' "${OUT}" \
+    'CLEANUP #73 scratch: reap exited 2 on its read-only run; no lane was reaped and the deploy is unchanged.'
+contains 'and the summary says no lane was reaped' "${OUT}" 'scratch not reaped (dry run exited 2)'
+contains 'and the deploy still reports DONE' "${OUT}" 'DONE #73 live abc1234'
+equals 'and the deploy exit code is unchanged' "${RC}" '0'
+
+cleanup_fixture cleanup-apply-expect
+REAP_DRY_OUT="candidate: /srv/worker-scratch/a-lane
+candidates: 1  set: ${FAKE_SET}  kept: 0  errors: 0
+dry run: nothing deleted. Re-run with --expect ${FAKE_SET} --apply to delete."
+REAP_APPLY_OUT='reaped:    /srv/worker-scratch/a-lane
+reaped: 1  kept: 0'
+run_lib "${CLEAN_CALL}"
+contains 'the summary carries the reaper own counts' "${OUT}" 'scratch reaped 1 kept 0'
+contains 'and --apply ran with the hash the read-only run printed' "$(cat "${REAPARGV}")" \
+    "gcotcheza/fixture 73 --expect ${FAKE_SET} --apply"
+
+cleanup_fixture cleanup-no-head-branch
+gh_json main ''
+run_lib "${CLEAN_CALL}"
+contains 'a pull request with no head branch examines nothing' "${OUT}" \
+    'CLEANUP #73 worktrees not examined (headRef: gh named no head branch) scratch not reaped (headRef)'
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-dry-run-unreadable
+REAP_DRY_OUT='fleet-scratch-reap: something else entirely'
+run_lib "${CLEAN_CALL}"
+contains 'a read-only run that printed no candidate set applies nothing' "${OUT}" \
+    'printed no candidate set, so nothing was applied'
+contains 'and the summary says so' "${OUT}" 'scratch not reaped (unreadable read-only run)'
+equals 'and --apply was never called' "$(grep -c -- '--apply' "${REAPARGV}")" '0'
+
+cleanup_fixture cleanup-apply-kept
+REAP_DRY_OUT="candidates: 1  set: ${FAKE_SET}  kept: 2  errors: 0"
+REAP_APPLY_OUT='reaped: 1  kept: 2'
+REAP_APPLY_RC=3
+run_lib "${CLEAN_CALL}"
+contains 'lanes kept on purpose are not an error' "${OUT}" 'scratch reaped 1 kept 2'
+
+cleanup_fixture cleanup-apply-partway
+REAP_DRY_OUT="candidates: 2  set: ${FAKE_SET}  kept: 0  errors: 0"
+REAP_APPLY_OUT='reaped: 1  not removed: 1  kept: 0'
+REAP_APPLY_RC=4
+run_lib "${CLEAN_CALL}"
+contains 'a reaper that stopped part-way is loud' "${OUT}" \
+    'CLEANUP #73 scratch: reap stopped part-way (rc=4)'
+contains 'and the summary says so' "${OUT}" 'scratch partly reaped (apply exited 4)'
+
+cleanup_fixture cleanup-apply-error
+REAP_DRY_OUT="candidates: 1  set: ${FAKE_SET}  kept: 0  errors: 0"
+REAP_APPLY_RC=2
+run_lib "${CLEAN_CALL}"
+contains 'a reaper that refuses the apply is loud' "${OUT}" \
+    'CLEANUP #73 scratch: reap exited 2 with --apply'
+contains 'and the summary says so' "${OUT}" 'scratch not reaped (apply exited 2)'
+
+cleanup_fixture cleanup-apply-counts-unreadable
+REAP_DRY_OUT="candidates: 1  set: ${FAKE_SET}  kept: 0  errors: 0"
+REAP_APPLY_OUT='reaped:    /srv/worker-scratch/a-lane'
+run_lib "${CLEAN_CALL}"
+contains 'an apply whose counts cannot be read says so rather than printing zeros' "${OUT}" \
+    'scratch applied, counts unreadable'
+
+cleanup_fixture cleanup-seam-unassigned
+REAP_SEAM=''
+run_lib "${CLEAN_CALL}"
+contains 'a deploy that assigned no reaper is told, and removes nothing' "${OUT}" \
+    'CLEANUP #73 did not run: the deploy assigned no REAP.'
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-no-repo
+run_lib 'deploy_cleanup'
+contains 'with no repository nothing is read and nothing is removed' "${OUT}" \
+    'CLEANUP #73 did not run: REPO names no repository, so no pull request could be read.'
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-gh-unreadable
+GH_FAIL=1
+run_lib "${CLEAN_CALL}"
+contains 'an unreadable pull request removes nothing' "${OUT}" \
+    'CLEANUP #73 did not run: gh could not read the pull request (rc=1); nothing is removed.'
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
 
 if [ "${fails}" -eq 0 ]; then
     printf '\ndeploy-lib-test: all checks passed\n'

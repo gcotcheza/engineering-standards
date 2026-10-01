@@ -168,3 +168,22 @@ Every cell is honestly empty: no survey has been run, and a number nobody measur
 read as one somebody did. A blank is not a zero, and nothing downstream should infer either.
 The clauses bind on the next commit, the next runbook step and the next guard test whatever
 the survey eventually says — it measures the size of the backlog, not whether the rules apply.
+
+## The after-deploy cleanup — the re-vendor round, not yet started
+
+`scripts/lib/deploy/cleanup.sh` is in this repository and tested here. Nothing calls it yet:
+no project vendors it, `LIB_FILES` in `scripts/fleet-versions.sh` does not compare it, and
+`scripts/lib/deploy/VERSION` has not moved, so no project is reported `DIVERGED` for a file it
+does not have. Arming it is one round of eight small pull requests, one per project, and they
+want doing together — the version bump that makes the fleet check see the file is the same
+change that would otherwise turn every project's row red for work nobody has done.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| Each project's `deploy.sh` arms the trap | `trap deploy_cleanup EXIT` on the line before each success-path `finish` call — including the docs-only landing that four projects finish early — plus the five seam assignments (`WT_GIT`, `REAP`, `DOCKER`, `PROC_ROOT`, `CLEANUP_ROOT_UID`) beside the ones it already makes, and `. "$LIB/cleanup.sh"` beside the other four. In the two projects whose success path already traps `EXIT`, the existing handler calls `deploy_cleanup`: a second `trap … EXIT` replaces the first, it does not add to it. | each project, in its own PR |
+| The fleet check compares the new file | `cleanup` added to `LIB_FILES` in `scripts/fleet-versions.sh`, and `scripts/lib/deploy/VERSION` bumped with the serial a second change in one day takes, in the same change as the last project's re-vendor | this repository, in the re-vendor PR |
+| The gate stops leaving root-owned files in a worktree | The `rootfiles` check keeps a worktree it cannot explain, and it will keep most of them: of 28 merged worktrees measured on 2026-10-01, the 11 that were kept all carried at least one root-owned file, seven of them one project's gate-written `.env`. Until the gate writes as the app user, those trees are removed by hand. | each project whose gate writes as root |
+| Scratch lanes carry a label | `fleet-scratch-reap` reaps only a directory holding a `.fleet-scratch` file naming its repo and PR, and no lane on the box carries one, so the lane half of every cleanup finds an empty candidate set and says so. Whoever creates a lane writes the label. | the worker briefs, separately |
+
+Nothing above is a schedule. The library half is finished and proved; each row is a change
+somebody has to open, and the cleanup does nothing at all until the first one merges.

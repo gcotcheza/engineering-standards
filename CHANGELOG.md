@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-10-01 — the deploy library can remove the worktrees and scratch lanes of the pull request that just deployed (VERSION unchanged)
+**New `scripts/lib/deploy/cleanup.sh`, with its cases and one red-proved mutant per guard in
+`scripts/lib/deploy/test.sh`.** `deploy_cleanup` takes the one pull request the deploy was
+invoked with, selects the worktrees of the repository that are on its head branch, and removes
+only those that pass every check — merged into `main`, merge commit an ancestor of `origin/main`,
+head in `origin/main` or still on a remote branch, clean, no process working inside it, no
+running container mounting it, and no root-owned file in it — with `git worktree remove` and
+never `--force`. Any check that fails, or cannot be answered, keeps the worktree and names the
+check. The scratch half calls `fleet-scratch-reap` read-only first and applies with the `--expect`
+hash that run printed. It never fails the deploy: it is wired as an `EXIT` trap, captures every
+exit code, and returns 0.
+
+**Nothing calls it yet.** `LIB_FILES` in `scripts/fleet-versions.sh` is untouched and
+`scripts/lib/deploy/VERSION` does not move, so no project is reported `DIVERGED` for a file it does
+not vendor; arming it in each project's `deploy.sh` is the re-vendor round, and `ROLLOUT.md` carries
+it as open work, together with the two gaps the library cannot close by itself — gates that leave
+root-owned files in a worktree, and scratch lanes that carry no `.fleet-scratch` label. The standards
+body is unchanged, so no project's drift test and no declared version changes. Why after a deploy
+rather than on a timer, why one named pull request is not an S7 bulk sweep, and why `--force` and
+`rm` are both refused are in `docs/DECISIONS.md`.
+
 ## 2026-10-01 — four rules tightened from one day's mistakes: a guard's test, a runbook's blocks, the hook that always runs, and a word count by command (VERSION 2026-10-01)
 **Four things went wrong in one day, and every one of them was already covered by a rule that
 was not specific enough to catch it.** No rule was added — C1 and C2 cut both ways here, and a
