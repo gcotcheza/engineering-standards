@@ -607,3 +607,43 @@ ungated. It deliberately does not name any project's flag. A base override is th
 takes where one exists — one project's gate has it, others do not — and a library that claimed
 `--base` would send operators of the rest looking for a flag their gate never had. "Where it has
 one" is doing real work in that sentence, not hedging.
+
+## Four lessons folded into existing rules rather than written as new ones (2026-10-01)
+
+**Why no new rules.** Each of the four had an obvious shape as a rule of its own — "prove a guard
+by deleting it", "a fenced block is a shell", "hooks always run", "count the words" — and all four
+were rejected in that shape. A standard is read in full by every session that loads it, so its cost
+is its length, and four rules that each restate the check of a rule already present is exactly the
+second-copy duplication C1 and C2 warn about: the copies start to disagree, and a reader who finds
+two rules about proving a test has to decide which one governs. Folding each into the rule whose
+*check* it sharpens keeps one answer per question, and keeps the count at 38 so no project's drift
+test changes shape — only its vendored bytes and its declared version.
+
+**Why the hook clause is S1 and not S2, S6 or W6.** The three candidates were real. S2 is about a
+guard's output and would have read naturally — but S2 governs what a guard may print *once it has
+fired*, and a bypassed hook never fires, so the clause would have sat under a rule it cannot
+violate. S6 ends with "that guard is never worked around", which is the same sentiment, but S6's
+guard is the gate's refusal to run in a deployed checkout: a different mechanism, a different
+failure, and widening S6 to mean every guard everywhere would have made it the rule nobody can
+check. W6 is about *what* is staged, not *whether* the commit was inspected. S1 won because the
+pre-commit hook is already named as S1's check: a commit made with `--no-verify` has not skipped a
+convenience, it has left S1 itself unverified, and the rule and its check then describe one thing.
+The clause also names the behaviour and not only the flags — "any other way of standing a commit up
+without it" — because the flag list is open-ended (`HUSKY=0` today, the next tool's switch
+tomorrow) and a list is a thing to be outside of.
+
+**Why W4's count is a command and not a review item.** "≤150 words of plain language" was checked
+by the reviewer reading the body, which is the kind of check that passes when the reader is the
+author. The count is mechanical and cheap, so it belongs in the checked-by as the command, run
+twice — before create and before ready, because the body is edited between those two points. The
+`sed '/Generated with/,$d'` is load-bearing: the attribution footer and session link add words
+nobody wrote, and counting them would either fail honest bodies or push authors to cut real prose
+to pay for a footer. The alternative considered was a shared script in `scripts/`; it was not
+taken, because a one-line pipe a reviewer can paste needs no vendoring round across ten repos.
+
+**Why T5's new half names `<(...)` explicitly.** The general sentence ("the red proof runs against
+a saved file") is true but does not teach the trap, and the trap is subtle: a process substitution
+behaves correctly for a single-case run, so the habit is formed where it works and then carried into
+a suite where the second case reads an empty stream and reports a pass-count of zero. A zero that
+looks exactly like the red being sought is worse than a crash, so the mechanism is named in the rule
+rather than left to the reader to rediscover.

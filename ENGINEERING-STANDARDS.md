@@ -49,7 +49,7 @@ checked** — because a rule nothing checks is a preference, and preferences dri
 
 **T4. Every bug fix carries a test that would have caught it.** Otherwise the same bug returns, and the fix has no way to defend itself against the next refactor. — *checked by:* review of the PR's diff — a fix without a test needs a stated reason.
 
-**T5. A test must be proven able to fail.** A test that cannot go red is not evidence; we have shipped assertions that were watching an empty array. — *checked by:* break the thing on purpose once, see the test go red, then put it back — and say so in the PR's "How it was checked".
+**T5. A test must be proven able to fail — and a test of a guard must be proven able to fail with the guard itself deleted, not only with the input changed.** A test that cannot go red is not evidence; we have shipped assertions that were watching an empty array, and a suite that stayed green with a script's `set -e` and its trap cut out, because every case still printed the string it was asserting. — *checked by:* break the thing on purpose once, see the test go red, then put it back — for a guard, delete the guard's own line — and say so in the PR's "How it was checked". **The red proof runs against a file saved on disk, never a `<(...)` process substitution:** a multi-case suite opens that path once, every later case reads it empty, and the count it prints is a fabricated red rather than a proof.
 
 **T6. Browser tests live in the repo and run against a throwaway stack.** Unit tests have never seen a screen: a phone layout can be broken for weeks with every PHP test green. — *checked by:* `e2e/` in-repo (Playwright), a seeded disposable stack, never live or production data.
 
@@ -68,7 +68,7 @@ checked** — because a rule nothing checks is a preference, and preferences dri
 
 ## Security & privacy
 
-**S1. No secrets and no real personal data in a repository, ever — including in history.** Names, birthdates, health readings and keys are not recoverable once pushed. Real values live in `.env` and the database; repositories get fixtures. — *checked by:* the pre-commit hook (pattern layer + this repo's own `.env` values as fixed strings) and the gate's secrets step, which never skips itself.
+**S1. No secrets and no real personal data in a repository, ever — including in history.** Names, birthdates, health readings and keys are not recoverable once pushed. Real values live in `.env` and the database; repositories get fixtures. **The hook that checks this always runs: never `-c core.hooksPath=…`, `--no-verify`, `HUSKY=0` or any other way of standing a commit up without it** — a hook that blocks a commit is reported, with the key it named, and not routed around, because the one commit somebody is in a hurry to force past the guard is the one the guard was written for. — *checked by:* the pre-commit hook (pattern layer + this repo's own `.env` values as fixed strings) and the gate's secrets step, which never skips itself; plus review of the command that made the commit — a bypass flag in a transcript is the finding, whatever the diff turned out to hold.
 
 **S2. A guard never prints what it caught.** A hook that echoes the secret has just written it to a terminal, a scrollback and possibly a log. — *checked by:* the hook reports the *key* that matched and stops.
 
@@ -95,6 +95,7 @@ checked** — because a rule nothing checks is a preference, and preferences dri
 **W4. A PR's title is one action — what was done — and its body uses these four headings, literally, in ≤150 words of plain language.** *Added caching for card images*, *Fix the flicker on the scan sheet* — never *The phone never caches card images*: a merge list read months later is a list of what was done, and a title that states the problem makes the reader open the PR to find out whether it was solved. The problem belongs under `## Why`. The body is for the person deciding to merge, not for the developer who wrote it. — *checked by:* the reviewer, before the PR goes ready, who corrects a problem-statement title with `gh pr edit <n> --title`:
   `## What changed` (plain, no file names) · `## Why` (the problem in user terms) · `## What you'll notice` (or "nothing in the app") · `## How it was checked`
   and one closing line: *Technical detail: commits and docs/DECISIONS.md.*
+  The 150 is counted by command, not by eye — `gh pr view <n> --json body -q .body | sed '/Generated with/,$d' | wc -w` must print ≤150, once before the PR is created and again before it goes ready — because a body nobody counted is reliably over, and the attribution footer is not part of the prose being counted.
 
 **W5. Avoid stacked PRs; if you stack, retarget the child to `main` before merging it.** GitHub retargets a stacked PR only when the base *branch is deleted* — a child merged after its base has silently merged into a dead branch and never shipped. — *checked by:* after any merge batch, prove each merge commit is an ancestor of `main` before deploying.
 
@@ -102,6 +103,6 @@ checked** — because a rule nothing checks is a preference, and preferences dri
 
 **W7. Every project keeps `docs/DECISIONS.md`.** It is where the *why* goes when it is too long for a comment, and it is what stops the next person re-deriving a decision or "simplifying" a landmine. — *checked by:* review — a PR that removes a non-obvious option should add the entry that says why.
 
-**W8. Every project has one deploy runbook, followed literally.** Deploys fail on ordering, ownership and restarts — things nobody remembers correctly under pressure. — *checked by:* `.claude/commands/deploy.md` in the repo; each project's runbook states whether merging to `main` deploys automatically or not.
+**W8. Every project has one deploy runbook, followed literally — and every fenced block in it is its own shell, so a step that needs a variable sets it and uses it in the same block.** Deploys fail on ordering, ownership and restarts — things nobody remembers correctly under pressure — and on this: an `APP_HOME` exported in one step came back empty in the next, one `rm -rf "$APP_HOME/…"` away from deleting the wrong tree. — *checked by:* `.claude/commands/deploy.md` in the repo; each project's runbook states whether merging to `main` deploys automatically or not; and no block reads a name that no line inside it sets — a destructive line is written with `${VAR:?}`, so an empty one stops the step instead of widening its reach.
 
 **W9. Prove a mechanism by running it, never by reading its configuration.** Comments and config say what someone once believed; only the running thing says what is true. — *checked by:* run the command and quote its output — in the PR, in the report, in the answer to "is it working?".

@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-10-01 — four rules tightened from one day's mistakes: a guard's test, a runbook's blocks, the hook that always runs, and a word count by command (VERSION 2026-10-01)
+**Four things went wrong in one day, and every one of them was already covered by a rule that
+was not specific enough to catch it.** No rule was added — C1 and C2 cut both ways here, and a
+fleet that reads 38 rules will not read 42 — so each landed in the rule whose check it belongs to.
+
+**T5 now says what proving a guard means.** A test suite for a shell guard stayed green with the
+script's `set -e` and its `trap` deleted, because each case still printed the string the assertion
+looked for: the test was watching the output, not the guard. T5's rule sentence now carries the
+stronger form — a test of a guard is proven able to fail with *the guard itself deleted*, not only
+with the input changed — and its checked-by names the second half of the same morning: a red proof
+driven from a `<(...)` process substitution reported 0 of 3 cases passing, which read as a clean red
+and was not one, because a multi-case suite opens that path once and every later case reads it
+empty. The red proof runs against a file saved on disk.
+
+**W8 now says that a fenced block is a shell.** A runbook step exported `APP_HOME` and the next
+block used it; between the two, the variable was gone, and the line that would have used it was an
+`rm -rf`. The rule's own sentence carries it, and its checked-by asks for `${VAR:?}` on a
+destructive line, so an empty name stops the step rather than widening what it reaches.
+
+**S1 now says the hook always runs.** `-c core.hooksPath=…`, `--no-verify` and `HUSKY=0` were
+placed with S1 rather than S2 or S6: the pre-commit hook is already S1's *check*, so a commit that
+goes around it has not merely skipped a tool, it has left S1 unchecked — whereas S2 governs what a
+guard may print once it fires and S6 governs where work happens. S1's checked-by adds review of
+the command that made the commit, because the flag is visible in the transcript and not in the diff.
+
+**W4's 150 words is now counted by a command.** `gh pr view <n> --json body -q .body | sed
+'/Generated with/,$d' | wc -w`, before create and before ready, with the attribution footer cut so
+the prose is what is counted. The placement reasoning is in `docs/DECISIONS.md`; the rule count is
+unchanged at 38, so no project's drift test changes shape — only its vendored copy and its declared
+version.
+
 ## 2026-10-01 — a by-hand deploy prints the gate verdict it overrides, and the ungated refusal names routes that exist (tooling only; the standard is unchanged and VERSION is not bumped)
 **The rescue path was a blindfold.** `gated()` returned on `--gated-by-hand` before it read the
 ledger, so a tip whose `ci` row was red deployed and the log said only `GATED BY HAND: the ledger
