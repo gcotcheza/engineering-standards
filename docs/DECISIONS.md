@@ -698,25 +698,37 @@ reason, like every other failed check, and the deploy is not failed by any of it
 merged worktrees measured on 2026-10-01, 11 were kept, and every one of those 11 carried at least
 one root-owned file — five of fineprint's seven rows among them, whose gate leaves a root-owned
 `.env` behind. The cleanup cannot `chown` and must not, so those trees stay until the gate that wrote them
-stops running as root; that is its own item, not this one. `rootfiles` is the last check before the
-removal because it is the most expensive: it walks the tree, and `find -print -quit` stops at the
-first hit.
+stops running as root; that is its own item, not this one. `rootfiles` is the most expensive check — it
+walks the tree, and `find -print -quit` stops at the first hit — so only the `.env*` listing runs
+after it.
 
 **What a removed tree takes with it, and what each check actually matches.** Probed on a throwaway
 fixture worktree holding an ignored `.env` and an ignored `node_modules/`: the dirty check's
 `status --porcelain` printed `porcelain=[]`, and a plain `git worktree remove` then printed
 `dotenv deleted with the worktree` and `node_modules deleted with the worktree` — so gitignored
-files go with the tree, and they are the disk this change reclaims. Root-owned ignored files are not
+files go with the tree, and they are the disk this change reclaims. An ignored `.env*` at the top of
+the tree is the one exception: `cleanup_envfiles` keeps such a tree under `envfiles`, because an
+app's `.env` holds secrets and configuration that nothing in the repository can regenerate, and a
+few kilobytes of it is not reclaimable disk the way a `node_modules/` is. A listing it could not
+read keeps the tree too. That pathspec is the top of the tree only, which is accepted: on a fixture
+tree `'**/.env*'` printed `backend/.env` and `node_modules/dotenv/.env` but not the top-level
+`.env`, so it is a swap rather than a widening, and it lists ignored files under an ignored
+`node_modules/` — the keep-every-tree failure the `--ignored` reasoning below already rejects. A
+nested `.env` that is not root-owned therefore goes with the tree; a root-owned one is still kept
+by `rootfiles`. Root-owned ignored files are not
 an exception to that: `cleanup_rootfiles` walks the whole tree with `find -uid`, ignored paths
 included, so a tree carrying one is kept under `rootfiles` before any remove is attempted.
 `--ignored` is deliberately not added to the dirty check — the same probe printed
 `ignored-aware=[!! .env` / `!! node_modules/]`, and every project's tree carries a `node_modules`,
 `vendor` or `public/build`, so an ignored-aware dirty check would keep every tree for ever.
 `cleanup_mounts` matches a container's mount source against the tree and everything below it and
-never against an ancestor, because a container mounting `/var/www` says nothing about one worktree
-inside it. The `/proc/[0-9]*` glob in `cleanup_procs` only enumerates process directories so their
-`cwd` can be read: nothing it yields is ever a removal target, and a glob that matched nothing is
-itself a keep rather than a clean bill of health.
+never against an ancestor, because a container mounting `/var/www/<app>-worktrees` says nothing
+about one worktree inside it. The `/proc/[0-9]*` glob in `cleanup_procs` only enumerates process
+directories so their `cwd` can be read: nothing it yields is ever a removal target, and a glob that
+matched nothing is itself a keep rather than a clean bill of health. It reads `cwd` alone and not
+each process's open descriptors, which is accepted: an `fd` walk is a readlink per descriptor for
+every process on the box, while a process that holds a file open inside a removed tree but sits
+somewhere else keeps reading that file by inode and loses nothing.
 
 **It is wired as an `EXIT` trap because `finish` exits.** `finish()` prints `DONE` and `PAPERWORK`
 and calls `exit 0`, so nothing written after a `finish` call ever runs; the trap is armed on the
@@ -730,6 +742,18 @@ already trap `EXIT` on their success path (ghiecode closes its `APP_HOME`, kidsq
 root-owned files); a second `trap … EXIT` replaces the first, so in those two the existing handler
 calls `deploy_cleanup` rather than being replaced by it.
 
+**A success marker, not the trap, is what decides the cleanup runs.** An `EXIT` handler fires on
+every exit, a refusal included, and the two handlers above call `deploy_cleanup` unconditionally
+because they already do their own work on every path. So each project sets `DEPLOY_SUCCEEDED=1` on
+the line immediately before every success-path `finish`, and `deploy_cleanup` reads it before it
+reads anything else: unset, it says `did not run: the deploy did not reach finish.`, removes nothing
+and leaves the refusal's own exit code alone. Deciding it inside the handler rather than at each
+`trap` line is what makes an unconditional call safe, and it is one sentence to audit per project
+instead of one conditional per handler. Sourcing `cleanup.sh` discards an inherited
+`DEPLOY_SUCCEEDED` the way sourcing `ledger.sh` discards `GATE_SUITE_PASSED`: a marker exported by
+whatever called the deploy script would otherwise buy the removals of a deploy that refused, so the
+only assignment that counts is the one the deploy makes in its own shell.
+
 **The library defaults none of the names it reads.** `PR`, `GIT`, `GH`, `ROOT`, `WT_GIT`, `REAP`,
 `DOCKER`, `PROC_ROOT` and `CLEANUP_ROOT_UID` are assigned by each project's `deploy.sh`, in the style
 the rest of the library already uses, and a `${REAP:-/usr/local/sbin/fleet-scratch-reap}` is
@@ -739,13 +763,15 @@ removes nothing, and that is one check over one list rather than a seam check be
 argument check — `PR` unset is the same sentence as `REAP` unset, because to this handler they are
 the same kind of mistake.
 
-**Every zero says which zero it is.** No lane on the box carries a `.fleet-scratch` label today, so
-the reaper's candidate set is empty for every project; the summary therefore reads
-`scratch reaped 0 kept 0 (no lane is labelled <repo> #<PR>)` rather than a bare count that looks like
-a successful sweep of nothing. Labelling lanes is separate work. Once they are labelled, no candidate
-means the other zero instead — the reaper's own `kept:` count is above zero, every lane carrying the
-label was kept on purpose, and the summary says `every labelled lane was kept (N)`, so the two
-readings of `candidates: 0` are never printed as the same sentence. The same rule covers every half that
+**Every zero says which zero it is.** Lanes carry a `.fleet-scratch` label now:
+`find /srv/worker-scratch -maxdepth 2 -name .fleet-scratch | wc -l` printed `8` on 2026-10-01, in
+the spelling the fleet worker rules landed that day — `repo=gcotcheza/<name>` and `pr=<n>`, the
+first of which is what `deploy_cleanup` passes as the reaper's first argument. So a candidate set
+can be non-empty, and the two readings of `candidates: 0` are never printed as the same sentence:
+no lane carries this pull request's label reads
+`scratch reaped 0 kept 0 (no lane is labelled <repo> #<PR>)`, while a reaper `kept:` count above
+zero means every lane carrying the label was kept on purpose and the summary says
+`every labelled lane was kept (N)`. The same rule covers every half that
 could not run: a pull request that is not merged, a base that is not `main`, a merge commit that is
 not an ancestor of `origin/main`, an unreadable `worktree list` and an unreadable reaper run each put
 their reason where their counts would have gone, instead of printing zeros. The run prints one

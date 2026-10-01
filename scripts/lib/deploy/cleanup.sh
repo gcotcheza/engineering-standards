@@ -1,8 +1,12 @@
-# fleet-deploy-lib 2026-10-01 sha256:9cd34799e13c4f196706ae9584e838140c01a29482910499ad10a2739101da43
+# fleet-deploy-lib 2026-10-01 sha256:f1ae50836e8348a411823b8df0b2de03e75a54fc1589cf6958d54dfb60481de9
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
 # that just deployed. It is wired as an EXIT trap: it never exits, never returns non-zero.
+
+# Sourcing discards an inherited marker: only an assignment made in this deploy's own
+# shell, on the line before a success-path finish, stands for a deploy that reached it.
+unset DEPLOY_SUCCEEDED
 
 # find is pinned to the binary: an exported shell function named find must not decide
 # which directories a removal run looks inside.
@@ -71,6 +75,14 @@ cleanup_rootfiles() {
     return 0
 }
 
+cleanup_envfiles() {
+    local wt=$1 rc=0 out
+    out=$(${WT_GIT-} -C "$wt" ls-files -o -i --exclude-standard -- '.env*' 2>&1) || rc=$?
+    [ "$rc" = 0 ] || { cleanup_keep envfiles "$wt (ls-files exited ${rc}, so an ignored .env could not be ruled out)"; return 1; }
+    [ -z "$out" ] || { cleanup_keep envfiles "$wt (it carries an ignored $out)"; return 1; }
+    return 0
+}
+
 cleanup_worktree() {
     local wt=$1 head=$2 rc=0 out
     [ -n "$head" ] || { cleanup_keep headInMain "$wt (git named no HEAD for it)"; return 0; }
@@ -83,10 +95,12 @@ cleanup_worktree() {
     fi
     rc=0
     out=$(${WT_GIT-} -C "$wt" --no-optional-locks status --porcelain 2>&1) || rc=$?
-    { [ "$rc" = 0 ] && [ -z "$out" ]; } || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
+    [ "$rc" = 0 ] || { cleanup_keep status "$wt (status --porcelain exited ${rc}, so uncommitted work could not be ruled out)"; return 0; }
+    [ -z "$out" ] || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
     cleanup_procs "$wt" || return 0
     cleanup_mounts "$wt" || return 0
     cleanup_rootfiles "$wt" || return 0
+    cleanup_envfiles "$wt" || return 0
     rc=0
     ${GIT-} worktree remove "$wt" >/dev/null 2>&1 || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep remove "$wt (worktree remove exited ${rc}; it is never re-run with --force)"; return 0; }
@@ -161,6 +175,8 @@ cleanup_scratch() {
 
 deploy_cleanup() {
     local rc=0 missing json state base head_ref merge_sha
+    [ -n "${DEPLOY_SUCCEEDED-}" ] \
+        || { say "CLEANUP #${PR-} did not run: the deploy did not reach finish."; return 0; }
     CLEANUP_REASONS=''
     CLEANUP_KEPT=0
     CLEANUP_REMOVED=0

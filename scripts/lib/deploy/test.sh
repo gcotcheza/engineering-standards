@@ -191,6 +191,9 @@ run_lib() {
     # The same move for the arming guard: set in the environment before driver.sh
     # sources ledger.sh, GATE_ARMED would buy a row for a run that armed nothing.
     armedenv="${ARMED_ENV:+GATE_ARMED=1}"
+    # And for the success marker: exported before driver.sh sources cleanup.sh, it would
+    # buy the removals of a deploy that refused.
+    succeededenv="${SUCCEEDED_ENV:+DEPLOY_SUCCEEDED=1}"
     ARGVFILE="${CASE}/gh-argv.log"
     REAPARGV="${CASE}/reap-argv.log"
     # shellcheck disable=SC2086  # repoenv is empty or one NAME=value; "" would be env's command
@@ -227,6 +230,7 @@ run_lib() {
         ${repoenv} \
         ${suiteenv} \
         ${armedenv} \
+        ${succeededenv} \
         "${logenv}" \
         bash "${CASE}/lib/driver.sh" 2>&1)"
     RC=$?
@@ -239,6 +243,7 @@ run_lib() {
     REPO_OVERRIDE=''
     SUITE_PASSED_ENV=''
     ARMED_ENV=''
+    SUCCEEDED_ENV=''
     HEAVY_STATUS=''
     # Unset, not emptied: a case that assigns an empty seam means "the deploy assigned
     # none", which is a different thing from a case that never mentioned it.
@@ -742,7 +747,7 @@ cleanup_fixture() {
 
 # Every cleanup case runs the wiring the projects will use — armed as an EXIT trap under
 # the options their deploy scripts set — so each one also proves the deploy still ends 0.
-CLEAN_CALL='REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; finish abc1234'
+CLEAN_CALL='REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234'
 FAKE_SET="$(printf 'a-lane\n' | sha256sum | cut -d' ' -f1)"
 
 cleanup_fixture cleanup-clean
@@ -864,13 +869,13 @@ equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 # each one covers for the other; ROOT is moved here so one case can fail one of them.
 cleanup_fixture cleanup-first-block-excluded
 gh_json main main
-run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${CASE}/not-the-checkout; trap deploy_cleanup EXIT; finish abc1234"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${CASE}/not-the-checkout; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234"
 contains 'the first worktree git lists is never a candidate' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 0 (none)'
 equals 'and the checkout is still on disk' "$(on_disk "${ROOT}")" 'there'
 
 cleanup_fixture cleanup-root-path-excluded
-run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${WT}; trap deploy_cleanup EXIT; finish abc1234"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${WT}; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234"
 contains 'the worktree at the deployed path is never a candidate' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 0 (none)'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
@@ -879,7 +884,7 @@ cleanup_fixture cleanup-worktree-list-unreadable
 mkdir -p "${CASE}/shim"
 printf '#!/bin/sh\ncase " $* " in *" worktree "*) exit 3 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
 chmod 0755 "${CASE}/shim/git"
-run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; finish abc1234"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234"
 contains 'a worktree list that fails says so rather than reading as no worktrees' "${OUT}" \
     'CLEANUP #73 worktrees not listed (worktree list exited 3)'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
@@ -890,7 +895,7 @@ cleanup_fixture cleanup-head-unlisted
 mkdir -p "${CASE}/shim"
 printf '#!/bin/sh\ncase " $* " in *" worktree list "*) git "$@" | grep -v "^HEAD " ; exit 0 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
 chmod 0755 "${CASE}/shim/git"
-run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; finish abc1234"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234"
 contains 'a worktree listed with no HEAD line is kept on doubt, not judged' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 1 (headInMain)'
 equals 'and that worktree is still on disk' "$(on_disk "${WT}")" 'there'
@@ -978,17 +983,69 @@ contains 'a deploy that assigned no reaper is told, and removes nothing' "${OUT}
     'CLEANUP #73 did not run: the deploy assigned no REAP.'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
 
+# An ignored .env* is config and secrets, not reclaimable disk, so it keeps the tree even
+# though the dirty check reads clean and every other check cleared it.
+cleanup_fixture cleanup-envfiles
+mkdir -p "${ROOT}/.git/info"
+printf '.env\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}/.env"
+run_lib "${CLEAN_CALL}"
+contains 'an ignored .env file in a merged clean tree keeps it, and the reason names it' "${OUT}" \
+    'worktrees removed 0 kept 1 (envfiles)'
+contains 'and the deploy log names the file that kept it' "$(cat "${LOGFILE}")" \
+    'CLEANUP keep envfiles'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+# The shims exit 3 and print nothing: an error on stdout would be read as a found file,
+# which is the wrong reason reached by luck rather than the could-not-tell branch.
+cleanup_fixture cleanup-envfiles-unreadable
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ncase " $* " in *" ls-files "*) exit 3 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+WT_GIT_SEAM="${CASE}/shim/git"
+run_lib "${CLEAN_CALL}"
+contains 'a tree whose ignored .env files cannot be listed is kept on doubt' "${OUT}" \
+    'worktrees removed 0 kept 1 (envfiles)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-status-unreadable
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ncase " $* " in *" status "*) exit 3 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+WT_GIT_SEAM="${CASE}/shim/git"
+run_lib "${CLEAN_CALL}"
+contains 'a status that could not be read is its own reason, not dirty' "${OUT}" \
+    'worktrees removed 0 kept 1 (status)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+# The two projects whose success-path handler calls deploy_cleanup unconditionally reach it
+# on a refusal too; the marker is what makes that call safe.
+cleanup_fixture cleanup-marker-unset
+run_lib 'REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; refuse "the gate is red"'
+contains 'a handler that fires without the success marker removes nothing' "${OUT}" \
+    'CLEANUP #73 did not run: the deploy did not reach finish.'
+equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+equals 'and the refusal exit code is unchanged' "${RC}" '1'
+
+cleanup_fixture cleanup-marker-from-environment
+SUCCEEDED_ENV=1
+run_lib 'REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; refuse "the gate is red"'
+contains 'an inherited DEPLOY_SUCCEEDED is discarded on sourcing, not honoured' "${OUT}" \
+    'CLEANUP #73 did not run: the deploy did not reach finish.'
+equals 'and an environment-set marker leaves the worktree on disk' "$(on_disk "${WT}")" 'there'
+equals 'and it does not change the refusal exit code either' "${RC}" '1'
+
 # PR is caller-set like every seam, and the handler reads it as ${PR-}: unset, it says
 # which name is missing and keeps everything, rather than dying under its callers' set -u.
 cleanup_fixture cleanup-pr-unassigned
-run_lib 'REPO=gcotcheza/fixture; set -eo pipefail; trap deploy_cleanup EXIT; unset PR; exit 0'
+run_lib 'REPO=gcotcheza/fixture; set -eo pipefail; DEPLOY_SUCCEEDED=1; trap deploy_cleanup EXIT; unset PR; exit 0'
 contains 'a deploy that assigned no PR is told, and removes nothing' "${OUT}" \
     'CLEANUP # did not run: the deploy assigned no PR.'
 equals 'an unset PR leaves the worktree on disk' "$(on_disk "${WT}")" 'there'
 equals 'and an unset PR under set -u still ends the deploy 0' "${RC}" '0'
 
 cleanup_fixture cleanup-no-repo
-run_lib 'set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; finish abc1234'
+run_lib 'set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234'
 contains 'with no repository nothing is read and nothing is removed' "${OUT}" \
     'CLEANUP #73 did not run: REPO names no repository, so no pull request could be read.'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
