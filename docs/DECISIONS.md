@@ -696,16 +696,16 @@ reason, like every other failed check, and the deploy is not failed by any of it
 
 **The root-owned check is the one that will keep most trees, and the fix is not here.** Of the 28
 merged worktrees measured on 2026-10-01, 11 were kept, and every one of those 11 carried at least
-one root-owned file — including all seven of fineprint's, whose gate leaves a root-owned `.env`
-behind. The cleanup cannot `chown` and must not, so those trees stay until the gate that wrote them
+one root-owned file — five of fineprint's seven rows among them, whose gate leaves a root-owned
+`.env` behind. The cleanup cannot `chown` and must not, so those trees stay until the gate that wrote them
 stops running as root; that is its own item, not this one. `rootfiles` is the last check before the
 removal because it is the most expensive: it walks the tree, and `find -print -quit` stops at the
 first hit.
 
 **It is wired as an `EXIT` trap because `finish` exits.** `finish()` prints `DONE` and `PAPERWORK`
 and calls `exit 0`, so nothing written after a `finish` call ever runs; the trap is armed on the
-line before each success-path `finish`, which includes the docs-only landing that four projects
-finish early. Probed under the options the deploy scripts actually set: inside an `EXIT` handler
+line before each success-path `finish`, which includes the docs-only landing that five of the eight
+projects finish early. Probed under the options the deploy scripts actually set: inside an `EXIT` handler
 under `set -e`, a command that fails both cuts the handler short and makes the script exit 1, and
 reading an unset name does the same. So `deploy_cleanup` captures every exit code (`rc=0;
 out=$(…) || rc=$?`), reads every caller-set name as `${X-}`, and ends in `return 0` — a handler that

@@ -740,7 +740,9 @@ cleanup_fixture() {
     gh_json main pr
 }
 
-CLEAN_CALL='REPO=gcotcheza/fixture; deploy_cleanup'
+# Every cleanup case runs the wiring the projects will use — armed as an EXIT trap under
+# the options their deploy scripts set — so each one also proves the deploy still ends 0.
+CLEAN_CALL='REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; finish abc1234'
 FAKE_SET="$(printf 'a-lane\n' | sha256sum | cut -d' ' -f1)"
 
 cleanup_fixture cleanup-clean
@@ -751,6 +753,7 @@ contains 'a merged, clean, unused worktree is removed' "${OUT}" \
     "CLEANUP #73 worktrees removed 1 kept 0 (none) scratch reaped 0 kept 0 (no lane is labelled gcotcheza/fixture #73)"
 equals 'and it is gone from disk' "$(on_disk "${WT}")" 'gone'
 equals 'the cleanup prints one summary line' "$(printf '%s\n' "${OUT}" | grep -c '^CLEANUP #')" '1'
+equals 'and the deploy it hangs off still exits 0' "${RC}" '0'
 
 cleanup_fixture cleanup-dirty
 printf 'uncommitted\n' >>"${WT}/app/feature.txt"
@@ -846,18 +849,26 @@ contains 'a tree that went dirty after the dirty check is kept, never forced' "$
     'worktrees removed 0 kept 1 (remove)'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 
-cleanup_fixture cleanup-main-worktree
+# Two guards keep the deployed checkout out of the candidates, and in a real repository
+# each one covers for the other; ROOT is moved here so one case can fail one of them.
+cleanup_fixture cleanup-first-block-excluded
 gh_json main main
-run_lib "${CLEAN_CALL}"
-contains 'the deployed checkout itself is never a candidate' "${OUT}" \
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${CASE}/not-the-checkout; trap deploy_cleanup EXIT; finish abc1234"
+contains 'the first worktree git lists is never a candidate' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 0 (none)'
 equals 'and the checkout is still on disk' "$(on_disk "${ROOT}")" 'there'
+
+cleanup_fixture cleanup-root-path-excluded
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${WT}; trap deploy_cleanup EXIT; finish abc1234"
+contains 'the worktree at the deployed path is never a candidate' "${OUT}" \
+    'CLEANUP #73 worktrees removed 0 kept 0 (none)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 
 cleanup_fixture cleanup-worktree-list-unreadable
 mkdir -p "${CASE}/shim"
 printf '#!/bin/sh\ncase " $* " in *" worktree "*) exit 3 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
 chmod 0755 "${CASE}/shim/git"
-run_lib "REPO=gcotcheza/fixture; GIT=\"${CASE}/shim/git -C ${ROOT}\"; deploy_cleanup"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; finish abc1234"
 contains 'a worktree list that fails says so rather than reading as no worktrees' "${OUT}" \
     'CLEANUP #73 worktrees not listed (worktree list exited 3)'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
@@ -865,7 +876,7 @@ equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
 cleanup_fixture cleanup-reaper-error
 REAP_DRY_RC=2
 REAP_DRY_OUT='error:     /srv/worker-scratch/a-lane (label unreadable)'
-run_lib 'REPO=gcotcheza/fixture; set -eo pipefail; trap deploy_cleanup EXIT; GATED=ledger; finish abc1234'
+run_lib "${CLEAN_CALL}"
 contains 'a reaper that errors is loud' "${OUT}" \
     'CLEANUP #73 scratch: reap exited 2 on its read-only run; no lane was reaped and the deploy is unchanged.'
 contains 'and the summary says no lane was reaped' "${OUT}" 'scratch not reaped (dry run exited 2)'
@@ -937,7 +948,7 @@ contains 'a deploy that assigned no reaper is told, and removes nothing' "${OUT}
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
 
 cleanup_fixture cleanup-no-repo
-run_lib 'deploy_cleanup'
+run_lib 'set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; finish abc1234'
 contains 'with no repository nothing is read and nothing is removed' "${OUT}" \
     'CLEANUP #73 did not run: REPO names no repository, so no pull request could be read.'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'

@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-01 sha256:628854e715e70dfa5e6192192ab548c107755788e849f44743f51338c07a74ce
+# fleet-deploy-lib 2026-10-01 sha256:e825095868d099bbd34093c8c92f19ebed44a4933fba0cb176599f822358f8df
 # shellcheck shell=bash
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
 # that just deployed. It is wired as an EXIT trap: it never exits, never returns non-zero.
@@ -126,9 +126,11 @@ cleanup_scratch() {
         *) say "CLEANUP #${PR} scratch: ${REAP##*/} exited ${rc} on its read-only run; no lane was reaped and the deploy is unchanged."
            CLEANUP_SC_PART="not reaped (dry run exited ${rc})"; return 0 ;;
     esac
-    sha=$(printf '%s\n' "$out" | sed -n 's/^candidates: [0-9][0-9]*  set: \([0-9a-f]\{64\}\)  kept: .*/\1/p' | head -1)
-    count=$(printf '%s\n' "$out" | sed -n 's/^candidates: \([0-9][0-9]*\)  set: .*/\1/p' | head -1)
-    kept=$(printf '%s\n' "$out" | sed -n 's/^candidates: [0-9][0-9]*  set: [0-9a-f]\{64\}  kept: \([0-9][0-9]*\)  .*/\1/p' | head -1)
+    # A here-string and sed's own q, never a pipe into head: the caller runs under
+    # pipefail, where the first stage's SIGPIPE would abort the EXIT handler.
+    sha=$(sed -n '/^candidates: /{s/^candidates: [0-9][0-9]*  set: \([0-9a-f]\{64\}\)  kept: .*/\1/p;q}' <<<"$out")
+    count=$(sed -n '/^candidates: /{s/^candidates: \([0-9][0-9]*\)  set: .*/\1/p;q}' <<<"$out")
+    kept=$(sed -n '/^candidates: /{s/^candidates: [0-9][0-9]*  set: [0-9a-f]\{64\}  kept: \([0-9][0-9]*\)  .*/\1/p;q}' <<<"$out")
     { [ -n "$sha" ] && [ -n "$count" ] && [ -n "$kept" ]; } \
         || { say "CLEANUP #${PR} scratch: ${REAP##*/} printed no candidate set, so nothing was applied; read its lines in ${LOG:-the deploy log}."
              CLEANUP_SC_PART="not reaped (unreadable read-only run)"; return 0; }
@@ -146,8 +148,8 @@ cleanup_scratch() {
         *) say "CLEANUP #${PR} scratch: ${REAP##*/} exited ${rc} with --apply; read its lines in ${LOG:-the deploy log}. The deploy is unchanged."
            CLEANUP_SC_PART="not reaped (apply exited ${rc})"; return 0 ;;
     esac
-    reaped=$(printf '%s\n' "$out" | sed -n 's/^reaped: \([0-9][0-9]*\)  kept: .*/\1/p' | head -1)
-    kept=$(printf '%s\n' "$out" | sed -n 's/^reaped: [0-9][0-9]*  kept: \([0-9][0-9]*\)$/\1/p' | head -1)
+    reaped=$(sed -n '/^reaped: [0-9]/{s/^reaped: \([0-9][0-9]*\)  kept: .*/\1/p;q}' <<<"$out")
+    kept=$(sed -n '/^reaped: [0-9]/{s/^reaped: [0-9][0-9]*  kept: \([0-9][0-9]*\)$/\1/p;q}' <<<"$out")
     { [ -n "$reaped" ] && [ -n "$kept" ]; } \
         || { say "CLEANUP #${PR} scratch: ${REAP##*/} applied but printed no counts; read its lines in ${LOG:-the deploy log}."
              CLEANUP_SC_PART="applied, counts unreadable"; return 0; }

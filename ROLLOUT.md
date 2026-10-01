@@ -180,10 +180,21 @@ change that would otherwise turn every project's row red for work nobody has don
 
 | Open work | What is missing | Owner |
 |---|---|---|
-| Each project's `deploy.sh` arms the trap | `trap deploy_cleanup EXIT` on the line before each success-path `finish` call — including the docs-only landing that four projects finish early — plus the five seam assignments (`WT_GIT`, `REAP`, `DOCKER`, `PROC_ROOT`, `CLEANUP_ROOT_UID`) beside the ones it already makes, and `. "$LIB/cleanup.sh"` beside the other four. In the two projects whose success path already traps `EXIT`, the existing handler calls `deploy_cleanup`: a second `trap … EXIT` replaces the first, it does not add to it. | each project, in its own PR |
+| Each project's `deploy.sh` arms the trap | `trap deploy_cleanup EXIT` on the line before each success-path `finish` call — including the docs-only landing five of the eight finish early — plus the five seam assignments (`WT_GIT`, `REAP`, `DOCKER`, `PROC_ROOT`, `CLEANUP_ROOT_UID`) beside the ones it already makes, and `. "$LIB/cleanup.sh"` beside the other four. Where a success path already traps `EXIT`, the existing handler calls `deploy_cleanup`: a second `trap … EXIT` replaces the first, it does not add to it. The table below says which lines each project has. | each project, in its own PR |
 | The fleet check compares the new file | `cleanup` added to `LIB_FILES` in `scripts/fleet-versions.sh`, and `scripts/lib/deploy/VERSION` bumped with the serial a second change in one day takes, in the same change as the last project's re-vendor | this repository, in the re-vendor PR |
-| The gate stops leaving root-owned files in a worktree | The `rootfiles` check keeps a worktree it cannot explain, and it will keep most of them: of 28 merged worktrees measured on 2026-10-01, the 11 that were kept all carried at least one root-owned file, seven of them one project's gate-written `.env`. Until the gate writes as the app user, those trees are removed by hand. | each project whose gate writes as root |
-| Scratch lanes carry a label | `fleet-scratch-reap` reaps only a directory holding a `.fleet-scratch` file naming its repo and PR, and no lane on the box carries one, so the lane half of every cleanup finds an empty candidate set and says so. Whoever creates a lane writes the label. | the worker briefs, separately |
+| The gate stops leaving root-owned files in a worktree | The `rootfiles` check keeps a worktree it cannot explain, and it will keep a good share of them: of 28 merged worktrees measured on 2026-10-01, 11 were kept and all 11 carried at least one root-owned file — five of one project's seven rows among them, its gate-written `.env`. Until that gate writes as the app user, those trees are removed by hand. | each project whose gate writes as root |
+| Scratch lanes carry a label | `fleet-scratch-reap` reaps only a directory holding a `.fleet-scratch` file naming its repo and PR, and no lane on the box carries one, so the lane half of every cleanup finds an empty candidate set and says so. Whoever creates a lane writes the label, and its `repo=` field holds `owner/repo` — what `deploy_cleanup` passes as the reaper's first argument. Nothing writes a label today, so that spelling is a contract being set here rather than one being matched. | the worker briefs, separately |
+
+| Project | The success-path `finish` | A docs-only `finish` as well | Already traps `EXIT` on the success path |
+|---|---|---|---|
+| fineprint | the last `finish` in its deploy function | yes, after its `LANDED docs-only` line | no |
+| ghiecode | the last `finish` | no | yes — `app_home_close`, armed before that `finish` |
+| health-tracker | the last `finish` | yes, inside its `if classify` block | no |
+| kidsquest | the last `finish` | yes, after its `LANDED docs-only` line | yes — `report_root_owned`, armed *after* the docs-only `finish`, so that path arms `deploy_cleanup` directly and only the main path needs the handler to call it |
+| memento | the last `finish` | yes, after its `LANDED docs-only` line | no |
+| orbit | the last `finish` | yes, after its `LANDED docs-only` line | no |
+| reflection | the last `finish` | no | no |
+| scribly | the last `finish` | no | no |
 
 Nothing above is a schedule. The library half is finished and proved; each row is a change
 somebody has to open, and the cleanup does nothing at all until the first one merges.
