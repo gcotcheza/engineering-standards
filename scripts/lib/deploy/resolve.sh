@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-01 sha256:bf6b71a0d4b6153491fb5f942879ed1e27b60c203f35c7b0ebf361d820bc8f6a
+# fleet-deploy-lib 2026-10-02 sha256:bf6b71a0d4b6153491fb5f942879ed1e27b60c203f35c7b0ebf361d820bc8f6a
 # shellcheck shell=bash
 # resolve <PR#> proves gh says MERGED and the merge commit IS origin/main, then sets
 # GATE_SHA: the commit whose tree deploys, and so the commit that must be gated.
