@@ -706,19 +706,24 @@ after it.
 fixture worktree holding an ignored `.env` and an ignored `node_modules/`: the dirty check's
 `status --porcelain` printed `porcelain=[]`, and a plain `git worktree remove` then printed
 `dotenv deleted with the worktree` and `node_modules deleted with the worktree` — so gitignored
-files go with the tree, and they are the disk this change reclaims. An ignored `.env*` anywhere in
-the tree is the one exception: `cleanup_envfiles` keeps such a tree under `envfiles`, because an
-app's `.env` holds secrets and configuration that nothing in the repository can regenerate, and a
-few kilobytes of it is not reclaimable disk the way a `node_modules/` is. A listing it could not
-read keeps the tree too. The probe was top-level only until card 263: `'.env*'` without magic
-matches the top of the tree alone, so reflection's `api/.env` went with its tree. It is now
-`':(glob)**/.env*'`, which on git 2.43 printed the top-level `.env` as well as `api/.env` and
-`deep/a/b/.env.local` (the plain `'**/.env*'` measured earlier did not reach the top level; the
-`glob` magic does), minus `':(glob,exclude)**/vendor/**'` and `':(glob,exclude)**/node_modules/**'`.
-Without those two, the same probe printed `api/vendor/x/.envrc` and `node_modules/y/.env`: a
-vendored package's own env file would keep every tree for ever, the failure the `--ignored`
-reasoning below rejects. `fleet-scratch-reap`'s `check_repo` made the same move first.
-Root-owned ignored files are not
+files go with the tree, and they are the disk this change reclaims. An ignored `.env*` file at the
+top of the tree or below it is the one exception: `cleanup_envfiles` keeps such a tree under
+`envfiles`, because an app's `.env` holds secrets and configuration that nothing in the repository
+can regenerate, and a few kilobytes of it is not reclaimable disk the way a `node_modules/` is. A
+listing it could not read keeps the tree too. The probe was top-level only until card 263: `'.env*'`
+without magic matches the top of the tree alone, so reflection's `api/.env` went with its tree. It
+now adds `':(glob)**/.env*'`, which on git 2.43 printed `api/.env` and `deep/a/b/.env.local` as well
+as the top-level `.env` (the plain `'**/.env*'` did not reach the top level; the `glob` magic does),
+minus `':(glob,exclude)**/vendor/**'` and `':(glob,exclude)**/node_modules/**'`. Without those two,
+the same probe printed `api/vendor/x/.envrc` and `node_modules/y/.env`: a vendored package's own env
+file would keep every tree for ever, the failure the `--ignored` reasoning below rejects. The plain
+`'.env*'` stays beside the glob because it alone reaches inside a top-level `.env*` directory: the
+glob printed nothing for an ignored `.env.d/prod`, the plain term printed it. Two shapes are still
+not matched by name. Files inside a `.env*` directory below the top level (`api/.env.d/x`) are not
+listed by either term. A nested repository is not looked inside: an unignored one shows as `?? sub/`
+and keeps the tree under `dirty`, and an ignored one is listed by the glob as `sub/` whatever it
+holds, so it keeps the tree under `envfiles`. `fleet-scratch-reap`'s `check_repo` uses the same
+four terms. Root-owned ignored files are not
 an exception to that: `cleanup_rootfiles` walks the whole tree with `find -uid`, ignored paths
 included, so a tree carrying one is kept under `rootfiles` before any remove is attempted.
 `--ignored` is deliberately not added to the dirty check — the same probe printed

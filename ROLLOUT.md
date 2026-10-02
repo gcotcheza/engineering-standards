@@ -171,7 +171,10 @@ the survey eventually says — it measures the size of the backlog, not whether 
 
 ## The after-deploy cleanup — the re-vendor round, not yet started
 
-`scripts/lib/deploy/cleanup.sh` is in this repository and tested here. Nothing calls it yet:
+`scripts/lib/deploy/cleanup.sh` is in this repository and tested here. Its one live caller is
+`/usr/local/sbin/fleet-merged-reap`, on a timer every 15 minutes, which sources an installed copy at
+`/usr/local/lib/fleet-merged-reap/cleanup.sh`: a change here reaches production when that copy is
+re-installed, not through any project. No project's deploy calls it yet:
 no project vendors it, `LIB_FILES` in `scripts/fleet-versions.sh` does not compare it, and
 `scripts/lib/deploy/VERSION` has not moved, so no project is reported `DIVERGED` for a file it
 does not have. Arming it is one round of eight small pull requests, one per project, and they
