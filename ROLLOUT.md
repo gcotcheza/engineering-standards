@@ -203,3 +203,14 @@ makes ghiecode's and kidsquest's unconditional calls safe on a refusal: unset, i
 
 Nothing above is a schedule. The library half is finished and proved; each row is a change
 somebody has to open, and the cleanup does nothing at all until the first one merges.
+
+## A gate step that never got a slot is NOT RUN, not FAILED
+
+`heavy-work` exits 75 when it has waited its hour and never started the work. The canonical
+`scripts/lib/deploy/ledger.sh` now writes no ledger row for rc 75, so the commit stays ungated
+rather than red. The other half is each gate's own step runner, and nothing here can do it for
+them: the library never sees a step.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| A step that exits 75 ends the gate with `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exit 75, never `GATE FAILED` | Each adopter's `check.sh`/`ci.sh` still turns a give-up into its ordinary failure banner, which sends someone looking for a failure that never ran. Each takes the convention when it next re-vendors `scripts/lib/deploy/`, where the header comment names it and `docs/DECISIONS.md` carries the full text. | each project, in its own re-vendor PR |

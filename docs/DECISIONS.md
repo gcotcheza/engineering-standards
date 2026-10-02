@@ -784,3 +784,108 @@ untouched, so no project is reported `DIVERGED` for a file it does not vendor ye
 and the entry in `LIB_FILES` belong to the re-vendor round, where they land together with the eight
 `deploy.sh` edits that arm the trap — one change, one report, rather than a week of red rows for
 work nobody has done yet.
+
+## VERSION and ENGINEERING-STANDARDS.md move together, and the gate says so (2026-10-02)
+
+**The pair was a habit, and the habit had already been broken once.** The advisor's ruling on
+backlog 228 is the rule in one sentence: `VERSION` is bumped exactly when the standards text
+changes. Read against `main` the ruling holds in one direction and leaks in the other — all seven
+first-parent commits that touched `VERSION` also touched the text, but eight touched the text and
+one of those, the merge of PR #10 on 2026-09-19, carried no bump. A version that is sometimes the
+version of the text is worse than no version at all, because a reader has no way to tell which
+kind they are holding. `scripts/version-text-pair.sh` is that one sentence as a gate step, and it
+fails naming the file that moved alone: "the pair is broken" would send the reader off to diff two
+files to learn which one it was.
+
+**It judges the tree, not the last commit.** The comparison is `git diff` against
+`git merge-base HEAD origin/main` — what this branch does to `main`. `HEAD~1` would be wrong: a
+three-commit branch that bumps the version first and edits the text last is correct, and a
+per-commit check calls it wrong twice. A committed-only diff would be wrong too, because the gate
+runs against a working tree and a forgotten `VERSION` edit should fail before the commit rather
+than after it. An empty diff — `main` itself, or a branch carrying nothing — passes: neither file
+moved, so the rule has nothing to say.
+
+**A missing `origin/main` fails rather than skips.** A clone that has never fetched has no base to
+judge against, and the tempting behaviour is to return 0 and let the gate go green. That is exactly
+C9's silently swallowed error: it would turn every offline or shallow clone into a green gate for a
+rule nobody checked. The script exits 1 and names the ref it could not find.
+
+**The check and its own test are one step, not two.** The step enforces the pair on this
+repository, then proves the enforcer still works against fixtures. Split, they would occupy two
+slots that nothing distinguishes — the check alone is 0.01s and its fixtures 0.63s, in the
+same run as the table below — and a reader scanning the gate's output for "was the pair checked" would have to
+find both.
+
+**The step order, re-measured.** Each step body was timed alone, three repetitions, best of three,
+the way the 2026-09-19 entry describes, in two separate runs on 2026-10-02 against the merged tree
+that also carries the after-deploy cleanup's cases:
+
+| step | check | run 1 | run 2 |
+|---|---|---|---|
+| 1 | `bash -n` | 0.04 | 0.04 |
+| 2 | `version-text-pair.sh` and its test | 0.66 | 0.59 |
+| 3 | `fleet-versions-test.sh` | 0.63 | 0.71 |
+| 4 | `fleet-budget-test.sh` | 1.24 | 1.26 |
+| 5 | `queue-start-test.sh` | 2.01 | 2.05 |
+| 6 | shellcheck | 2.80 | 2.80 |
+| 7 | `gate-image-tags-test.sh` | 3.39 | 3.10 |
+| 8 | `scripts/lib/deploy/test.sh` | 11.39 | 12.70 |
+
+They will rot again. Three things in them carry meaning. The new step and `fleet-versions-test.sh`
+swap places between the runs, so nothing should be read into their order. Shellcheck was dearer
+than `queue-start-test.sh` in both runs, by 0.79s and 0.75s, so the two swap: shellcheck is now
+step 6. `gate-image-tags-test.sh` is not noise: it was step 3 at 0.32s when its fixtures were new
+and it is above 3s now, dearer than all four steps that used to run after it, so it moves to 7.
+
+## A gate that never got a slot records nothing, and says NOT RUN (2026-10-02)
+
+`/usr/local/sbin/heavy-work` exits 75 (`EX_TEMPFAIL`, log line `giveup`) when it has waited its
+hour for a slot, which means the work never started. On 2026-10-01 a project gate turned that 75
+into `=== GATE FAILED (step 10: api unit suite) ===` and `gate_ledger_record` wrote a row with
+rc 1 for a suite that never ran. The ledger then holds that commit red, and only a green re-run
+undoes it: one give-up cost two gates.
+
+An rc that means "never ran" is not a verdict, so neither half may read it as one.
+
+**`gate_ledger_record` writes no row for rc 75** and prints
+`gate-ledger: heavy-work gave up (rc=75), so the <kind> run is NOT recorded — it never ran` on
+stderr, beside the refusals for a gate that never armed and a HEAD that moved mid-run. The row
+stays absent, which `gated` already reads as absent: the tip is ungated and still needs a run,
+which is a different claim from a red it never earned.
+
+**The fleet convention for a project's step runner**, which this library cannot enforce because
+it never sees a step: a step that exits 75 ends the gate at once, printing
+`=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exiting 75 — never `GATE FAILED`,
+and never carrying on to the next step. The 75 leaves the gate unchanged, so whoever queued the
+run can re-run it when the box is quieter, and nobody goes looking for a failure that does not
+exist. `ledger.sh`'s header carries the two-line pointer to this entry.
+
+**The option not taken:** recording rc 75 as a third row state (`notrun`). Every reader of the
+ledger — `gated`, `scripts/fleet-versions.sh`, each project's own gate row reader — would have to
+learn a state that says exactly what an absent row already says, and a reader that did not learn
+it would read `notrun` as not-green and refuse the deploy, which is the red we are removing.
+
+## W3 lets a session merge a dependabot pull request, and nothing else (2026-10-02)
+
+**Ghie's rule, 2026-10-02.** A session may merge a pull request once the project's own gate is green
+on its head commit, for every ledger kind the project gates, and deploy it by that project's
+runbook — but only when every commit on the head is authored by `dependabot[bot]`. Every other pull
+request still waits for Ghie, and W2's draft-and-review step carries the same exception.
+
+**Keyed on the commits, not on who opened the PR.** An opener is one field; anyone can push a commit
+of their own onto a dependabot branch, and that commit would then ride a merge nobody reviewed. So
+the check is `gh pr view <n> --json commits -q '.commits[].authors[].login'`, which must print
+`dependabot[bot]` and nothing else, run against the head being merged.
+
+**The record is a PR comment before the merge.** It quotes that command's output and the green
+ledger row for each kind on the head sha, so the merge list shows what the session relied on.
+
+**The gate is the only secrets layer these commits get.** Dependabot commits on GitHub, so the fleet
+pre-commit hook never sees them; the gate's secrets step is their whole S1 check.
+
+**The permission layer still decides.** `autoMode.hard_deny` in the session settings blocks merging
+"by ANY means". Until Ghie amends that sentence the rule is written and the merge is still refused,
+and a refusal is never routed around.
+
+**The option not taken:** letting any green pull request merge itself. The adversarial review in
+W2 is what a gate cannot do, and every other author has a builder whose diff needs a second reader.
