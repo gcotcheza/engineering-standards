@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-10-02 — the gate fails when VERSION and the standards text move apart (tooling only; the standard is unchanged and VERSION stays 2026-10-01)
+**`VERSION` was paired with the text by habit, and the habit had already slipped once.** The
+advisor's ruling on backlog 228 says the version is bumped exactly when `ENGINEERING-STANDARDS.md`
+changes. Every one of the seven first-parent commits that touched `VERSION` had also touched the
+text — but eight touched the text, and the merge of PR #10 on 2026-09-19 carried no bump. Nothing
+checked either direction. `scripts/version-text-pair.sh` now does: it diffs the working tree
+against `git merge-base HEAD origin/main` and fails naming whichever of the two moved alone, so the
+failure line is the repair. Neither moved, or both moved, and it passes — which is what `main`
+itself looks like. A clone with no `origin/main` fails loudly rather than skipping, because a rule
+nobody checked must never look like a rule that passed (C9).
+
+**The step is second of eight, by measurement.** Each step body was timed alone, three
+repetitions: the new step costs 0.96s against `bash -n`'s 0.03s and `fleet-versions-test.sh`'s
+1.38s. The same measurement found `gate-image-tags-test.sh` had grown from the 0.32s that put it
+third to 6.38s, dearer than four steps that used to run after it, so it moves to seven. Both
+numbers, and why the check and its own test share one step, are in `docs/DECISIONS.md`.
+
+**Its test is proven able to go red three ways.** `scripts/version-text-pair-test.sh` drives the
+real script through one throwaway repository — both moved, neither, only `VERSION`, only the text,
+and no `origin/main` — and each of the script's three guard lines was deleted in turn from a saved
+copy, each turning its own case red and no other (T5).
+
 ## 2026-10-01 — the deploy library can remove the worktrees and scratch lanes of the pull request that just deployed (VERSION unchanged)
 **New `scripts/lib/deploy/cleanup.sh`, with its cases and one red-proved mutant per guard in
 `scripts/lib/deploy/test.sh`.** `deploy_cleanup` takes the one pull request the deploy was
@@ -20,6 +42,7 @@ root-owned files in a worktree, and scratch lanes that carry no `.fleet-scratch`
 body is unchanged, so no project's drift test and no declared version changes. Why after a deploy
 rather than on a timer, why one named pull request is not an S7 bulk sweep, and why `--force` and
 `rm` are both refused are in `docs/DECISIONS.md`.
+
 
 ## 2026-10-01 — four rules tightened from one day's mistakes: a guard's test, a runbook's blocks, the hook that always runs, and a word count by command (VERSION 2026-10-01)
 **Four things went wrong in one day, and every one of them was already covered by a rule that
