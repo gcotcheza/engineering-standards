@@ -812,8 +812,9 @@ rule nobody checked. The script exits 1 and names the ref it could not find.
 
 **The check and its own test are one step, not two.** The step enforces the pair on this
 repository, then proves the enforcer still works against fixtures. Split, they would occupy two
-slots that no measurement distinguishes — 0.03s and 0.93s — and a reader scanning the gate's
-output for "was the pair checked" would have to find both.
+slots that nothing distinguishes — the check alone is 0.02s and its fixtures 1.15s, timed the
+same way — and a reader scanning the gate's output for "was the pair checked" would have to
+find both.
 
 **The step order, re-measured.** Each step body was timed alone, three repetitions, best of three,
 the way the 2026-09-19 entry describes:
