@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-02 — W3: a session may merge a pull request opened by `app/dependabot` once the project gate is green on its head (VERSION 2026-10-02)
+**Ghie's rule of 2026-10-02, written into W3.** A dependency bump from `app/dependabot` is a
+change nobody on the box authored, and waiting on Ghie to merge each one left security fixes
+sitting green and unshipped. W3 now lets a session merge exactly those pull requests once the
+project's own gate is green on the head commit it merges, and deploy by the project's runbook.
+Every other author's pull request still waits for Ghie. The standards text moved, so `VERSION`
+moves with it — the pair check this round adds would refuse it otherwise.
+
+**It takes effect only when Ghie amends the permission layer.** `autoMode.hard_deny` in the
+session settings still blocks merging "by ANY means"; until that sentence carries the same
+exception, the rule is written and the permission layer still refuses it, and the refusal wins.
+
 ## 2026-10-02 — a gate that never got a slot records nothing instead of a failure (deploy-lib VERSION 2026-10-02; the standard is unchanged)
 **A suite that waited out its hour for a `heavy-work` slot was recorded red.** The serializer
 exits 75 when it gives up; `gate_ledger_record` wrote a row with rc 1 for a run that never
@@ -9,7 +21,7 @@ cost two gates.
 `gate_ledger_record` now writes no row for rc 75 and says so on stderr:
 `gate-ledger: heavy-work gave up (rc=75), so the <kind> run is NOT recorded — it never ran`. The
 row stays absent, and `gated` reads absent as absent — ungated, not red. Two fixtures in
-`scripts/lib/deploy/test.sh` cover it, five assertions (111 ok lines to 116); four of the five
+`scripts/lib/deploy/test.sh` cover it, five assertions (191 ok lines to 196); four of the five
 were watched red against a copy of the library with the guard's own four lines deleted, the fifth
 being the one that asserts the gate carries on afterwards.
 
@@ -17,13 +29,16 @@ being the one that asserts the gate carries on afterwards.
 exiting 75 ends the gate with `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and
 exit 75, never `GATE FAILED`. The full text and the option not taken are in `docs/DECISIONS.md`,
 and `ROLLOUT.md` carries it as open work — this library never sees a step, so only each
-adopter's own `check.sh`/`ci.sh` can honour it, when it next re-vendors.
+adopter's own `check.sh`/`ci.sh` can honour it, when it next re-vendors. Until a project's gate
+passes rc 75 through to `gate_ledger_record`, it still records a give-up as its ordinary failure:
+the guard takes effect gate by gate, as each one does.
 
-deploy-lib VERSION is 2026-10-02 and all four vendored headers are re-stamped, so re-vendoring is
-its own round per project, and the pinned `SUITE_SHA256` those projects hold becomes
-`332486860d95aacc333fbf84686280f99afd0fd1657eb38b39fb456cd9ee2e07`.
+deploy-lib VERSION is 2026-10-02 and all five vendored headers are re-stamped, `cleanup.sh`'s
+included, so re-vendoring is its own round per project, and the pinned `SUITE_SHA256` those
+projects hold becomes
+`8ab224a02df3d82bcc830dc359c242f2016f773e6f77fa9b300ce86423714c94`.
 
-## 2026-10-02 — the gate fails when VERSION and the standards text move apart (tooling only; the standard is unchanged and VERSION stays 2026-10-01)
+## 2026-10-02 — the gate fails when VERSION and the standards text move apart (tooling only; this change alone moves neither the standard nor VERSION)
 **`VERSION` was paired with the text by habit, and the habit had already slipped once.** The
 advisor's ruling on backlog 228 says the version is bumped exactly when `ENGINEERING-STANDARDS.md`
 changes. Every one of the seven first-parent commits that touched `VERSION` had also touched the
@@ -35,15 +50,15 @@ itself looks like. A clone with no `origin/main` fails loudly rather than skippi
 nobody checked must never look like a rule that passed (C9).
 
 **The step is second of eight, by measurement.** Each step body was timed alone, three
-repetitions: the new step costs 0.96s against `bash -n`'s 0.03s and `fleet-versions-test.sh`'s
-1.38s. The same measurement found `gate-image-tags-test.sh` had grown from the 0.32s that put it
-third to 6.38s, dearer than four steps that used to run after it, so it moves to seven. Both
-numbers, and why the check and its own test share one step, are in `docs/DECISIONS.md`.
+repetitions, in one run: the new step costs 0.66s against `bash -n`'s 0.04s and
+`fleet-versions-test.sh`'s 0.63s. The same run found `gate-image-tags-test.sh` had grown from the
+0.32s that put it third to 3.39s, dearer than four steps that used to run after it, so it moves to
+seven. The numbers, and why the check and its own test share one step, are in `docs/DECISIONS.md`.
 
-**Its test is proven able to go red three ways.** `scripts/version-text-pair-test.sh` drives the
+**Its test is proven able to go red four ways.** `scripts/version-text-pair-test.sh` drives the
 real script through one throwaway repository — both moved, neither, only `VERSION`, only the text,
-and no `origin/main` — and each of the script's three guard lines was deleted in turn from a saved
-copy, each turning its own case red and no other (T5).
+a `git diff` that fails (exit 2, nothing judged), and no `origin/main` — and each of the script's
+four guard lines was deleted in turn from a saved copy, each turning its own case red (T5).
 
 ## 2026-10-01 — the deploy library can remove the worktrees and scratch lanes of the pull request that just deployed (VERSION unchanged)
 **New `scripts/lib/deploy/cleanup.sh`, with its cases and one red-proved mutant per guard in

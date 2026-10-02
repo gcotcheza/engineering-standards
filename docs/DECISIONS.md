@@ -812,30 +812,32 @@ rule nobody checked. The script exits 1 and names the ref it could not find.
 
 **The check and its own test are one step, not two.** The step enforces the pair on this
 repository, then proves the enforcer still works against fixtures. Split, they would occupy two
-slots that nothing distinguishes — the check alone is 0.02s and its fixtures 1.15s, timed the
-same way — and a reader scanning the gate's output for "was the pair checked" would have to
+slots that nothing distinguishes — the check alone is 0.01s and its fixtures 0.63s, in the
+same run as the table below — and a reader scanning the gate's output for "was the pair checked" would have to
 find both.
 
 **The step order, re-measured.** Each step body was timed alone, three repetitions, best of three,
-the way the 2026-09-19 entry describes:
+the way the 2026-09-19 entry describes, all in one run on 2026-10-02 against the merged tree that
+also carries the after-deploy cleanup's cases:
 
 | step | check | seconds |
 |---|---|---|
-| 1 | `bash -n` | 0.03 |
-| 2 | `version-text-pair.sh` and its test | 0.96 |
-| 3 | `fleet-versions-test.sh` | 1.38 |
-| 4 | `fleet-budget-test.sh` | 2.25 |
+| 1 | `bash -n` | 0.04 |
+| 2 | `version-text-pair.sh` and its test | 0.66 |
+| 3 | `fleet-versions-test.sh` | 0.63 |
+| 4 | `fleet-budget-test.sh` | 1.24 |
 | 5 | shellcheck | 2.80 |
-| 6 | `queue-start-test.sh` | 4.43 |
-| 7 | `gate-image-tags-test.sh` | 6.38 |
-| 8 | `scripts/lib/deploy/test.sh` | 9.29 |
+| 6 | `queue-start-test.sh` | 2.01 |
+| 7 | `gate-image-tags-test.sh` | 3.39 |
+| 8 | `scripts/lib/deploy/test.sh` | 11.39 |
 
-Every number is larger than its 2026-09-19 counterpart — a busier box — and they will rot again.
-Two things in them carry meaning. The new step and `fleet-versions-test.sh` are close enough to
-swap places on a repetition, as 4 and 5 already do, so nothing should be read into their order.
-`gate-image-tags-test.sh` is not noise: it was step 3 at 0.32s when its fixtures were new and it is
-6.38s now, dearer than four steps that used to run after it, so this measurement moves it to 7
-instead of leaving it where a stale number put it.
+They will rot again. Three things in them carry meaning. The new step and `fleet-versions-test.sh`
+are 0.03s apart, close enough to swap on any repetition, so nothing should be read into their order.
+Shellcheck came out 0.79s dearer than `queue-start-test.sh` in this run; most of its cost is a
+container start, which moves with the box's load, so the two are left in place until a second run
+agrees. `gate-image-tags-test.sh` is not noise: it was step 3 at 0.32s when its fixtures were new
+and it is 3.39s now, dearer than all four steps that used to run after it, so this measurement
+moves it to 7 instead of leaving it where a stale number put it.
 
 ## A gate that never got a slot records nothing, and says NOT RUN (2026-10-02)
 
@@ -864,3 +866,18 @@ exist. `ledger.sh`'s header carries the two-line pointer to this entry.
 ledger — `gated`, `scripts/fleet-versions.sh`, each project's own gate row reader — would have to
 learn a state that says exactly what an absent row already says, and a reader that did not learn
 it would read `notrun` as not-green and refuse the deploy, which is the red we are removing.
+
+## W3 lets a session merge a dependabot pull request, and nothing else (2026-10-02)
+
+**Ghie's rule, 2026-10-02.** A pull request authored by `app/dependabot` may be merged by a session
+once the project's own gate is green on the head commit being merged, and deployed by that project's
+runbook. Every other author still waits for Ghie. The line is drawn at the author, not at the size
+of the diff: a bump nobody on the box wrote has no builder to review it adversarially, so the gate
+is the whole of its review, and a person waiting to click merge added delay and no reading.
+
+**The permission layer still decides.** `autoMode.hard_deny` in the session settings blocks merging
+"by ANY means". Until Ghie amends that sentence the rule is written and the merge is still refused,
+and a refusal is never routed around (S1, and the worker rules' "denied = stop").
+
+**The option not taken:** letting any green pull request merge itself. The adversarial review in
+W2 is what a gate cannot do, and every other author has a builder whose diff needs a second reader.

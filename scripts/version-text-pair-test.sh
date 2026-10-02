@@ -75,6 +75,20 @@ run
 matches 'case 4: only the text fails, naming the text' "${OUT}" '^version-text-pair: ENGINEERING-STANDARDS\.md changed and VERSION did not, since [0-9a-f]{40} — move both or neither\.$'
 equals  'case 4: exit code' "${RC}" 1
 
+# --- 4b. git diff itself fails -> exit 2, nothing judged, no ok line ----------
+reset_tree
+cat >"${WORK}/git-diff-fails" <<'FAKE'
+#!/usr/bin/env bash
+[ "$1" = diff ] && exit 128
+exec git "$@"
+FAKE
+chmod +x "${WORK}/git-diff-fails"
+OUT="$(VERSION_PAIR_GIT="${WORK}/git-diff-fails" "${CHECK}" "${REPO}" 2>&1)"
+RC=$?
+matches 'case 4b: a failing git diff is named' "${OUT}" '^version-text-pair: git diff against [0-9a-f]{40} failed, so nothing was judged\.$'
+equals  'case 4b: exit code' "${RC}" 2
+equals  'case 4b: no ok line is printed' "$(printf '%s' "${OUT}" | grep -c 'version-text-pair: ok')" 0
+
 # --- 5. no origin/main -> loud failure, never a silent pass (C9) ---------------
 reset_tree
 git -C "${REPO}" update-ref -d refs/remotes/origin/main
