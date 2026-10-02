@@ -662,3 +662,31 @@ behaves correctly for a single-case run, so the habit is formed where it works a
 a suite where the second case reads an empty stream and reports a pass-count of zero. A zero that
 looks exactly like the red being sought is worse than a crash, so the mechanism is named in the rule
 rather than left to the reader to rediscover.
+
+## A gate that never got a slot records nothing, and says NOT RUN (2026-10-02)
+
+`/usr/local/sbin/heavy-work` exits 75 (`EX_TEMPFAIL`, log line `giveup`) when it has waited its
+hour for a slot, which means the work never started. On 2026-10-01 a project gate turned that 75
+into `=== GATE FAILED (step 10: api unit suite) ===` and `gate_ledger_record` wrote a row with
+rc 1 for a suite that never ran. The ledger then holds that commit red, and only a green re-run
+undoes it: one give-up cost two gates.
+
+An rc that means "never ran" is not a verdict, so neither half may read it as one.
+
+**`gate_ledger_record` writes no row for rc 75** and prints
+`gate-ledger: heavy-work gave up (rc=75), so the <kind> run is NOT recorded — it never ran` on
+stderr, beside the refusals for a gate that never armed and a HEAD that moved mid-run. The row
+stays absent, which `gated` already reads as absent: the tip is ungated and still needs a run,
+which is a different claim from a red it never earned.
+
+**The fleet convention for a project's step runner**, which this library cannot enforce because
+it never sees a step: a step that exits 75 ends the gate at once, printing
+`=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exiting 75 — never `GATE FAILED`,
+and never carrying on to the next step. The 75 leaves the gate unchanged, so whoever queued the
+run can re-run it when the box is quieter, and nobody goes looking for a failure that does not
+exist. `ledger.sh`'s header carries the two-line pointer to this entry.
+
+**The option not taken:** recording rc 75 as a third row state (`notrun`). Every reader of the
+ledger — `gated`, `scripts/fleet-versions.sh`, each project's own gate row reader — would have to
+learn a state that says exactly what an absent row already says, and a reader that did not learn
+it would read `notrun` as not-green and refuse the deploy, which is the red we are removing.

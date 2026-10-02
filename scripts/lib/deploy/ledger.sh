@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-01 sha256:a281580a116832242a2d0535bbe625acdb36a12db10603c07e0755f964a25a4f
+# fleet-deploy-lib 2026-10-02 sha256:af7443895d4c93ec703189a9e52885385b91777fc5a39da74132e19a43073998
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it is in there green —
@@ -8,6 +8,8 @@
 # The gate script sets it itself, in its own shell, right after its suite returns 0.
 # GATE_ARMED_SHA is discarded on sourcing too: the gate calls gate_ledger_arm itself,
 # after GATE_LEDGER_GIT and before its first step.
+# Fleet convention: a step exiting 75 ends the gate at once with
+# `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exit 75, never GATE FAILED.
 
 unset GATE_SUITE_PASSED GATE_ARMED GATE_ARMED_SHA
 
@@ -36,6 +38,10 @@ gate_ledger_record() {
     local kind=$1 rc=$2 log=${3:--} file dir sha now
     if [ "${GATE_ARMED:-0}" != 1 ]; then
         printf 'gate-ledger: gate_ledger_arm was never called, so the %s run (rc=%s) is NOT recorded\n' "$kind" "$rc" >&2
+        return 0
+    fi
+    if [ "$rc" = 75 ]; then
+        printf 'gate-ledger: heavy-work gave up (rc=75), so the %s run is NOT recorded — it never ran\n' "$kind" >&2
         return 0
     fi
     if [ "$rc" = 0 ] && [ "${GATE_SUITE_PASSED:-}" != 1 ]; then

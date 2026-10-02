@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-10-02 — a gate that never got a slot records nothing instead of a failure (deploy-lib VERSION 2026-10-02; the standard is unchanged)
+**A suite that waited out its hour for a `heavy-work` slot was recorded red.** The serializer
+exits 75 when it gives up; `gate_ledger_record` wrote a row with rc 1 for a run that never
+started, and the ledger then called that commit red until a green re-run undid it. One give-up
+cost two gates.
+
+`gate_ledger_record` now writes no row for rc 75 and says so on stderr:
+`gate-ledger: heavy-work gave up (rc=75), so the <kind> run is NOT recorded — it never ran`. The
+row stays absent, and `gated` reads absent as absent — ungated, not red. Two fixtures in
+`scripts/lib/deploy/test.sh` cover it, five assertions (111 ok lines to 116); four of the five
+were watched red against a copy of the library with the guard's own four lines deleted, the fifth
+being the one that asserts the gate carries on afterwards.
+
+`ledger.sh`'s header carries the other half in two lines: the fleet convention that a step
+exiting 75 ends the gate with `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and
+exit 75, never `GATE FAILED`. The full text and the option not taken are in `docs/DECISIONS.md`,
+and `ROLLOUT.md` carries it as open work — this library never sees a step, so only each
+adopter's own `check.sh`/`ci.sh` can honour it, when it next re-vendors.
+
+deploy-lib VERSION is 2026-10-02 and all four vendored headers are re-stamped, so re-vendoring is
+its own round per project, and the pinned `SUITE_SHA256` those projects hold becomes
+`332486860d95aacc333fbf84686280f99afd0fd1657eb38b39fb456cd9ee2e07`.
+
 ## 2026-10-01 — four rules tightened from one day's mistakes: a guard's test, a runbook's blocks, the hook that always runs, and a word count by command (VERSION 2026-10-01)
 **Four things went wrong in one day, and every one of them was already covered by a rule that
 was not specific enough to catch it.** No rule was added — C1 and C2 cut both ways here, and a

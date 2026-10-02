@@ -610,6 +610,27 @@ contains 'and the row is refused rather than guessed' "${OUT}" \
     "gate-ledger: HEAD is ${LIVE_SHA} but the run began at an unreadable HEAD, so the ci run (rc=0) is NOT recorded"
 equals 'and nothing is written' "$(rows "${WRITTEN}")" '0'
 
+# --- 4c. heavy-work gave up: a run that never started is not a verdict ---------------
+# 2026-10-02: a suite that waited out its hour for a slot reached the ledger as rc 1, so
+# the ledger called that commit red and a green re-run was needed to undo a run that
+# never happened.
+fixture ledger-heavy-work-giveup
+WRITTEN="${CASE}/written"
+run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record ci 75 /tmp/ci.log >&3 2>&3; printf 'STILL HERE\n' >&3")"
+contains 'a give-up by the serializer is refused as a run that never ran' "${OUT}" \
+    'gate-ledger: heavy-work gave up (rc=75), so the ci run is NOT recorded — it never ran'
+equals 'and nothing is written' "$(rows "${WRITTEN}")" '0'
+absent 'and no row calls the commit anything' "$(cat "${WRITTEN}" 2>/dev/null)" "${LIVE_SHA}"
+contains 'and the gate carries on regardless' "${OUT}" 'STILL HERE'
+
+# The row the give-up did not write is read as absent — the tip is still ungated and
+# still needs a run, which is not the same claim as a red row it never earned.
+fixture ledger-giveup-row-absent
+printf '%s e2e 2026-10-02T05:30:00Z 0 -\n' "${LIVE_SHA}" >"${LEDGER}"
+run_lib "$(armed "GATE_LEDGER=${LEDGER} gate_ledger_record ci 75 - >&3 2>&3; HEAD_SHA=${LIVE_SHA}; gated")"
+contains 'the ci a give-up never ran reads absent, never red' "${OUT}" \
+    "$(no_green ci "${LIVE_SHA}" 'ci absent, e2e green')"
+
 # --- 5. pre-flight ----------------------------------------------------------------
 fixture preflight-clean
 # A busy slot, because the line quotes whatever the serializer answers — pinning the
