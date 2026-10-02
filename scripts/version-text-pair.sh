@@ -35,7 +35,7 @@ if ! changed="$("${GIT}" diff --name-only "${base}" --)"; then
     exit 2
 fi
 
-moved() { printf '%s\n' "${changed}" | grep -qxF -- "$1"; }
+moved() { grep -qxF -- "$1" <<<"${changed}"; }
 
 version_moved=0
 text_moved=0

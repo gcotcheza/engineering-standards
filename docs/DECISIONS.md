@@ -817,27 +817,25 @@ same run as the table below — and a reader scanning the gate's output for "was
 find both.
 
 **The step order, re-measured.** Each step body was timed alone, three repetitions, best of three,
-the way the 2026-09-19 entry describes, all in one run on 2026-10-02 against the merged tree that
-also carries the after-deploy cleanup's cases:
+the way the 2026-09-19 entry describes, in two separate runs on 2026-10-02 against the merged tree
+that also carries the after-deploy cleanup's cases:
 
-| step | check | seconds |
-|---|---|---|
-| 1 | `bash -n` | 0.04 |
-| 2 | `version-text-pair.sh` and its test | 0.66 |
-| 3 | `fleet-versions-test.sh` | 0.63 |
-| 4 | `fleet-budget-test.sh` | 1.24 |
-| 5 | shellcheck | 2.80 |
-| 6 | `queue-start-test.sh` | 2.01 |
-| 7 | `gate-image-tags-test.sh` | 3.39 |
-| 8 | `scripts/lib/deploy/test.sh` | 11.39 |
+| step | check | run 1 | run 2 |
+|---|---|---|---|
+| 1 | `bash -n` | 0.04 | 0.04 |
+| 2 | `version-text-pair.sh` and its test | 0.66 | 0.59 |
+| 3 | `fleet-versions-test.sh` | 0.63 | 0.71 |
+| 4 | `fleet-budget-test.sh` | 1.24 | 1.26 |
+| 5 | `queue-start-test.sh` | 2.01 | 2.05 |
+| 6 | shellcheck | 2.80 | 2.80 |
+| 7 | `gate-image-tags-test.sh` | 3.39 | 3.10 |
+| 8 | `scripts/lib/deploy/test.sh` | 11.39 | 12.70 |
 
 They will rot again. Three things in them carry meaning. The new step and `fleet-versions-test.sh`
-are 0.03s apart, close enough to swap on any repetition, so nothing should be read into their order.
-Shellcheck came out 0.79s dearer than `queue-start-test.sh` in this run; most of its cost is a
-container start, which moves with the box's load, so the two are left in place until a second run
-agrees. `gate-image-tags-test.sh` is not noise: it was step 3 at 0.32s when its fixtures were new
-and it is 3.39s now, dearer than all four steps that used to run after it, so this measurement
-moves it to 7 instead of leaving it where a stale number put it.
+swap places between the runs, so nothing should be read into their order. Shellcheck was dearer
+than `queue-start-test.sh` in both runs, by 0.79s and 0.75s, so the two swap: shellcheck is now
+step 6. `gate-image-tags-test.sh` is not noise: it was step 3 at 0.32s when its fixtures were new
+and it is above 3s now, dearer than all four steps that used to run after it, so it moves to 7.
 
 ## A gate that never got a slot records nothing, and says NOT RUN (2026-10-02)
 
@@ -869,15 +867,25 @@ it would read `notrun` as not-green and refuse the deploy, which is the red we a
 
 ## W3 lets a session merge a dependabot pull request, and nothing else (2026-10-02)
 
-**Ghie's rule, 2026-10-02.** A pull request authored by `app/dependabot` may be merged by a session
-once the project's own gate is green on the head commit being merged, and deployed by that project's
-runbook. Every other author still waits for Ghie. The line is drawn at the author, not at the size
-of the diff: a bump nobody on the box wrote has no builder to review it adversarially, so the gate
-is the whole of its review, and a person waiting to click merge added delay and no reading.
+**Ghie's rule, 2026-10-02.** A session may merge a pull request once the project's own gate is green
+on its head commit, for every ledger kind the project gates, and deploy it by that project's
+runbook — but only when every commit on the head is authored by `dependabot[bot]`. Every other pull
+request still waits for Ghie, and W2's draft-and-review step carries the same exception.
+
+**Keyed on the commits, not on who opened the PR.** An opener is one field; anyone can push a commit
+of their own onto a dependabot branch, and that commit would then ride a merge nobody reviewed. So
+the check is `gh pr view <n> --json commits -q '.commits[].authors[].login'`, which must print
+`dependabot[bot]` and nothing else, run against the head being merged.
+
+**The record is a PR comment before the merge.** It quotes that command's output and the green
+ledger row for each kind on the head sha, so the merge list shows what the session relied on.
+
+**The gate is the only secrets layer these commits get.** Dependabot commits on GitHub, so the fleet
+pre-commit hook never sees them; the gate's secrets step is their whole S1 check.
 
 **The permission layer still decides.** `autoMode.hard_deny` in the session settings blocks merging
 "by ANY means". Until Ghie amends that sentence the rule is written and the merge is still refused,
-and a refusal is never routed around (S1, and the worker rules' "denied = stop").
+and a refusal is never routed around.
 
 **The option not taken:** letting any green pull request merge itself. The adversarial review in
 W2 is what a gate cannot do, and every other author has a builder whose diff needs a second reader.

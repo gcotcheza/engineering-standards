@@ -7,9 +7,9 @@
 #      ENGINEERING-STANDARDS.md move together, or neither moves
 #   3) scripts/fleet-versions-test.sh, the fleet check's own test
 #   4) scripts/fleet-budget-test.sh, the budget gate's own test
-#   5) shellcheck, style severity, in the pinned image — a missing image is a
+#   5) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
+#   6) shellcheck, style severity, in the pinned image — a missing image is a
 #      loud failure here, never a silent skip (C9)
-#   6) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
 #   7) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
 #   8) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh)
 #
@@ -45,8 +45,8 @@ step_name() {
         2) printf 'version-text-pair' ;;
         3) printf 'fleet-versions-test.sh' ;;
         4) printf 'fleet-budget-test.sh' ;;
-        5) printf 'shellcheck' ;;
-        6) printf 'queue-start-test.sh' ;;
+        5) printf 'queue-start-test.sh' ;;
+        6) printf 'shellcheck' ;;
         7) printf 'gate-image-tags-test.sh' ;;
         8) printf 'deploy-lib test.sh' ;;
     esac
@@ -106,21 +106,21 @@ step_4() {
 }
 
 step_5() {
+    "${REPO_ROOT}/scripts/queue-start-test.sh" || fail_step 5
+}
+
+step_6() {
     if ! docker image inspect "${SHELLCHECK_IMAGE}" >/dev/null 2>&1; then
         printf 'shellcheck image %s is not present on this box — refusing to treat a missing image as a pass (C9).\n' \
             "${SHELLCHECK_IMAGE}" >&2
-        fail_step 5
+        fail_step 6
     fi
     local files
     files=$("${GIT}" ls-files '*.sh')
     [ -n "${files}" ] || return 0
     # shellcheck disable=SC2086
     docker run --rm --network none -v "${REPO_ROOT}:/mnt:ro" -w /mnt \
-        "${SHELLCHECK_IMAGE}" --severity=style ${files} || fail_step 5
-}
-
-step_6() {
-    "${REPO_ROOT}/scripts/queue-start-test.sh" || fail_step 6
+        "${SHELLCHECK_IMAGE}" --severity=style ${files} || fail_step 6
 }
 
 step_7() {

@@ -89,6 +89,20 @@ matches 'case 4b: a failing git diff is named' "${OUT}" '^version-text-pair: git
 equals  'case 4b: exit code' "${RC}" 2
 equals  'case 4b: no ok line is printed' "$(printf '%s' "${OUT}" | grep -c 'version-text-pair: ok')" 0
 
+# --- 4c. only VERSION among a diff bigger than a pipe buffer -> still fails ---
+reset_tree
+cat >"${WORK}/git-big-diff" <<'FAKE'
+#!/usr/bin/env bash
+[ "$1" = diff ] || exec git "$@"
+printf 'VERSION\n'
+for i in $(seq 1 900); do printf 'zz/a-path-long-enough-that-900-of-them-overflow-a-pipe-buffer-%s.txt\n' "$i"; done
+FAKE
+chmod +x "${WORK}/git-big-diff"
+OUT="$(VERSION_PAIR_GIT="${WORK}/git-big-diff" "${CHECK}" "${REPO}" 2>&1)"
+RC=$?
+matches 'case 4c: only VERSION fails in a large diff' "${OUT}" '^version-text-pair: VERSION changed and ENGINEERING-STANDARDS\.md did not'
+equals  'case 4c: exit code' "${RC}" 1
+
 # --- 5. no origin/main -> loud failure, never a silent pass (C9) ---------------
 reset_tree
 git -C "${REPO}" update-ref -d refs/remotes/origin/main

@@ -1,12 +1,15 @@
 # Changelog
 
-## 2026-10-02 — W3: a session may merge a pull request opened by `app/dependabot` once the project gate is green on its head (VERSION 2026-10-02)
-**Ghie's rule of 2026-10-02, written into W3.** A dependency bump from `app/dependabot` is a
-change nobody on the box authored, and waiting on Ghie to merge each one left security fixes
-sitting green and unshipped. W3 now lets a session merge exactly those pull requests once the
-project's own gate is green on the head commit it merges, and deploy by the project's runbook.
-Every other author's pull request still waits for Ghie. The standards text moved, so `VERSION`
-moves with it — the pair check this round adds would refuse it otherwise.
+## 2026-10-02 — W3: a session may merge a pull request whose every commit is authored by `dependabot[bot]` once the project gate is green on its head (VERSION 2026-10-02)
+**Ghie's rule of 2026-10-02, written into W3, with W2 excepting the same pull requests.** A
+dependency bump nobody on the box wrote has no builder whose diff needs a second reader, and waiting
+on Ghie to merge each one left security fixes sitting green and unshipped. A session may merge one
+once two things are shown in a PR comment before the merge: `gh pr view <n> --json commits -q
+'.commits[].authors[].login'` printing only `dependabot[bot]`, and a green ledger row for every kind
+the project gates on the head sha. It then deploys by the runbook. The rule keys on the commits, not
+on the opener, so a commit pushed onto a dependabot branch by anyone else puts the PR back in
+Ghie's hands. Dependabot's commits never pass the fleet pre-commit hook, so the gate's secrets step
+is their only S1 layer. The standards text moved, so `VERSION` moves with it.
 
 **It takes effect only when Ghie amends the permission layer.** `autoMode.hard_deny` in the
 session settings still blocks merging "by ANY means"; until that sentence carries the same
@@ -50,15 +53,19 @@ itself looks like. A clone with no `origin/main` fails loudly rather than skippi
 nobody checked must never look like a rule that passed (C9).
 
 **The step is second of eight, by measurement.** Each step body was timed alone, three
-repetitions, in one run: the new step costs 0.66s against `bash -n`'s 0.04s and
-`fleet-versions-test.sh`'s 0.63s. The same run found `gate-image-tags-test.sh` had grown from the
-0.32s that put it third to 3.39s, dearer than four steps that used to run after it, so it moves to
-seven. The numbers, and why the check and its own test share one step, are in `docs/DECISIONS.md`.
+repetitions, in two runs: the new step costs 0.66s and 0.59s, against `bash -n`'s 0.04s and
+`fleet-versions-test.sh`'s 0.63s and 0.71s. The same runs found `gate-image-tags-test.sh` had grown
+from the 0.32s that put it third to above 3s, so it moves to seven, and shellcheck dearer than
+`queue-start-test.sh` both times, so those two swap and shellcheck is step six. The numbers, and why
+the check and its own test share one step, are in `docs/DECISIONS.md`.
 
 **Its test is proven able to go red four ways.** `scripts/version-text-pair-test.sh` drives the
 real script through one throwaway repository — both moved, neither, only `VERSION`, only the text,
-a `git diff` that fails (exit 2, nothing judged), and no `origin/main` — and each of the script's
-four guard lines was deleted in turn from a saved copy, each turning its own case red (T5).
+a `git diff` that fails (exit 2, nothing judged), only `VERSION` among a diff larger than a pipe
+buffer, and no `origin/main` — and each of the script's four guard lines was deleted in turn from a
+saved copy, each turning its own case red (T5). The large-diff case is red against a `moved()` that
+pipes `printf` into `grep -q`: under `pipefail` the early exit becomes SIGPIPE, rc 141, and the
+check passed a branch it should have refused. `moved()` reads a here-string instead.
 
 ## 2026-10-01 — the deploy library can remove the worktrees and scratch lanes of the pull request that just deployed (VERSION unchanged)
 **New `scripts/lib/deploy/cleanup.sh`, with its cases and one red-proved mutant per guard in
@@ -80,7 +87,6 @@ root-owned files in a worktree, and scratch lanes that carry no `.fleet-scratch`
 body is unchanged, so no project's drift test and no declared version changes. Why after a deploy
 rather than on a timer, why one named pull request is not an S7 bulk sweep, and why `--force` and
 `rm` are both refused are in `docs/DECISIONS.md`.
-
 
 ## 2026-10-01 — four rules tightened from one day's mistakes: a guard's test, a runbook's blocks, the hook that always runs, and a word count by command (VERSION 2026-10-01)
 **Four things went wrong in one day, and every one of them was already covered by a rule that
