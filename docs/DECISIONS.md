@@ -662,3 +662,54 @@ behaves correctly for a single-case run, so the habit is formed where it works a
 a suite where the second case reads an empty stream and reports a pass-count of zero. A zero that
 looks exactly like the red being sought is worse than a crash, so the mechanism is named in the rule
 rather than left to the reader to rediscover.
+
+## VERSION and ENGINEERING-STANDARDS.md move together, and the gate says so (2026-10-02)
+
+**The pair was a habit, and the habit had already been broken once.** The advisor's ruling on
+backlog 228 is the rule in one sentence: `VERSION` is bumped exactly when the standards text
+changes. Read against `main` the ruling holds in one direction and leaks in the other — all seven
+first-parent commits that touched `VERSION` also touched the text, but eight touched the text and
+one of those, the merge of PR #10 on 2026-09-19, carried no bump. A version that is sometimes the
+version of the text is worse than no version at all, because a reader has no way to tell which
+kind they are holding. `scripts/version-text-pair.sh` is that one sentence as a gate step, and it
+fails naming the file that moved alone: "the pair is broken" would send the reader off to diff two
+files to learn which one it was.
+
+**It judges the tree, not the last commit.** The comparison is `git diff` against
+`git merge-base HEAD origin/main` — what this branch does to `main`. `HEAD~1` would be wrong: a
+three-commit branch that bumps the version first and edits the text last is correct, and a
+per-commit check calls it wrong twice. A committed-only diff would be wrong too, because the gate
+runs against a working tree and a forgotten `VERSION` edit should fail before the commit rather
+than after it. An empty diff — `main` itself, or a branch carrying nothing — passes: neither file
+moved, so the rule has nothing to say.
+
+**A missing `origin/main` fails rather than skips.** A clone that has never fetched has no base to
+judge against, and the tempting behaviour is to return 0 and let the gate go green. That is exactly
+C9's silently swallowed error: it would turn every offline or shallow clone into a green gate for a
+rule nobody checked. The script exits 1 and names the ref it could not find.
+
+**The check and its own test are one step, not two.** The step enforces the pair on this
+repository, then proves the enforcer still works against fixtures. Split, they would occupy two
+slots that no measurement distinguishes — 0.03s and 0.93s — and a reader scanning the gate's
+output for "was the pair checked" would have to find both.
+
+**The step order, re-measured.** Each step body was timed alone, three repetitions, best of three,
+the way the 2026-09-19 entry describes:
+
+| step | check | seconds |
+|---|---|---|
+| 1 | `bash -n` | 0.03 |
+| 2 | `version-text-pair.sh` and its test | 0.96 |
+| 3 | `fleet-versions-test.sh` | 1.38 |
+| 4 | `fleet-budget-test.sh` | 2.25 |
+| 5 | shellcheck | 2.80 |
+| 6 | `queue-start-test.sh` | 4.43 |
+| 7 | `gate-image-tags-test.sh` | 6.38 |
+| 8 | `scripts/lib/deploy/test.sh` | 9.29 |
+
+Every number is larger than its 2026-09-19 counterpart — a busier box — and they will rot again.
+Two things in them carry meaning. The new step and `fleet-versions-test.sh` are close enough to
+swap places on a repetition, as 4 and 5 already do, so nothing should be read into their order.
+`gate-image-tags-test.sh` is not noise: it was step 3 at 0.32s when its fixtures were new and it is
+6.38s now, dearer than four steps that used to run after it, so this measurement moves it to 7
+instead of leaving it where a stale number put it.

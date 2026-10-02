@@ -26,8 +26,10 @@ watchdog's line parser already reads.
 ## The gate
 
 `scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script
-first, then the five fixture-only tests and shellcheck (the pinned image, style severity — a
-missing image is a loud failure, never a skip) in measured cost order, cheapest first. The
+first, then the one step that judges this repo's own tree — VERSION and
+ENGINEERING-STANDARDS.md moved together, or neither moved — the five fixture-only tests and
+shellcheck (the pinned image, style severity — a missing image is a loud failure, never a
+skip) in measured cost order, cheapest first. The
 order is a measurement, not a list to keep in your head; `scripts/check.sh` prints each step
 with its number and name as it runs. A full run records to the fleet gate ledger
 (`scripts/lib/deploy/ledger.sh`); `scripts/check.sh --only N` runs one step alone and
