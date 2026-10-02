@@ -662,3 +662,125 @@ behaves correctly for a single-case run, so the habit is formed where it works a
 a suite where the second case reads an empty stream and reports a pass-count of zero. A zero that
 looks exactly like the red being sought is worse than a crash, so the mechanism is named in the rule
 rather than left to the reader to rediscover.
+
+## The deploy removes the one merged pull request's worktrees and lanes, and never sweeps (2026-10-01)
+
+**The cleanup runs after a deploy because that is the moment something knows which pull request
+just shipped.** Nothing removed per-PR worktrees under `/var/www/<app>-worktrees/` or scratch lanes
+under `/srv/worker-scratch/` at all: no deploy script mentioned worktrees, and `fleet-scratch-reap`
+— which does the lane half properly, per repo and PR, read-only twin first — was scheduled by
+nothing and deliberately refuses a worktree of a production checkout, printing the `git-as` line for
+Ghie to run by hand. The disk measured 128G on 2026-09-29 and 135G of 150G two days later, and a
+hand pass on 2026-10-01 removed 17 merged worktrees. A timer would have to re-derive what a deploy
+has already proved one function earlier: `resolve()` has established that the merge commit *is*
+`origin/main` before `deploy_cleanup` is reached, so the cleanup asks `gh` once more only for the
+facts resolve does not carry — the base branch and the head branch name.
+
+**One named pull request is not the bulk filter S7 is about.** S7's "in bulk" means more than one
+object chosen by a filter rather than named, and the counter-example it gives is a filter that reads
+as "unused". Nothing here reads as unused: the set is the intersection of one pull request's
+`headRefName` with the repository's own `worktree list --porcelain`, which is positive selection by
+name, and it is the same pull request number the deploy was invoked with. The lane half keeps S7's
+command pair intact rather than reimplementing it — the reaper's read-only run prints
+`candidates: N  set: <sha256>`, and the apply is handed back that hash with `--expect`, which the
+reaper recomputes before deleting, so a set that changed between the two runs is refused by the tool
+itself. Dropping `--expect` would turn a proven set into a fresh one; a mutant that drops it is red
+in the suite.
+
+**`git worktree remove` is never given `--force`, and nothing is removed with `rm`.** The remove is
+the last guard behind the dirty check, not a formality: the only shape in which it fires is a tree
+that went dirty *after* the check passed, and `--force` would turn exactly that race into lost work.
+`rm` is worse than useless here — it leaves the parent repository's `worktrees` metadata pointing at
+a directory that is gone. A remove that exits non-zero keeps the worktree and names `remove` as the
+reason, like every other failed check, and the deploy is not failed by any of it.
+
+**The root-owned check is the one that will keep most trees, and the fix is not here.** Of the 28
+merged worktrees measured on 2026-10-01, 11 were kept, and every one of those 11 carried at least
+one root-owned file — five of fineprint's seven rows among them, whose gate leaves a root-owned
+`.env` behind. The cleanup cannot `chown` and must not, so those trees stay until the gate that wrote them
+stops running as root; that is its own item, not this one. `rootfiles` is the most expensive check — it
+walks the tree, and `find -print -quit` stops at the first hit — so only the `.env*` listing runs
+after it.
+
+**What a removed tree takes with it, and what each check actually matches.** Probed on a throwaway
+fixture worktree holding an ignored `.env` and an ignored `node_modules/`: the dirty check's
+`status --porcelain` printed `porcelain=[]`, and a plain `git worktree remove` then printed
+`dotenv deleted with the worktree` and `node_modules deleted with the worktree` — so gitignored
+files go with the tree, and they are the disk this change reclaims. An ignored `.env*` at the top of
+the tree is the one exception: `cleanup_envfiles` keeps such a tree under `envfiles`, because an
+app's `.env` holds secrets and configuration that nothing in the repository can regenerate, and a
+few kilobytes of it is not reclaimable disk the way a `node_modules/` is. A listing it could not
+read keeps the tree too. That pathspec is the top of the tree only, which is accepted: on a fixture
+tree `'**/.env*'` printed `backend/.env` and `node_modules/dotenv/.env` but not the top-level
+`.env`, so it is a swap rather than a widening, and it lists ignored files under an ignored
+`node_modules/` — the keep-every-tree failure the `--ignored` reasoning below already rejects. A
+nested `.env` that is not root-owned therefore goes with the tree; a root-owned one is still kept
+by `rootfiles`. Root-owned ignored files are not
+an exception to that: `cleanup_rootfiles` walks the whole tree with `find -uid`, ignored paths
+included, so a tree carrying one is kept under `rootfiles` before any remove is attempted.
+`--ignored` is deliberately not added to the dirty check — the same probe printed
+`ignored-aware=[!! .env` / `!! node_modules/]`, and every project's tree carries a `node_modules`,
+`vendor` or `public/build`, so an ignored-aware dirty check would keep every tree for ever.
+`cleanup_mounts` matches a container's mount source against the tree and everything below it and
+never against an ancestor, because a container mounting `/var/www/<app>-worktrees` says nothing
+about one worktree inside it. The `/proc/[0-9]*` glob in `cleanup_procs` only enumerates process
+directories so their `cwd` can be read: nothing it yields is ever a removal target, and a glob that
+matched nothing is itself a keep rather than a clean bill of health. It reads `cwd` alone and not
+each process's open descriptors, which is accepted: an `fd` walk is a readlink per descriptor for
+every process on the box, while a process that holds a file open inside a removed tree but sits
+somewhere else keeps reading that file by inode and loses nothing.
+
+**It is wired as an `EXIT` trap because `finish` exits.** `finish()` prints `DONE` and `PAPERWORK`
+and calls `exit 0`, so nothing written after a `finish` call ever runs; the trap is armed on the
+line before each success-path `finish`, which includes the docs-only landing that five of the eight
+projects finish early. Probed under the options the deploy scripts actually set: inside an `EXIT` handler
+under `set -e`, a command that fails both cuts the handler short and makes the script exit 1, and
+reading an unset name does the same. So `deploy_cleanup` captures every exit code (`rc=0;
+out=$(…) || rc=$?`), reads every caller-set name as `${X-}`, and ends in `return 0` — a handler that
+returned non-zero as its last act was measured turning a successful deploy into `rc=3`. Two projects
+already trap `EXIT` on their success path (ghiecode closes its `APP_HOME`, kidsquest reports
+root-owned files); a second `trap … EXIT` replaces the first, so in those two the existing handler
+calls `deploy_cleanup` rather than being replaced by it.
+
+**A success marker, not the trap, is what decides the cleanup runs.** An `EXIT` handler fires on
+every exit, a refusal included, and the two handlers above call `deploy_cleanup` unconditionally
+because they already do their own work on every path. So each project sets `DEPLOY_SUCCEEDED=1` on
+the line immediately before every success-path `finish`, and `deploy_cleanup` reads it before it
+reads anything else: unset, it says `did not run: the deploy did not reach finish.`, removes nothing
+and leaves the refusal's own exit code alone. Deciding it inside the handler rather than at each
+`trap` line is what makes an unconditional call safe, and it is one sentence to audit per project
+instead of one conditional per handler. Sourcing `cleanup.sh` discards an inherited
+`DEPLOY_SUCCEEDED` the way sourcing `ledger.sh` discards `GATE_SUITE_PASSED`: a marker exported by
+whatever called the deploy script would otherwise buy the removals of a deploy that refused, so the
+only assignment that counts is the one the deploy makes in its own shell.
+
+**The library defaults none of the names it reads.** `PR`, `GIT`, `GH`, `ROOT`, `WT_GIT`, `REAP`,
+`DOCKER`, `PROC_ROOT` and `CLEANUP_ROOT_UID` are assigned by each project's `deploy.sh`, in the style
+the rest of the library already uses, and a `${REAP:-/usr/local/sbin/fleet-scratch-reap}` is
+deliberately absent: a test that forgot its fake would then run the real reaper with `--apply`
+against the real scratch root. A deploy that assigned nothing is told which name is missing and
+removes nothing, and that is one check over one list rather than a seam check beside a separate
+argument check — `PR` unset is the same sentence as `REAP` unset, because to this handler they are
+the same kind of mistake.
+
+**Every zero says which zero it is.** Lanes carry a `.fleet-scratch` label now:
+`find /srv/worker-scratch -maxdepth 2 -name .fleet-scratch | wc -l` printed `8` on 2026-10-01, in
+the spelling the fleet worker rules landed that day — `repo=gcotcheza/<name>` and `pr=<n>`, the
+first of which is what `deploy_cleanup` passes as the reaper's first argument. So a candidate set
+can be non-empty, and the two readings of `candidates: 0` are never printed as the same sentence:
+no lane carries this pull request's label reads
+`scratch reaped 0 kept 0 (no lane is labelled <repo> #<PR>)`, while a reaper `kept:` count above
+zero means every lane carrying the label was kept on purpose and the summary says
+`every labelled lane was kept (N)`. The same rule covers every half that
+could not run: a pull request that is not merged, a base that is not `main`, a merge commit that is
+not an ancestor of `origin/main`, an unreadable `worktree list` and an unreadable reaper run each put
+their reason where their counts would have gone, instead of printing zeros. The run prints one
+`CLEANUP` summary line; the per-worktree keep lines go to the deploy log, and the only extra lines on
+stdout are the loud ones the reaper's exit 2 and exit 4 are worth.
+
+**`scripts/lib/deploy/VERSION` does not move in this change.** The vendoring header on `cleanup.sh`
+carries the same date as the other four files, but `LIB_FILES` in `scripts/fleet-versions.sh` is
+untouched, so no project is reported `DIVERGED` for a file it does not vendor yet. The version bump
+and the entry in `LIB_FILES` belong to the re-vendor round, where they land together with the eight
+`deploy.sh` edits that arm the trap — one change, one report, rather than a week of red rows for
+work nobody has done yet.
