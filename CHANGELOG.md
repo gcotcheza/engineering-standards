@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-10-02 — the after-deploy cleanup keeps a worktree whose ignored `.env` sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
+**`cleanup_envfiles` looked at the top of the tree only.** Its probe was `git ls-files -o -i
+--exclude-standard -- '.env*'`, and a pathspec without magic matches the top level alone, so a
+merged worktree whose ignored env file lives at `api/.env` (reflection's layout) was removed with
+that file in it. The probe is now `':(glob)**/.env*'`, which on git 2.43 reaches every depth, the top
+level included, minus `':(glob,exclude)**/vendor/**'` and `':(glob,exclude)**/node_modules/**'`, so a
+vendored package's own `.envrc` cannot keep every tree for ever. `fleet-scratch-reap` made the same
+move first (card 263).
+
+`scripts/lib/deploy/test.sh` gains four fixtures and nine assertions (196 `ok` lines to 205): a
+nested `api/.env` keeps the tree, an ignored `.env*` only under `vendor/` or only under
+`node_modules/` (at the top and one level down) does not, and a tree whose only ignored files are not
+`.env*` is removed. The existing top-level case stays green. Against the old pathspec the nested
+case's three assertions go red; with either exclusion deleted, that directory's two go red. The new
+fixtures make no commit, so they carry no hooks-off line; the existing `core.hooksPath=/dev/null`
+lines in `git_at` and `FIXGIT` are left for card 264.
+
+`VERSION` stays `2026-10-02`: no project has vendored that version yet, so this amends the day's
+library rather than joining it. `cleanup.sh`'s header is re-stamped, and the pinned `SUITE_SHA256`
+becomes `734e4fd79ef223f092c831fcce0c8b47a1bb1ab7198a204e10cc79ad8001368f`. No app copy moves here;
+each re-vendors in its next library round. The measured probes are in `docs/DECISIONS.md`.
+
 ## 2026-10-02 — W3: a session may merge a pull request whose every commit is authored by `dependabot[bot]` once the project gate is green on its head (VERSION 2026-10-02)
 **Ghie's rule of 2026-10-02, written into W3, with W2 excepting the same pull requests.** A
 dependency bump nobody on the box wrote has no builder whose diff needs a second reader, and waiting
