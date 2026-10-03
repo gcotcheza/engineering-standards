@@ -717,10 +717,11 @@ as the top-level `.env` (the plain `'**/.env*'` did not reach the top level; the
 minus `':(glob,exclude)**/vendor/**'` and `':(glob,exclude)**/node_modules/**'`. Without those two,
 the same probe printed `api/vendor/x/.envrc` and `node_modules/y/.env`: a vendored package's own env
 file would keep every tree for ever, the failure the `--ignored` reasoning below rejects. The plain
-`'.env*'` stays beside the glob because it alone reaches inside a top-level `.env*` directory: the
-glob printed nothing for an ignored `.env.d/prod`, the plain term printed it. Neither term lists a
-file inside a `.env*` directory below the top level (`api/.env.d/prod`), so a third,
-`':(glob)**/.env*/**'`, does (card 273). One shape is still not matched by name. A nested
+`'.env*'` was added because the glob printed nothing for an ignored `.env.d/prod`. Neither lists a
+file inside a `.env*` directory below the top (`api/.env.d/prod`), so a third term,
+`':(glob)**/.env*/**'`, does (card 273); it lists `.env.d/prod` and `api/.env.d/prod`, so on a
+fixture the probe printed the same four paths with or without the plain term, which is now
+redundant. It stays because `check_repo` carries the same terms. One shape is still not matched by name. A nested
 repository is not looked inside: an unignored one shows as `?? sub/`
 and keeps the tree under `dirty`, and an ignored one is listed by the glob as `sub/` whatever it
 holds, so it keeps the tree under `envfiles`. `fleet-scratch-reap`'s `check_repo` uses the same

@@ -11,10 +11,13 @@ ignored `api/.env.d/prod` keeps the tree under `envfiles`, the log names the fil
 still on disk. Against the probe without the new term all three go red. The "ls-files exited"
 guard card 273 named as untested is already held by `cleanup-envfiles-unreadable`: with that guard
 line deleted and the header re-stamped, its two assertions go red.
+The new term also reaches a top-level `.env.d/prod`, so the plain `'.env*'` is now redundant
+(same four paths with or without it on a fixture); it stays to match `check_repo`, and the entry
+below's red proof for deleting it no longer holds.
 
 `VERSION` stays `2026-10-02` for the reason the entry below gives. `cleanup.sh`'s header is
 re-stamped, and the pinned `SUITE_SHA256` becomes
-`3cb128c60339d6920641bd4b59e4015292ab8ed4f701a48e7eb6aea10f599467`. `fleet-scratch-reap`'s
+`83fc2db2cd53840dfe868f6bb624c0e8a604562ee934d6843adfc7361b1f9ae7`. `fleet-scratch-reap`'s
 `check_repo` gets the same term through its own install packet, not through this repository.
 
 ## 2026-10-02 — the after-deploy cleanup keeps a worktree whose ignored `.env` sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)

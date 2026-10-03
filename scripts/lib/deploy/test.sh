@@ -1029,7 +1029,7 @@ contains 'and the deploy log names the nested file' "$(cat "${LOGFILE}")" \
     'CLEANUP keep envfiles '"${WT}"' (it carries an ignored api/.env)'
 equals 'and the nested-.env tree is still on disk' "$(on_disk "${WT}")" 'there'
 
-# The plain term is what reaches inside a top-level .env* directory; the glob does not.
+# A top-level .env* directory: the plain term and the .env*/** term each reach inside it.
 cleanup_fixture cleanup-envfiles-dir
 mkdir -p "${ROOT}/.git/info" "${WT}/.env.d"
 printf '.env*\n' >>"${ROOT}/.git/info/exclude"
