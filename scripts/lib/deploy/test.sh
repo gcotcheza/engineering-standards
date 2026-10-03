@@ -5,7 +5,8 @@
 #   scripts/lib/deploy/test.sh
 #   DEPLOY_LIB_DIR=/tmp/mutant scripts/lib/deploy/test.sh   the red proofs
 #
-# It reads no checkout, runs no docker, no gh and no heavy-work.
+# It reads no checkout, runs no docker, no gh and no heavy-work. Fixture commits run the
+# real fleet hook (S1); the hook canary reads its log, so the suite runs as root.
 # FAKE_CALLS strings stay single-quoted on purpose: the driver eval's them.
 # shellcheck disable=SC2016
 set -uo pipefail
@@ -44,7 +45,7 @@ matches() {
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-git_at() { git -C "$ROOT" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@example.invalid "$@"; }
+git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
 
 write_driver() {
     mkdir -p "${CASE}/lib"
@@ -139,14 +140,14 @@ fixture() {
     git init -q -b main "${ROOT}"
     printf 'base\n' >"${ROOT}/app/base.txt"
     git_at add app/base.txt
-    git_at commit -q --no-verify -m base
+    git_at commit -q -m base
     LIVE_SHA="$(git_at rev-parse HEAD)"
     LIVE_SHORT="$(git_at rev-parse --short HEAD)"
 
     git_at checkout -q -b pr
     printf 'feature\n' >"${ROOT}/app/feature.txt"
     git_at add app/feature.txt
-    git_at commit -q --no-verify -m feature
+    git_at commit -q -m feature
     HEAD_SHA="$(git_at rev-parse HEAD)"
 
     git_at checkout -q main
@@ -154,9 +155,9 @@ fixture() {
         git_at merge -q --no-ff --no-commit pr >/dev/null 2>&1
         printf 'smuggled\n' >"${ROOT}/app/smuggled.txt"
         git_at add app/smuggled.txt
-        git_at commit -q --no-verify -m merge
+        git_at commit -q -m merge
     else
-        git_at merge -q --no-ff --no-verify -m merge pr
+        git_at merge -q --no-ff -m merge pr
     fi
     MERGE_SHA="$(git_at rev-parse HEAD)"
 
@@ -272,6 +273,41 @@ SUITE_PASSED_ENV=''
 ARMED_ENV=''
 HEAVY_STATUS=''
 
+# --- 0. fixture commits run the real fleet hook, and it is seen to run (backlog 264) ---
+HOOK_LOG=/var/log/fleet-secrets-check.log
+clean_lines() {
+    if [ -r "${HOOK_LOG}" ]; then grep -c ' caller=root .*result=clean$' "${HOOK_LOG}" || true
+    else printf 'unreadable'; fi
+}
+grew() {
+    case "$2$3" in
+        *[!0-9]*|'') fail "$1 — ${HOOK_LOG} could not be counted (before [$2], after [$3])" ;;
+        *) if [ "$3" -gt "$2" ]; then pass "$1 ($2 -> $3)"; else fail "$1 — stayed at $2 -> $3"; fi ;;
+    esac
+}
+SUITE_CLEAN_BEFORE="$(clean_lines)"
+
+fixture hook-canary
+CANARY_BEFORE="$(clean_lines)"
+printf 'canary\n' >"${ROOT}/app/canary.txt"
+git_at add app/canary.txt
+git_at commit -q -m canary
+grew 'a clean fixture commit reaches the real checker as root' "${CANARY_BEFORE}" "$(clean_lines)"
+
+PLANTED="ghp_$(tr -dc A-Za-z0-9 </dev/urandom | head -c36)"
+printf 'token = "%s"\n' "${PLANTED}" >"${ROOT}/app/planted.txt"
+git_at add app/planted.txt
+CANARY_HEAD="$(git_at rev-parse HEAD)"
+OUT="$(git_at commit -q -m planted 2>&1)"
+RC=$?
+contains 'a planted token is refused by the hook' "${OUT}" 'BLOCKED by secrets guard (gitleaks)'
+absent 'and the refusal is a non-zero exit' "RC=${RC}" 'RC=0'
+equals 'and no commit is made' "$(git_at rev-parse HEAD)" "${CANARY_HEAD}"
+case "${OUT}" in
+    *"${PLANTED}"*) fail 'the hook printed the token it caught (S2)' ;;
+    *) pass 'and the hook never prints the token it caught' ;;
+esac
+
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
@@ -386,7 +422,7 @@ absent 'and no commit is gated on the strength of it' "${OUT}" 'RESOLVED #73'
 
 fixture main-moved
 git_at checkout -q -b later "${MERGE_SHA}"
-git_at commit -q --no-verify --allow-empty -m later
+git_at commit -q --allow-empty -m later
 git_at push -q origin later:main
 git_at checkout -q main
 run_lib 'resolve'
@@ -584,10 +620,16 @@ run_lib "$(armed "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record 
 contains 'the writer says where it wrote' "${OUT}" "gate-ledger: ${LIVE_SHA:0:7} ci rc=0 -> ${WRITTEN}"
 matches 'the ledger line is <sha> <kind> <utc> <rc> <log>' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA} ci [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z 0 /tmp/ci\.log$"
+
+# Backlog 268: a red run on an uncommitted tree used to land as <sha>-dirty.
+fixture ledger-writer-dirty
+WRITTEN="${CASE}/written"
 printf 'uncommitted\n' >>"${ROOT}/app/base.txt"
-run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 1 /tmp/e2e.log >&3")"
-matches 'a dirty tree records <sha>-dirty' "$(tail -1 "${WRITTEN}")" \
-    "^${LIVE_SHA}-dirty e2e [0-9-]+T[0-9:]+Z 1 /tmp/e2e\.log$"
+run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 1 /tmp/e2e.log >&3 2>&3; printf 'RC=%s\n' \$? >&3")"
+contains 'a dirty tree is refused in the words of the rule' "${OUT}" \
+    'gate-ledger: dirty tree: no ledger row — commit, then gate the tip'
+contains 'and the refusal is non-zero' "${OUT}" 'RC=2'
+equals 'and no row is written, dirty-stamped or not' "$(rows "${WRITTEN}")" '0'
 
 fixture ledger-unwritable
 run_lib "$(armed "GATE_LEDGER=/proc/nope/ledger gate_ledger_record ci 0 - >&3 2>&3; printf 'STILL HERE\n' >&3")"
@@ -631,8 +673,8 @@ matches 'and it is written as a failure' "$(tail -1 "${WRITTEN}")" \
 # clear a tree no step ever read.
 fixture ledger-head-moved
 WRITTEN="${CASE}/written"
-FIXGIT="git -C ${ROOT} -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@example.invalid"
-run_lib "$(armed "printf 'late\n' >${ROOT}/app/late.txt; ${FIXGIT} add app/late.txt; ${FIXGIT} commit -q --no-verify -m late; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3")"
+FIXGIT="git -C ${ROOT} -c user.name=t -c user.email=t@example.invalid"
+run_lib "$(armed "printf 'late\n' >${ROOT}/app/late.txt; ${FIXGIT} add app/late.txt; ${FIXGIT} commit -q -m late; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3")"
 LATE_SHA="$(git_at rev-parse HEAD)"
 contains 'a commit landing mid-run is refused, naming both commits' "${OUT}" \
     "gate-ledger: HEAD is ${LATE_SHA} but the run began at ${LIVE_SHA}, so the ci run (rc=0) is NOT recorded"
@@ -758,7 +800,7 @@ cleanup_fixture() {
     git_at checkout -q -b side "${LIVE_SHA}"
     printf 'side\n' >"${ROOT}/app/side.txt"
     git_at add app/side.txt
-    git_at commit -q --no-verify -m side
+    git_at commit -q -m side
     SIDE_SHA="$(git_at rev-parse HEAD)"
     git_at checkout -q main
     mkdir -p "${CASE}/proc/1"
@@ -1141,6 +1183,9 @@ run_lib "${CLEAN_CALL}"
 contains 'an unreadable pull request removes nothing' "${OUT}" \
     'CLEANUP #73 did not run: gh could not read the pull request (rc=1); nothing is removed.'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+grew 'the fixture commits added caller=root result=clean lines' \
+    "${SUITE_CLEAN_BEFORE}" "$(clean_lines)"
 
 if [ "${fails}" -eq 0 ]; then
     printf '\ndeploy-lib-test: all checks passed\n'

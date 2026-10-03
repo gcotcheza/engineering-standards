@@ -325,10 +325,9 @@ with the reason, which is the honest reading and was always what that row meant.
 from the gate's EXIT trap and read HEAD there, so a commit that landed in the tree while
 the gate was working was handed a green row no step had ever read — the gate judged one
 tree and cleared another. `gate_ledger_arm` now reads HEAD before the first step, and the
-trap compares: if HEAD has moved, nothing is recorded and both commits are named. A
-dirty tree is still stamped `<sha>-dirty`, unchanged, because `gated()` matches the
-ledger's first field against a sha `resolve` names and `<sha>-dirty` is not one — such a
-row leaves evidence a gate ran without ever clearing a deploy. The row format is
+trap compares: if HEAD has moved, nothing is recorded and both commits are named. (A
+dirty tree was still stamped `<sha>-dirty` here; since 2026-10-03 it gets no row at all —
+see the entry below.) The row format is
 untouched: `<sha> <kind> <utc> <rc> <log>`, so a project re-vendoring this needs no
 change to any reader.
 
@@ -899,3 +898,24 @@ and a refusal is never routed around.
 
 **The option not taken:** letting any green pull request merge itself. The adversarial review in
 W2 is what a gate cannot do, and every other author has a builder whose diff needs a second reader.
+
+## A dirty tree gets no ledger row, and the lib's fixtures commit through the real hook (2026-10-03)
+
+**`<sha>-dirty` rows were noise that looked like evidence.** No deploy could resolve one, but
+the mistake ledger mined 24 of them as red runs against commits nobody had gated (backlog
+268). `gate_ledger_sha` now refuses a dirty tree — `dirty tree: no ledger row — commit, then
+gate the tip`, exit 2 — and `gate_ledger_record` passes the 2 on without writing. The gate's
+own exit code is untouched: `check.sh`'s trap exits with the suite's code, so a dirty run
+still reports what its steps found; it just leaves nothing a deploy or a review could read as
+a verdict. `gated()` keeps ignoring old `-dirty` rows, and its fixture stays to prove it.
+
+**The fixtures stop switching the hook off.** `git_at`, the head-moved case and every fixture
+commit used `-c core.hooksPath=/dev/null` and `--no-verify` (backlog 264b, S1). With the
+checker counting root without capping it (secrets-cap-175), the advisor's 2026-10-03 ruling
+is that root suites commit through the real fleet hook — no shim, no redirected counter. The
+suite therefore proves the hook ran: a clean commit adds a `caller=root … result=clean` line
+to `/var/log/fleet-secrets-check.log`, the whole suite adds more, and a planted random
+`ghp_` token is refused without being printed. A suite that cannot read that log fails; it
+is meant to run as root on this box. Merge commits made by `git merge` run no pre-commit
+hook by git's own design; that is not a bypass.
+

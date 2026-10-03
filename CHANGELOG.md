@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-03 — a dirty tree writes no gate-ledger row, and the deploy-lib suite commits through the real hook (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
+**A gate run on uncommitted work no longer leaves a `<sha>-dirty` row.** `gate_ledger_sha`
+refuses with `gate-ledger: dirty tree: no ledger row — commit, then gate the tip` and exit 2;
+`gate_ledger_record` returns 2 and writes nothing (backlog 268). The only caller in this
+repository, `check.sh`'s EXIT trap, exits with the suite's own code, so its verdict is
+unchanged. `gated()` still ignores `-dirty` rows already in a ledger.
+
+`scripts/lib/deploy/test.sh` drops `core.hooksPath=/dev/null` and every `--no-verify`
+(backlog 264b) and gains a hook canary: a clean fixture commit and the whole suite must add
+`caller=root … result=clean` lines to the real checker log, and a planted random `ghp_` token
+must be refused, with no commit and the token never printed. 210 `ok` lines to 218. Red
+proofs: with `return 2` deleted from the dirty guard (header re-stamped) two assertions go
+red; with the planted token swapped for plain words three go red.
+
+`ledger.sh`'s header is re-stamped and the pinned `SUITE_SHA256` becomes
+`ec574b3779dcb36d3a500d587196f7312ccad79f1a05811873b52cf2c41ac2b7`.
+
 ## 2026-10-03 — the after-deploy cleanup keeps a worktree whose ignored `.env*` directory sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **Neither probe term reached `api/.env.d/prod`.** The plain `'.env*'` reaches inside a top-level
 `.env.d/` only, and in `':(glob)**/.env*'` the `*` never crosses a `/`, so a merged worktree whose
