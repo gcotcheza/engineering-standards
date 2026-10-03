@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-10-02 — the after-deploy cleanup keeps a worktree whose ignored `.env` sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
+**`cleanup_envfiles` looked at the top of the tree only.** Its probe was `git ls-files -o -i
+--exclude-standard -- '.env*'`, and a pathspec without magic matches the top level alone, so a
+merged worktree whose ignored env file lives at `api/.env` (reflection's layout) was removed with
+that file in it. The probe now adds `':(glob)**/.env*'`, which on git 2.43 reaches `.env*` files below the top level,
+minus `':(glob,exclude)**/vendor/**'` and `':(glob,exclude)**/node_modules/**'`, so a vendored
+package's own `.envrc` cannot keep every tree for ever. The plain `'.env*'` stays, because only it
+reaches inside a top-level `.env.d/`. These are the four terms `fleet-scratch-reap`'s `check_repo`
+already uses (card 263).
+
+`scripts/lib/deploy/test.sh` gains five fixtures and eleven assertions (196 `ok` lines to 207): a
+nested `api/.env` keeps the tree, so does a top-level `.env.d/prod`, an ignored `.env*` only under
+`vendor/` or only under `node_modules/` (at the top and one level down) does not, and a tree whose
+only ignored files are not `.env*` is removed. The existing top-level case stays green. Against the
+old pathspec the nested case's three assertions go red; with either exclusion deleted, that
+directory's two go red; with the plain term deleted, the `.env.d` case's two go red. The new
+fixtures add no hooks-off line; they reuse `cleanup_fixture`, whose hooks-off commits are card 264's.
+
+**Where it takes effect.** No project vendors `cleanup.sh`. Its one live caller is
+`/usr/local/sbin/fleet-merged-reap`, which sources the installed copy at
+`/usr/local/lib/fleet-merged-reap/cleanup.sh` (still the 2026-10-01 header with the old probe), so
+the fix reaches production when that copy is re-installed. `VERSION` stays `2026-10-02`: no project
+has vendored that version, so this amends the day's library rather than joining it. `cleanup.sh`'s
+header is re-stamped, and the pinned `SUITE_SHA256` becomes `334c523882c74fe8523a62d6be29ebb6b4ab554de39b45985dfb04e7b4ce1928`. The measured probes are in
+`docs/DECISIONS.md`.
+
 ## 2026-10-02 — W3: a session may merge a pull request whose every commit is authored by `dependabot[bot]` once the project gate is green on its head (VERSION 2026-10-02)
 **Ghie's rule of 2026-10-02, written into W3, with W2 excepting the same pull requests.** A
 dependency bump nobody on the box wrote has no builder whose diff needs a second reader, and waiting

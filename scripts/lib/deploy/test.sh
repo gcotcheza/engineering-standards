@@ -1017,6 +1017,58 @@ contains 'and the deploy log names the file that kept it' "$(cat "${LOGFILE}")" 
     'CLEANUP keep envfiles'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 
+# The probe reaches any depth: reflection keeps its env file at api/.env.
+cleanup_fixture cleanup-envfiles-nested
+mkdir -p "${ROOT}/.git/info" "${WT}/api"
+printf '.env*\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}/api/.env"
+run_lib "${CLEAN_CALL}"
+contains 'an ignored api/.env in a merged clean tree keeps it' "${OUT}" \
+    'worktrees removed 0 kept 1 (envfiles)'
+contains 'and the deploy log names the nested file' "$(cat "${LOGFILE}")" \
+    'CLEANUP keep envfiles '"${WT}"' (it carries an ignored api/.env)'
+equals 'and the nested-.env tree is still on disk' "$(on_disk "${WT}")" 'there'
+
+# The plain term is what reaches inside a top-level .env* directory; the glob does not.
+cleanup_fixture cleanup-envfiles-dir
+mkdir -p "${ROOT}/.git/info" "${WT}/.env.d"
+printf '.env*\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}/.env.d/prod"
+run_lib "${CLEAN_CALL}"
+contains 'an ignored .env.d/prod at the top of a merged clean tree keeps it' "${OUT}" \
+    'worktrees removed 0 kept 1 (envfiles)'
+equals 'and the .env.d tree is still on disk' "$(on_disk "${WT}")" 'there'
+
+# A vendored package's own .env* is not the app's config: kept on it, every tree would stay.
+cleanup_fixture cleanup-envfiles-vendor
+mkdir -p "${ROOT}/.git/info" "${WT}/vendor/x" "${WT}/api/vendor/y"
+printf '.env*\nvendor/\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}/vendor/x/.env"
+printf 'fixture\n' >"${WT}/api/vendor/y/.envrc"
+run_lib "${CLEAN_CALL}"
+contains 'an ignored .env* only under vendor/ does not keep the tree' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and the vendor-only tree is gone from disk' "$(on_disk "${WT}")" 'gone'
+
+cleanup_fixture cleanup-envfiles-node-modules
+mkdir -p "${ROOT}/.git/info" "${WT}/node_modules/y" "${WT}/api/node_modules/dotenv"
+printf '.env*\nnode_modules/\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}/node_modules/y/.env"
+printf 'fixture\n' >"${WT}/api/node_modules/dotenv/.env.example"
+run_lib "${CLEAN_CALL}"
+contains 'an ignored .env* only under node_modules/ does not keep the tree' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and the node_modules-only tree is gone from disk' "$(on_disk "${WT}")" 'gone'
+
+cleanup_fixture cleanup-envfiles-none
+mkdir -p "${ROOT}/.git/info" "${WT}/storage"
+printf '.env*\nstorage/\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}/storage/app.log"
+run_lib "${CLEAN_CALL}"
+contains 'a tree whose only ignored files are not .env* is removed' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and the tree with no .env is gone from disk' "$(on_disk "${WT}")" 'gone'
+
 # The shims exit 3 and print nothing: an error on stdout would be read as a found file,
 # which is the wrong reason reached by luck rather than the could-not-tell branch.
 cleanup_fixture cleanup-envfiles-unreadable
