@@ -66,6 +66,8 @@ scan_bypasses "${BASH_SOURCE[0]}" '(' "${HOOK_BYPASS_ANY_CASE}" 2>/dev/null
 equals 'a broken grep in the bypass scan fails it' "$?" 2
 scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" '(' 2>/dev/null
 equals 'a broken any-case grep in the bypass scan fails it' "$?" 2
+scan_bypasses "${BASH_SOURCE[0]}.missing" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}" 2>/dev/null
+equals 'an unreadable file in the bypass scan fails it' "$?" 2
 
 write_driver() {
     mkdir -p "${CASE}/lib"
