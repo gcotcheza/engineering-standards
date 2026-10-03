@@ -10,11 +10,11 @@ fleet guard, inside a repository the test created, fills with fixtures, never gi
 and deletes on every exit, and that ends by proving the real trees', the global and system
 `hooksPath` and the fleet hooks directory byte-unchanged. The seven conditions, (a) to (g), are in
 `docs/DECISIONS.md`; missing one puts the harness back under the rule. Anything that points hooks
-away from a guard stays an absolute finding. First use: fleet packet 284+285 (orbit). The standards
-text moved, so `VERSION` moves with it. A T5 harness may also run deliberately broken copies of a
-hook or of itself under six further conditions, named mutant mode and a marked `mktemp` repository
-among them;
-`docs/DECISIONS.md` lists them, and states the case is no `hooksPath` precedent.
+away from a guard stays an absolute finding, except a T5 mutant run that meets every condition in
+`docs/DECISIONS.md`. First use: fleet packet 284+285 (orbit). The standards text moved, so
+`VERSION` moves with it. A T5 harness may also run deliberately broken copies of a hook or of
+itself under six further conditions, named mutant mode and a marked `mktemp` repository among
+them; `docs/DECISIONS.md` lists them, and states the case is no `hooksPath` precedent.
 
 **What it means for the projects.** No project code changes; each takes the text when it next
 re-vendors `docs/STANDARDS.md`, and `scripts/fleet-versions.sh` reports every project `STALE` until
