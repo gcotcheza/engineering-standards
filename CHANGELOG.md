@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-10-03 — `finish` writes root's deploy record, and takes only the full merge sha (deploy-lib VERSION 2026-10-03; the standard is unchanged)
+**`finish` appends `DONE <full MERGE_SHA> <utc> <log>` to `${DEPLOY_RECORD_ROOT:-/var/lib/fleet/deploy-on-merge}/<basename ROOT>.record`
+by path, before it prints DONE** (backlog 280). The live tripwire reads that file before any deploy
+log, and no step of the deploy holds a descriptor on it, so an app-uid step that prints a DONE row into
+the log no longer vouches for a HEAD. A `RED …` tail on `EXTRA_DONE` is carried onto the row. Before it
+writes, `finish` refuses — `REFUSED:`, exit 1, no DONE line, no row — when its argument is not 40 hex,
+is not the `MERGE_SHA` resolve read from GitHub, is not what `.git/HEAD` names when read as files, or when
+the record is anything but a 600 file in a 700 directory, both owned by the running uid and neither a
+symlink. `deploy_record_rollback <full sha> <source>` appends a `ROLLBACK` row through the same checks,
+for a runbook's rollback block. `record_safe` and `head_file` move here from ghie-writes' deploy.sh (C1).
+
+**Compatibility: option (a), ruled by the advisor.** Every project passes `finish` a short,
+app-uid `rev-parse` today; the new `finish` refuses it loudly. Re-vendoring and the caller change
+(`finish "$MERGE_SHA"`, and a ROLLBACK row in the runbook) land in the same project PR. A silent
+short-sha fallback would be the very gap this closes. ghie-writes drops its own `write_record` then.
+
+`test.sh` gains 47 `ok` lines (226 to 273), all against a fake record root and a fake `.git` in the
+suite's temp dir; the cleanup cases now finish on a landed full sha. Red proofs, one saved mutant each,
+header re-stamped so only the deletion counts: the 40-hex check in `finish` and in the writer, the
+`MERGE_SHA` compare, the landed check, the ROOT check, the directory check, the file check (644 and
+symlink), the `record_safe` call, `umask 077`, the one-word ROLLBACK source, the `|| refuse` after the
+write, and the write by path. Why: `docs/DECISIONS.md`.
+
 ## 2026-10-03 — the fleet check discovers its projects, and a deployed mirror is not one (tooling only; the standard is unchanged and VERSION is not bumped)
 **The ten project names left the script.** `scripts/fleet-versions.sh` now takes its projects from
 `$ROOT/*/docs/STANDARDS.md`, the very file the rest of it measures, so vendoring the file is
