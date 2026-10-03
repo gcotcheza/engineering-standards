@@ -899,3 +899,34 @@ and a refusal is never routed around.
 
 **The option not taken:** letting any green pull request merge itself. The adversarial review in
 W2 is what a gate cannot do, and every other author has a builder whose diff needs a second reader.
+
+## The deploy library's fixtures commit through the fleet hook, from one template per kind (2026-10-03)
+
+**No fixture skips the hook (S1, backlog 265; advisor ruling, cards 277/274).** `test.sh` used to
+build every case's repository with `-c core.hooksPath=/dev/null` and `--no-verify`. Both are gone,
+with no environment seam, test mode or carve-out in the hook: fixture content is plain text the
+real hook passes.
+
+**What the self-scan covers, and nothing more.** A check at the top of the suite reads its own text,
+with `\`-continued lines joined, and fails on: `core.hooksPath` in any letter case (git config
+keys ignore case); `--no-verify` and every prefix of it down to `--no-v`; `HUSKY=0`; any
+`GIT_CONFIG_*` name (`GLOBAL`, `SYSTEM`, `NOSYSTEM`, `PARAMETERS`, `COUNT`, ...); any `HOME=`
+assignment, exported, inline or prefixed; `XDG_CONFIG_HOME=`; the plumbing that stands a commit up
+without a hook (`commit-tree`, `fast-import`, `hash-object` with `-w`); and a short `-n` flag
+cluster after `commit` or `merge` on the same logical line. It is a text scan, not a parser: a
+bypass built at runtime (a flag in a variable, a `-c` key assembled from pieces, an alias) is not
+seen, and review stays the check for those. Two false positives are known and fail loudly rather
+than pass quietly: merge's own `-n` (no-stat) and a dash-n inside a `-m` message. Rephrase the
+line; never widen the scan's exemptions.
+An unreadable suite file, or either grep exiting above 1 (a pattern grep cannot compile), fails the
+scan: grep's "no match" and "could not run" must never both read as clean.
+
+**Built once per kind, then copied.** Committing through the hook per case meant 245 calls to the
+personal-data checker per run and took the suite from 14 s to 145 s. The checker caps every caller
+but root at 30 calls a minute, and ghiecode's gate runs this suite as its tree's owner, so a
+re-vendored copy would have been refused by the cap. `fixture_template` builds the plain and
+`trees-differ` repositories once, the `side` commit included under `refs/fixture/side`, and each
+case copies one: 8 checker calls per run, 15 s.
+
+**The option not taken:** `git commit-tree` for the fixture commits. It needs no flag, and it also
+never runs a hook, so it is the same bypass under another name.

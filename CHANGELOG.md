@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-03 — the deploy library's test fixtures commit through the fleet hook (deploy-lib VERSION unchanged; the standard is unchanged)
+**`scripts/lib/deploy/test.sh` no longer skips the hook.** Its fixtures committed with
+`-c core.hooksPath=/dev/null` and `--no-verify` (9 lines), against S1. Both are removed, and a
+new first check scans the suite's own text, continuation lines joined, and fails on the forms
+`docs/DECISIONS.md` lists: `core.hooksPath` in any case, `--no-verify` and its prefixes to
+`--no-v`, `HUSKY=0`, any `GIT_CONFIG_*`, a `HOME=` or `XDG_CONFIG_HOME=` assignment, `commit-tree`,
+`fast-import`, `hash-object -w`, and a short `-n` on commit or merge. An unreadable file or a
+grep that exits above 1 (a broken pattern) fails the scan instead of reading as clean; three
+new assertions hold that, one for a missing file and one per grep (210 `ok` lines to 214).
+Each case now copies a repository built once per kind, so a run makes 8 personal-data checker
+calls instead of 245 and stays at about 15 s (backlog 265). `VERSION` stays `2026-10-02`: no
+library file changed. The pinned `SUITE_SHA256` becomes
+`13728ad47730ae4bc17ebb40b0f09de03ffe7e7fa5fa18799a4d7b1d3026ccde`.
+
 ## 2026-10-03 — the after-deploy cleanup keeps a worktree whose ignored `.env*` directory sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **Neither probe term reached `api/.env.d/prod`.** The plain `'.env*'` reaches inside a top-level
 `.env.d/` only, and in `':(glob)**/.env*'` the `*` never crosses a `/`, so a merged worktree whose
