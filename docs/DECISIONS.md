@@ -1071,7 +1071,13 @@ answer about a tree the app uid owns. `finish` takes only the `MERGE_SHA` resolv
 when `.git/HEAD`, read as files rather than through the checkout's config, names it — so a HEAD
 moved under the deploy shows as a refusal, not a recorded row.
 
-**A short sha is refused, not tolerated (option a).** A "DONE, but no record" fallback would let
+**A short sha is refused, not tolerated — option (a): the advisor's ruling, 2026-10-03 16:28Z (message
+to the orbit moderator).** A "DONE, but no record" fallback would let
 a project re-vendor and keep forgeable logs without anyone noticing; the refusal names the
 re-vendor. A refusing `finish` exits 1 after `DEPLOY_SUCCEEDED=1` was set, so `deploy_cleanup`
 still runs on its own checks; the REFUSED line and the exit code are what say no record was written.
+
+**The default path is the live one, so only a live tree may use it.** Each project's `deploy-test.sh`
+runs on the host as root; with `DEPLOY_RECORD_ROOT` unset, a fake `ROOT` outside `/var/www/` is refused
+rather than allowed to append to `/var/lib/fleet/deploy-on-merge`. The record's name is held to the
+tripwire's own pattern, so a `ROOT` of `/` or `…/.` cannot name a file the tripwire never reads.

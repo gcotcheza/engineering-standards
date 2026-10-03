@@ -6,21 +6,34 @@ by path, before it prints DONE** (backlog 280). The live tripwire reads that fil
 log, and no step of the deploy holds a descriptor on it, so an app-uid step that prints a DONE row into
 the log no longer vouches for a HEAD. A `RED …` tail on `EXTRA_DONE` is carried onto the row. Before it
 writes, `finish` refuses — `REFUSED:`, exit 1, no DONE line, no row — when its argument is not 40 hex,
-is not the `MERGE_SHA` resolve read from GitHub, is not what `.git/HEAD` names when read as files, or when
-the record is anything but a 600 file in a 700 directory, both owned by the running uid and neither a
-symlink. `deploy_record_rollback <full sha> <source>` appends a `ROLLBACK` row through the same checks,
-for a runbook's rollback block. `record_safe` and `head_file` move here from ghie-writes' deploy.sh (C1).
+is not the `MERGE_SHA` resolve read from GitHub, is not what `.git/HEAD` names when read as files
+(`ref: refs/heads/main`, loose or packed, neither link followed), when `basename ROOT` is not a name the
+tripwire reads, when `ROOT` is not under `/var/www/` and `DEPLOY_RECORD_ROOT` is unset, or when the record
+is anything but a 600 file in a 700 directory, both owned by the running uid and neither a symlink. A
+row after a torn last line starts on a new line. `deploy_record_rollback <full sha> <source>` appends a
+`ROLLBACK` row through the same checks for a runbook's rollback block; the source is one word, never `RED`.
+New names, all `deploy_`-prefixed so a project's own helpers cannot shadow them: `deploy_head_file`,
+`deploy_owned_by_me`, `deploy_record_safe`, `deploy_is_full_sha`, `deploy_record_row`,
+`deploy_record_rollback`, and the variable `DEPLOY_RECORD_ERR`.
 
-**Compatibility: option (a), ruled by the advisor.** Every project passes `finish` a short,
-app-uid `rev-parse` today; the new `finish` refuses it loudly. Re-vendoring and the caller change
-(`finish "$MERGE_SHA"`, and a ROLLBACK row in the runbook) land in the same project PR. A silent
-short-sha fallback would be the very gap this closes. ghie-writes drops its own `write_record` then.
+**Compatibility — option (a): the advisor's ruling, 2026-10-03 16:28Z (message to the orbit moderator).**
+Every project passes `finish` a short, app-uid `rev-parse` today; the new `finish` refuses it loudly. A
+silent short-sha fallback would be the very gap this closes. Re-vendoring lands in the same project PR as:
+- every `finish` call taking `"$MERGE_SHA"`, the docs-only or early one included: orbit `deploy.sh:61`,
+  fineprint `:41`, memento `:82`, kidsquest `:77`, health-tracker `:468`, besides each project's last one;
+- a `deploy_record_rollback` line in the runbook's rollback block;
+- `scripts/deploy-test.sh` exporting `DEPLOY_RECORD_ROOT` to a temp dir before its first case, because
+  it runs on the host as root and the default is the live directory;
+- ghie-writes deleting `write_record` and its `if ! write_record DONE "$MERGE_SHA"` block before
+  `finish` (both together would write two rows). Its own `head_file`, `owned_by_me` and no-argument
+  `record_safe` no longer collide, and may be replaced by the `deploy_` ones (C1).
 
-`test.sh` gains 47 `ok` lines (226 to 273), all against a fake record root and a fake `.git` in the
+`test.sh` gains 79 `ok` lines (226 to 305), all against a fake record root and a fake `.git` in the
 suite's temp dir; the cleanup cases now finish on a landed full sha. Red proofs, one saved mutant each,
-header re-stamped so only the deletion counts: the 40-hex check in `finish` and in the writer, the
-`MERGE_SHA` compare, the landed check, the ROOT check, the directory check, the file check (644 and
-symlink), the `record_safe` call, `umask 077`, the one-word ROLLBACK source, the `|| refuse` after the
+header re-stamped so only the edit counts: both 40-hex checks, the `MERGE_SHA` compare, the landed check,
+the HEAD-is-main check, each `! -L` in `deploy_head_file`, the packed-refs match, the ROOT, name and
+`/var/www/` checks, the directory and file checks, the owner compare, the `deploy_record_safe` call,
+`umask 077`, the one-word and not-`RED` ROLLBACK source, the torn-line newline, the `|| refuse` after the
 write, and the write by path. Why: `docs/DECISIONS.md`.
 
 ## 2026-10-03 — the fleet check discovers its projects, and a deployed mirror is not one (tooling only; the standard is unchanged and VERSION is not bumped)

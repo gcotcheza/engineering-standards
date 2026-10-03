@@ -932,6 +932,76 @@ contains 'a record that is a symlink is refused' "${OUT}" "$(unsafe)"
 unrecorded 'symlink'
 equals 'symlink: and its target takes no row' "$(rows "${CASE}/elsewhere")" '0'
 
+fixture record-detached
+run_lib "${LAND}"'$GIT checkout -q --detach; GATED=ledger; finish "$MERGE_SHA"'
+contains 'a detached HEAD is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'detached HEAD'
+
+fixture record-other-branch
+run_lib "${LAND}"'$GIT checkout -q -b other; GATED=ledger; finish "$MERGE_SHA"'
+contains 'a HEAD on another branch is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'another branch'
+
+# Landed on the test's side, so the case can rearrange .git before the deploy reads it.
+landed_at() { git_at reset -q --hard "${MERGE_SHA}"; }
+
+fixture record-packed
+landed_at
+git_at pack-refs --all
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+equals 'a main that lives only in packed-refs is read' "$(awk '{ print $1, $2 }' "${CASE}/records/root.record")" "DONE ${MERGE_SHA}"
+
+fixture record-packed-wrong
+landed_at
+git_at pack-refs --all
+sed -i "s#^[0-9a-f]* refs/heads/main\$#${LIVE_SHA} refs/heads/main#" "${ROOT}/.git/packed-refs"
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a packed main naming another commit is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads ${LIVE_SHA}, not ${MERGE_SHA}"
+unrecorded 'packed main elsewhere'
+
+fixture record-ref-symlink
+landed_at
+mv "${ROOT}/.git/refs/heads/main" "${CASE}/main-ref"
+ln -s "${CASE}/main-ref" "${ROOT}/.git/refs/heads/main"
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a refs/heads/main that is a symlink is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'main ref symlink'
+
+fixture record-head-symlink
+landed_at
+mv "${ROOT}/.git/HEAD" "${CASE}/HEAD-file"
+ln -s "${CASE}/HEAD-file" "${ROOT}/.git/HEAD"
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a HEAD that is a symlink is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'HEAD symlink'
+
+fixture record-other-owner
+mkdir -m 700 "${CASE}/records"
+( umask 077; : >"${CASE}/records/root.record" )
+chown nobody "${CASE}/records/root.record"
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+contains 'a 600 record owned by another uid is refused' "${OUT}" "$(unsafe)"
+unrecorded 'another owner'
+
+fixture record-live-default
+run_lib 'MERGE_SHA=$($GIT rev-parse origin/main); unset DEPLOY_RECORD_ROOT; GATED=ledger; finish "$MERGE_SHA"'
+contains 'a ROOT outside /var/www/ never defaults to the live record' "${OUT}" \
+    "REFUSED: ROOT ${ROOT} is not under /var/www/ and DEPLOY_RECORD_ROOT is unset: only a live tree writes the live record."
+equals 'live default: the exit' "RC=${RC}" 'RC=1'
+
+fixture record-bad-name
+run_lib "${LAND}"'ROOT="$ROOT/."; GATED=ledger; finish "$MERGE_SHA"'
+contains 'a ROOT whose last part is not a record name is refused' "${OUT}" \
+    "REFUSED: ROOT ${ROOT}/. ends in '.', which is not a record name the live tripwire reads."
+equals 'bad name: the exit' "RC=${RC}" 'RC=1'
+equals 'bad name: and nothing is created' "$(find "${CASE}/records" 2>/dev/null | wc -l)" '0'
+
+fixture record-torn
+mkdir -m 700 "${CASE}/records"
+( umask 077; printf 'DONE %s 2026-10-03T00:00:00Z /torn' "${LIVE_SHA}" >"${CASE}/records/root.record" )
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+equals 'a row after a torn last line starts on its own line' "$(tripwire_verdict "${CASE}/records/root.record" "${MERGE_SHA}")" '0'
+
 fixture record-rollback
 run_lib "${LAND}"'( deploy_record_rollback "$MERGE_SHA" runbook-rollback ) >&3 2>&3'
 contains 'a rollback says what it recorded' "${OUT}" "ROLLBACK ${MERGE_SHA} recorded"
@@ -940,11 +1010,12 @@ matches 'the ROLLBACK row is the full sha, the time and its source' "$(cat "${CA
 equals 'and the live tripwire'\''s awk reads that sha as live' "$(tripwire_verdict "${CASE}/records/root.record" "${MERGE_SHA}")" '0'
 
 fixture record-rollback-refused
-run_lib "${LAND}"'( deploy_record_rollback "${MERGE_SHA:0:7}" runbook ) >&3 2>&3; echo "rc=$?" >&3; ( deploy_record_rollback "$MERGE_SHA" "two words" ) >&3 2>&3; echo "rc=$?" >&3'
+run_lib "${LAND}"'( deploy_record_rollback "${MERGE_SHA:0:7}" runbook ) >&3 2>&3; echo "rc=$?" >&3; ( deploy_record_rollback "$MERGE_SHA" "two words" ) >&3 2>&3; echo "rc=$?" >&3; ( deploy_record_rollback "$MERGE_SHA" RED ) >&3 2>&3; echo "rc=$?" >&3'
 contains 'a rollback with a short sha is refused' "${OUT}" \
     "REFUSED: '${MERGE_SHA:0:7}' is not a full 40-hex sha, and root's record ${CASE}/records/root.record takes nothing less."
 contains 'a rollback whose source is not one word is refused' "${OUT}" 'REFUSED: a ROLLBACK row names its source in one word.'
-equals 'and each refusal returns 1' "$(printf '%s\n' "${OUT}" | grep -c '^rc=1$')" '2'
+contains 'a rollback whose source is RED is refused' "${OUT}" 'REFUSED: RED is not a source: the live tripwire reads it as a RED verdict.'
+equals 'and each refusal returns 1' "$(printf '%s\n' "${OUT}" | grep -c '^rc=1$')" '3'
 equals 'refused rollbacks: no record row' "$(rows "${CASE}/records/root.record")" '0'
 
 # --- 7. the after-deploy cleanup ----------------------------------------------------
