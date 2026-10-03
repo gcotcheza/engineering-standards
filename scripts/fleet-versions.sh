@@ -4,7 +4,7 @@
 # Each project's drift test compares docs/STANDARDS.md against ITS OWN header, so
 # a project that never updates passes its own test forever. This compares every
 # project against the CANONICAL clone, which is the only comparison that can
-# notice staleness. A project with no vendored copy is a FAILURE, not a skip —
+# notice staleness. A repository with no vendored copy is a FAILURE, not a skip —
 # otherwise "never adopted" is indistinguishable from "clean". For the same
 # reason, checking zero projects is an error, never a pass.
 #
@@ -12,22 +12,24 @@
 #   fleet-versions.sh --quiet|-q   exit code only (usage/canonical errors still go to stderr)
 #
 # Exit: 0 all projects on the canonical version · 1 one or more need attention,
-#       including a directory under ROOT that is a repository but not on the list ·
+#       including a directory under ROOT that is a repository but not a project ·
 #       2 usage error, canonical clone unreadable/invalid, or no projects to check.
 #
-# The defaults below describe one host's layout; every one of them is overridable
-# by environment variable, so the script is not tied to that machine.
+# The projects are the directories under ROOT that carry docs/STANDARDS.md, so a
+# project joins the check by vendoring the file — except a `*-staging` or
+# `*-worktrees` directory, which mirrors a project's files rather than being one
+# (docs/DECISIONS.md). The paths below describe one host's layout and are
+# overridable by environment variable.
 #
 # Env: STANDARDS_CANONICAL (default /srv/engineering-standards), STANDARDS_ROOT
-# (default /var/www), STANDARDS_PROJECTS (space-separated; default = the projects
-# listed below; set but empty is an error, not the default).
+# (default /var/www), STANDARDS_PROJECTS (space-separated; default = discovery;
+# set but empty is an error, not the default).
 
 set -uo pipefail
-set -f   # the project list is split on whitespace, never glob-expanded
+set -f   # defence in depth: nothing here is pathname-expanded but the discovery glob
 
 CANON=${STANDARDS_CANONICAL:-/srv/engineering-standards}
 ROOT=${STANDARDS_ROOT:-/var/www}
-DEFAULT_PROJECTS="fineprint memento orbit health-tracker kidsquest ghiecode ghie-writes reflection scribly pig-dice-game"
 LINK_TARGET='../../docs/STANDARDS.md'   # what every project commits, byte-for-byte (#56)
 LIB_FILES="ledger resolve preflight summary"   # scripts/lib/deploy/*.sh, the vendored deploy library
 
@@ -41,6 +43,9 @@ esac
 
 say()  { [ "$QUIET" = 1 ] || printf '%s\n' "$*"; }
 die()  { echo "fleet-versions: $*" >&2; exit 2; }
+
+# A deployed checkout or a worktree pool mirrors a project's files; it is not one.
+is_fleet_project_name() { case "$1" in *-staging|*-worktrees) return 1 ;; esac; }
 
 # --- canonical ---------------------------------------------------------------
 canon_file=$CANON/ENGINEERING-STANDARDS.md
@@ -79,10 +84,28 @@ read -r canon_lib_version < "$canon_lib_vfile" || true
 canon_lib_version=${canon_lib_version#"${canon_lib_version%%[![:space:]]*}"}
 canon_lib_version=${canon_lib_version%"${canon_lib_version##*[![:space:]]}"}
 
-# --- project list ------------------------------------------------------------
-if [ "${STANDARDS_PROJECTS+x}" = x ]; then list=$STANDARDS_PROJECTS; else list=$DEFAULT_PROJECTS; fi
-read -r -a projects <<<"$list"
-[ "${#projects[@]}" -gt 0 ] || die "no projects to check (STANDARDS_PROJECTS is empty) — refusing to report a clean fleet"
+# --- projects ----------------------------------------------------------------
+# Row order is the C collation of the names, never the caller's locale's.
+discover_project_names_c_ordered() {
+    local LC_ALL=C s n
+    set +f
+    for s in "$ROOT"/*/docs/STANDARDS.md; do
+        [ -e "$s" ] || continue
+        n=${s%/docs/STANDARDS.md}; n=${n##*/}
+        is_fleet_project_name "$n" && printf '%s\n' "$n"
+    done
+    set -f
+}
+
+projects=()
+if [ "${STANDARDS_PROJECTS+x}" = x ]; then
+    # `read -r -a` splits on whitespace and never pathname-expands: an entry is a name.
+    read -r -a projects <<<"$STANDARDS_PROJECTS"
+    [ "${#projects[@]}" -gt 0 ] || die "no projects to check (STANDARDS_PROJECTS is empty) — refusing to report a clean fleet"
+else
+    while IFS= read -r p; do projects+=("$p"); done < <(discover_project_names_c_ordered)
+    [ "${#projects[@]}" -gt 0 ] || die "no project under $ROOT has docs/STANDARDS.md — refusing to report a clean fleet"
+fi
 
 # --- per project -------------------------------------------------------------
 bad=0; checked=0
@@ -215,12 +238,12 @@ for p in "${projects[@]}"; do
 done
 
 # --- unlisted projects --------------------------------------------------------
-# A repository under ROOT that is not on the list has joined the fleet without
+# A repository under ROOT that is not a project has joined the fleet without
 # joining the check. Row shape and the two exclusions: docs/DECISIONS.md.
 unlisted=()
 while IFS= read -r d; do
     n=${d##*/}
-    case "$n" in *-staging|*-worktrees) continue ;; esac
+    is_fleet_project_name "$n" || continue
     [ -d "$d" ] || continue                 # -type l above: a project dir may be a symlink
     [ -e "$d/.git" ] || continue
     for q in "${projects[@]}"; do [ "$q" = "$n" ] && continue 2; done
@@ -229,7 +252,7 @@ done < <(find "$ROOT" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/nu
 if [ "${#unlisted[@]}" -gt 0 ]; then
     say ""
     for n in "${unlisted[@]}"; do
-        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not in the project list)"
+        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not a project: no docs/STANDARDS.md)"
     done
     bad=$((bad+${#unlisted[@]})); checked=$((checked+${#unlisted[@]}))
 fi
