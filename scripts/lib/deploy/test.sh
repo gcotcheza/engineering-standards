@@ -12,7 +12,7 @@
 set -uo pipefail
 
 [ "$(id -u)" = 0 ] || { printf 'lib test.sh commits through the fleet hook: run it as root (advisor ruling 2026-10-03)\n' >&2; exit 1; }
-[ -z "${LIB_TEST_ROOT_PROBE:-}" ] || { printf 'PAST THE ROOT CHECK\n'; exit 0; }
+[ -z "${LIB_TEST_ROOT_PROBE:-}" ] || { printf 'PAST THE ROOT CHECK\n'; exit 3; }
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${DEPLOY_LIB_DIR:-${SCRIPT_DIR}}"
@@ -300,6 +300,9 @@ contains 'a run that is not root is refused, naming the ruling' "${OUT}" \
     'lib test.sh commits through the fleet hook: run it as root (advisor ruling 2026-10-03)'
 equals 'and the refusal exits' "RC=${RC}" 'RC=1'
 absent 'and nothing past the check runs' "${OUT}" 'PAST THE ROOT CHECK'
+OUT="$(LIB_TEST_ROOT_PROBE=1 bash "${SCRIPT_DIR}/test.sh" 2>&1)"
+RC=$?
+equals 'a leaked probe variable can never pass a gate' "RC=${RC}" 'RC=3'
 
 fixture hook-canary
 CANARY_BEFORE="$(clean_lines)"

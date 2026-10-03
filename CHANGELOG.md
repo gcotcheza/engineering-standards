@@ -11,13 +11,13 @@ keeps its own exit code and reaches its teardown (backlog 268). `gated()` still 
 (backlog 264b), refuses to run unless root, and gains a hook canary: a clean fixture commit and
 the whole suite must add `caller=root … result=clean` lines to the real checker log, and a
 planted random `ghp_` token must be refused, with no commit and the token never printed. 210
-`ok` lines to 221. Red proofs, one saved mutant each: the dirty guard's `return 2` deleted; the
+`ok` lines to 222; the root-check probe exits 3, so a leaked `LIB_TEST_ROOT_PROBE` can never pass a gate. Red proofs, one saved mutant each: the dirty guard's `return 2` deleted; the
 record's `return 0` turned back to 2 under a `set -e` caller; the root check deleted; the planted
 token swapped for plain words. **Re-vendoring needs an app-side change:** scribly, reflection,
 ghiecode and ghie-writes run this suite as the app owner and must run it as root.
 
 `ledger.sh`'s header is re-stamped and the pinned `SUITE_SHA256` becomes
-`2e8cf421b9d1137b7e6a6f6fb155f0057e71cd9edeff76a27f5fa41701ae609c`.
+`fe2c0cebd3dabc63ab36467e937e133da1214f8e4209696ebda5d263f56dfe43`.
 
 ## 2026-10-03 — the after-deploy cleanup keeps a worktree whose ignored `.env*` directory sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **Neither probe term reached `api/.env.d/prod`.** The plain `'.env*'` reaches inside a top-level
