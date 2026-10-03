@@ -1039,6 +1039,18 @@ contains 'an ignored .env.d/prod at the top of a merged clean tree keeps it' "${
     'worktrees removed 0 kept 1 (envfiles)'
 equals 'and the .env.d tree is still on disk' "$(on_disk "${WT}")" 'there'
 
+# A .env* directory below the top (api/.env.d/prod) is reached by neither term above it.
+cleanup_fixture cleanup-envfiles-nested-dir
+mkdir -p "${ROOT}/.git/info" "${WT}/api/.env.d"
+printf '.env*\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}/api/.env.d/prod"
+run_lib "${CLEAN_CALL}"
+contains 'an ignored api/.env.d/prod in a merged clean tree keeps it' "${OUT}" \
+    'worktrees removed 0 kept 1 (envfiles)'
+contains 'and the deploy log names the file inside the nested directory' "$(cat "${LOGFILE}")" \
+    'CLEANUP keep envfiles '"${WT}"' (it carries an ignored api/.env.d/prod)'
+equals 'and the nested .env.d tree is still on disk' "$(on_disk "${WT}")" 'there'
+
 # A vendored package's own .env* is not the app's config: kept on it, every tree would stay.
 cleanup_fixture cleanup-envfiles-vendor
 mkdir -p "${ROOT}/.git/info" "${WT}/vendor/x" "${WT}/api/vendor/y"

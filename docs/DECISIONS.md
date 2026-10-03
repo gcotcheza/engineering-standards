@@ -718,12 +718,13 @@ minus `':(glob,exclude)**/vendor/**'` and `':(glob,exclude)**/node_modules/**'`.
 the same probe printed `api/vendor/x/.envrc` and `node_modules/y/.env`: a vendored package's own env
 file would keep every tree for ever, the failure the `--ignored` reasoning below rejects. The plain
 `'.env*'` stays beside the glob because it alone reaches inside a top-level `.env*` directory: the
-glob printed nothing for an ignored `.env.d/prod`, the plain term printed it. Two shapes are still
-not matched by name. Files inside a `.env*` directory below the top level (`api/.env.d/x`) are not
-listed by either term. A nested repository is not looked inside: an unignored one shows as `?? sub/`
+glob printed nothing for an ignored `.env.d/prod`, the plain term printed it. Neither term lists a
+file inside a `.env*` directory below the top level (`api/.env.d/prod`), so a third,
+`':(glob)**/.env*/**'`, does (card 273). One shape is still not matched by name. A nested
+repository is not looked inside: an unignored one shows as `?? sub/`
 and keeps the tree under `dirty`, and an ignored one is listed by the glob as `sub/` whatever it
 holds, so it keeps the tree under `envfiles`. `fleet-scratch-reap`'s `check_repo` uses the same
-four terms. Root-owned ignored files are not
+five terms once its card-273 packet is installed. Root-owned ignored files are not
 an exception to that: `cleanup_rootfiles` walks the whole tree with `find -uid`, ignored paths
 included, so a tree carrying one is kept under `rootfiles` before any remove is attempted.
 `--ignored` is deliberately not added to the dirty check — the same probe printed

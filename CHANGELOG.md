@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-03 — the after-deploy cleanup keeps a worktree whose ignored `.env*` directory sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
+**Neither probe term reached `api/.env.d/prod`.** The plain `'.env*'` reaches inside a top-level
+`.env.d/` only, and in `':(glob)**/.env*'` the `*` never crosses a `/`, so a merged worktree whose
+ignored env files live in a nested `.env*` directory was removed with them. `cleanup_envfiles` now
+adds `':(glob)**/.env*/**'`; the vendor and node_modules exclusions still apply to it (card 273).
+
+`scripts/lib/deploy/test.sh` gains one fixture and three assertions (207 `ok` lines to 210): an
+ignored `api/.env.d/prod` keeps the tree under `envfiles`, the log names the file, and the tree is
+still on disk. Against the probe without the new term all three go red. The "ls-files exited"
+guard card 273 named as untested is already held by `cleanup-envfiles-unreadable`: with that guard
+line deleted and the header re-stamped, its two assertions go red.
+
+`VERSION` stays `2026-10-02` for the reason the entry below gives. `cleanup.sh`'s header is
+re-stamped, and the pinned `SUITE_SHA256` becomes
+`3cb128c60339d6920641bd4b59e4015292ab8ed4f701a48e7eb6aea10f599467`. `fleet-scratch-reap`'s
+`check_repo` gets the same term through its own install packet, not through this repository.
+
 ## 2026-10-02 — the after-deploy cleanup keeps a worktree whose ignored `.env` sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **`cleanup_envfiles` looked at the top of the tree only.** Its probe was `git ls-files -o -i
 --exclude-standard -- '.env*'`, and a pathspec without magic matches the top level alone, so a
