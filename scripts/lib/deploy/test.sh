@@ -7,7 +7,8 @@
 #
 # It reads no checkout, runs no docker, no gh and no heavy-work. Fixture commits run the
 # real fleet hook (S1); the hook canary reads its log, so the suite runs as root.
-# FAKE_CALLS strings stay single-quoted on purpose: the driver eval's them.
+# FAKE_CALLS strings stay single-quoted on purpose: the driver eval's them. WORK is fixed under
+# /srv/worker-scratch (root 755, exec), never TMPDIR: summary.sh refuses /tmp and /run is noexec.
 # shellcheck disable=SC2016
 set -uo pipefail
 
@@ -45,7 +46,7 @@ matches() {
     if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi
 }
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d -p /srv/worker-scratch deploy-lib-test.XXXXXXXX)" || { printf 'cannot make a work directory under /srv/worker-scratch\n' >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
 
 git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
@@ -86,6 +87,7 @@ D="$(cd -- "$(dirname -- "$0")" && pwd)"
 . "${D}/ledger.sh"
 . "${D}/preflight.sh"
 . "${D}/cleanup.sh"
+printf 'LIBS SOURCED\n'
 ROOT=$DEPLOY_ROOT
 GIT=$DEPLOY_GIT
 GH=$DEPLOY_GH
@@ -230,8 +232,9 @@ run_lib() {
     if [ "${REPO_OVERRIDE:-DEFAULT}" = 'NONE' ]; then
         repoenv=''
     else
-        repoenv="DEPLOY_GH_REPO=${REPO_OVERRIDE:-gcotcheza/fixture}"
+        repoenv="FLEET_DEPLOY_REPO=${REPO_OVERRIDE:-gcotcheza/fixture}"
     fi
+    mergeenv="${MERGE_SHA_ENV:+FLEET_DEPLOY_MERGE_SHA=${MERGE_SHA_ENV}}"
     # Simulates an operator's `export GATE_SUITE_PASSED=1` (or a CI wrapper's) already
     # present in the environment BEFORE driver.sh sources ledger.sh.
     suiteenv="${SUITE_PASSED_ENV:+GATE_SUITE_PASSED=${SUITE_PASSED_ENV}}"
@@ -276,11 +279,12 @@ run_lib() {
         FAKE_DOCKER_RC="${DOCKER_RC-0}" \
         FAKE_DOCKER_DIRTY="${DOCKER_DIRTY-}" \
         ${repoenv} \
+        ${mergeenv} \
         ${suiteenv} \
         ${armedenv} \
         ${succeededenv} \
         "${logenv}" \
-        bash "${CASE}/lib/driver.sh" 2>&1)"
+        bash "${DRIVER_DIR:-${CASE}/lib}/driver.sh" 2>&1)"
     RC=$?
     LOGFILE="$(find "${LOGS}" "${CASE}/logroot" -name '*.log' -printf '%T@ %p\n' 2>/dev/null \
         | sort -rn | head -1 | cut -d' ' -f2-)"
@@ -289,6 +293,8 @@ run_lib() {
     EXTRA=''
     LOG_DIR_UNSET=''
     REPO_OVERRIDE=''
+    MERGE_SHA_ENV=''
+    DRIVER_DIR=''
     SUITE_PASSED_ENV=''
     ARMED_ENV=''
     SUCCEEDED_ENV=''
@@ -316,6 +322,8 @@ GH_FAIL=''
 EXTRA=''
 LOG_DIR_UNSET=''
 REPO_OVERRIDE=''
+MERGE_SHA_ENV=''
+DRIVER_DIR=''
 SUITE_PASSED_ENV=''
 ARMED_ENV=''
 HEAVY_STATUS=''
@@ -379,53 +387,105 @@ for f in summary resolve ledger preflight cleanup; do
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
 done
 
-# --- 1b. -R: the fake rejects a missing repo; gh_repo parses the three URL forms;
-#            DEPLOY_GH_REPO overrides; an unparsable origin refuses before any gh call ---
+# --- 1b. -R: the fake rejects a missing repo; REPO comes from FLEET_DEPLOY_REPO alone, never
+#            from origin; FLEET_DEPLOY_MERGE_SHA must be gh's merge commit (backlog 317) ---
 fixture fake-gh-strict
 run_lib 'out=$("$GH" pr view 73 --json state 2>&1); rc=$?; printf "RC=%s MSG=%s\n" "$rc" "$out" >&3'
 contains 'the fake gh itself rejects a call with no -R' "${OUT}" \
     'RC=1 MSG=gh: no repository resolved (use -R owner/repo)'
 
-fixture gh-repo-scp
-git_at remote set-url origin 'git@github.com:gcotcheza/x.git'
-run_lib 'printf "REPO_IS %s\n" "$(gh_repo)" >&3'
-contains 'scp-style origin (git@github.com:owner/repo.git) parses' "${OUT}" 'REPO_IS gcotcheza/x'
-
-fixture gh-repo-ssh
-git_at remote set-url origin 'ssh://git@github.com/gcotcheza/x.git'
-run_lib 'printf "REPO_IS %s\n" "$(gh_repo)" >&3'
-contains 'ssh:// origin parses' "${OUT}" 'REPO_IS gcotcheza/x'
-
-fixture gh-repo-https-nogit
-git_at remote set-url origin 'https://github.com/gcotcheza/x'
-run_lib 'printf "REPO_IS %s\n" "$(gh_repo)" >&3'
-contains 'https origin without .git parses' "${OUT}" 'REPO_IS gcotcheza/x'
-
-fixture gh-repo-https-git
-git_at remote set-url origin 'https://github.com/gcotcheza/x.git'
-run_lib 'printf "REPO_IS %s\n" "$(gh_repo)" >&3'
-contains 'https origin with .git parses' "${OUT}" 'REPO_IS gcotcheza/x'
-
-fixture gh-repo-resolve-passes-R
+fixture repo-from-env
 run_lib 'resolve'
-contains 'resolve passes -R through to gh' "$(cat "${ARGVFILE}")" '-R gcotcheza/fixture'
-contains 'and still resolves' "${OUT}" \
+contains 'resolve passes FLEET_DEPLOY_REPO to gh as -R' "$(cat "${ARGVFILE}")" '-R gcotcheza/fixture'
+contains 'and resolves' "${OUT}" \
     "RESOLVED #73 head ${HEAD_SHA:0:7} merge ${MERGE_SHA:0:7} is origin/main, trees identical"
 
-fixture gh-repo-override-wins
-REPO_OVERRIDE='gcotcheza/override-wins'
-run_lib 'resolve'
-contains 'DEPLOY_GH_REPO overrides origin (which here is unparsable)' "$(cat "${ARGVFILE}")" \
-    '-R gcotcheza/override-wins'
-contains 'and resolve still succeeds' "${OUT}" \
-    "RESOLVED #73 head ${HEAD_SHA:0:7} merge ${MERGE_SHA:0:7} is origin/main, trees identical"
-
-fixture gh-repo-unparsable
+fixture repo-unset
+git_at config remote.origin.url 'git@github.com:gcotcheza/fixture.git'
 REPO_OVERRIDE='NONE'
 run_lib 'resolve'
-contains 'an unparsable origin is refused before any gh call' "${OUT}" \
-    "REFUSED: origin's URL (${CASE}/origin.git) does not name a GitHub repository; set DEPLOY_GH_REPO."
-absent 'no gh call was made' "$(cat "${ARGVFILE}" 2>/dev/null)" 'pr view'
+contains 'with FLEET_DEPLOY_REPO unset it refuses, though origin names a GitHub repository' "${OUT}" \
+    "REFUSED: FLEET_DEPLOY_REPO is unset: root names the repository, never the checkout's origin. Deploy with: fleet-deploy <app> <PR#>"
+absent 'and gh is never called' "$(cat "${ARGVFILE}" 2>/dev/null)" 'pr view'
+absent 'resolve.sh never reads the origin URL' "$(cat "${LIB_DIR}/resolve.sh")" 'get-url'
+
+fixture repo-malformed
+REPO_OVERRIDE='gcotcheza/a/b'
+run_lib 'resolve'
+contains 'a FLEET_DEPLOY_REPO that is not owner/repo is refused' "${OUT}" \
+    "REFUSED: FLEET_DEPLOY_REPO 'gcotcheza/a/b' is not owner/repo."
+absent 'and gh is never called with it' "$(cat "${ARGVFILE}" 2>/dev/null)" 'pr view'
+
+fixture merge-sha-matches
+MERGE_SHA_ENV="${MERGE_SHA}"
+run_lib 'resolve'
+contains 'FLEET_DEPLOY_MERGE_SHA equal to gh'"'"'s merge commit resolves' "${OUT}" \
+    "RESOLVED #73 head ${HEAD_SHA:0:7} merge ${MERGE_SHA:0:7} is origin/main, trees identical"
+
+fixture merge-sha-differs
+MERGE_SHA_ENV="${HEAD_SHA}"
+run_lib 'resolve'
+contains 'FLEET_DEPLOY_MERGE_SHA other than gh'"'"'s merge commit is refused' "${OUT}" \
+    "REFUSED: gh names merge commit ${MERGE_SHA} for PR #73, not ${HEAD_SHA}, the one fleet-deploy exported scripts/ at."
+absent 'and nothing resolves' "${OUT}" 'RESOLVED #73'
+
+# --- 1c. the self-location guard: root runs no copy anyone else can write (backlog 317) ---
+# relib <dir>: a copy of the libs and the driver in <dir>, made by root.
+relib() { mkdir -p "$1"; cp -p "${CASE}/lib/"*.sh "$1/"; }
+
+fixture src-root-700
+relib "${CASE}/r700/lib"; chmod 700 "${CASE}/r700" "${CASE}/r700/lib"
+DRIVER_DIR="${CASE}/r700/lib"
+run_lib 'say "RAN FROM ROOT 700"'
+contains 'a copy in a root 700 directory runs' "${OUT}" 'RAN FROM ROOT 700'
+
+fixture src-app-owned
+relib "${CASE}/app/lib"; chown -R nobody "${CASE}/app"
+DRIVER_DIR="${CASE}/app/lib"
+run_lib 'say "RAN FROM APP DIR"'
+contains 'a copy the app user owns is refused' "${OUT}" \
+    "REFUSED: ${CASE}/app/lib/driver.sh is not owned by root, so root does not run it. Deploy with: fleet-deploy <app> <PR#>"
+absent 'before anything past the libs runs' "${OUT}" 'LIBS SOURCED'
+equals 'and exits 1' "${RC}" '1'
+
+fixture src-old-command
+mkdir -p "${ROOT}/scripts"; relib "${ROOT}/scripts/lib"; chown -R nobody "${ROOT}"
+DRIVER_DIR="${ROOT}/scripts/lib"
+run_lib 'say "OLD COMMAND RAN"'
+contains 'the old command, the tree'"'"'s own deploy.sh run by root, is refused' "${OUT}" \
+    "REFUSED: ${ROOT}/scripts/lib/driver.sh is not owned by root, so root does not run it. Deploy with: fleet-deploy <app> <PR#>"
+absent 'and nothing of it runs' "${OUT}" 'OLD COMMAND RAN'
+
+fixture src-lib-app-owned
+relib "${CASE}/mixed/lib"; chown nobody "${CASE}/mixed/lib/summary.sh"
+DRIVER_DIR="${CASE}/mixed/lib"
+run_lib 'say "RAN WITH APP LIB"'
+contains 'a root deploy.sh beside a summary.sh the app user owns is refused' "${OUT}" \
+    "REFUSED: ${CASE}/mixed/lib/summary.sh is not owned by root"
+absent 'and nothing past the libs runs' "${OUT}" 'LIBS SOURCED'
+
+fixture src-group-writable
+relib "${CASE}/gw/lib"; chmod 775 "${CASE}/gw"
+DRIVER_DIR="${CASE}/gw/lib"
+run_lib 'say "RAN FROM GROUP DIR"'
+contains 'a copy under a group-writable directory is refused' "${OUT}" \
+    "REFUSED: ${CASE}/gw is writable by group or others, so root does not run it. Deploy with: fleet-deploy <app> <PR#>"
+absent 'before anything past the libs runs' "${OUT}" 'LIBS SOURCED'
+
+fixture src-symlink
+relib "${CASE}/sl/lib"; rm "${CASE}/sl/lib/driver.sh"; ln -s "${CASE}/lib/driver.sh" "${CASE}/sl/lib/driver.sh"
+DRIVER_DIR="${CASE}/sl/lib"
+run_lib 'say "RAN THROUGH A LINK"'
+contains 'a deploy.sh that is a symlink is refused, even to a root file' "${OUT}" \
+    "REFUSED: ${CASE}/sl/lib/driver.sh is a symlink, so root does not run it. Deploy with: fleet-deploy <app> <PR#>"
+
+fixture src-inside-root
+mkdir -p "${ROOT}/scripts"; relib "${ROOT}/scripts/lib"
+DRIVER_DIR="${ROOT}/scripts/lib"
+run_lib 'say "RAN INSIDE ROOT"'
+contains 'a root-owned copy inside ROOT is refused when ROOT is known' "${OUT}" \
+    "REFUSED: ${ROOT}/scripts/lib is at or inside ROOT ${ROOT}, so root does not run it. Deploy with: fleet-deploy <app> <PR#>"
+absent 'and nothing after deploy_log_open runs' "${OUT}" 'RAN INSIDE ROOT'
 
 # --- 2. resolve ----------------------------------------------------------------
 fixture resolved

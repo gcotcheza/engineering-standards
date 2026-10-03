@@ -85,8 +85,10 @@ names only the checkout being deployed: on a first deploy its `scripts/` are not
 so a helper resolved through it exits 127 and the landing gets done by hand instead. A project's
 standards test greps `deploy.sh` for `"$ROOT/scripts/` and fails the gate on a match.
 
-First landing, once per project, from a clone: `DEPLOY_ROOT=/var/www/<app> bash
-<clone>/scripts/deploy.sh <PR#>` — never a hand landing.
+**Root runs a deploy only through `fleet-deploy <app> <PR#>`**, which exports `scripts/` at the merge
+commit from root's own mirror; `summary.sh` refuses a copy anyone but root can write, and `resolve`
+refuses without the `FLEET_DEPLOY_REPO` it sets (`docs/DECISIONS.md`). That is also the first
+landing, once per project — never a hand landing.
 
 **The gate ledger.** The EXIT trap is what records a run, and a trap that fires on a kill sees
 `$?` from the last command that finished, not from the suite. Sourcing `ledger.sh` discards

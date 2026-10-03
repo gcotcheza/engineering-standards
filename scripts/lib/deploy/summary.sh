@@ -1,5 +1,29 @@
-# fleet-deploy-lib 2026-10-03 sha256:d4cdc066388f5217bb81a29bb7cdbbd830bacc95d4d245c452e2a54221c8a7b0
+# fleet-deploy-lib 2026-10-03 sha256:fe581a66d61affabe7914af47d7eb3ca64fcca9f1ff23b36f4ff9b5556d37b1c
 # shellcheck shell=bash
+# Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
+# this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)
+deploy_src_root_only() {
+    local main=${BASH_SOURCE[${#BASH_SOURCE[@]}-1]} f d r
+    DEPLOY_SRC_ERR=''
+    for f in "$main" "${BASH_SOURCE[0]}"; do
+        d=$(cd -P -- "$(dirname -- "$f")" 2>/dev/null && pwd -P) || { DEPLOY_SRC_ERR="cannot find the directory $f runs from"; return 1; }
+        f="${d%/}/$(basename -- "$f")"
+        while :; do
+            [ ! -L "$f" ] || { DEPLOY_SRC_ERR="$f is a symlink"; return 1; }
+            [ "$(stat -L -c %u "$f" 2>/dev/null)" = 0 ] || { DEPLOY_SRC_ERR="$f is not owned by root"; return 1; }
+            (( (8#$(stat -L -c %a "$f" 2>/dev/null || echo 777) & 8#022) == 0 )) || { DEPLOY_SRC_ERR="$f is writable by group or others"; return 1; }
+            [ "$f" != / ] || break
+            f=$(dirname -- "$f")
+        done
+    done
+    [ -n "${1:-}" ] || return 0
+    r=$(cd -P -- "$1" 2>/dev/null && pwd -P) || r=$1
+    d=$(cd -P -- "$(dirname -- "$main")" && pwd -P)
+    case "${d%/}/" in "${r%/}"/*) DEPLOY_SRC_ERR="$d is at or inside ROOT $r"; return 1 ;; esac
+}
+deploy_src_refusal() { printf 'REFUSED: %s, so root does not run it. Deploy with: fleet-deploy <app> <PR#>\n' "$DEPLOY_SRC_ERR" >&2; }
+if ! deploy_src_root_only; then deploy_src_refusal; [[ $- == *i* ]] && return 1; exit 1; fi
+
 # say prints one summary line on stdout and in the log; detail goes to the log alone.
 # The caller sets ROOT, PR, BEFORE and GATED before deploy_log_open opens fd 3, and finish takes MERGE_SHA.
 
@@ -9,6 +33,7 @@ refuse() { say "REFUSED: $*"; exit 1; }
 
 deploy_log_open() {
     local dir
+    deploy_src_root_only "$ROOT" || { deploy_src_refusal; exit 1; }
     dir=${DEPLOY_LOG_DIR:-${DEPLOY_LOG_ROOT:-/root/personal-vps-deploys}/$(basename "$ROOT")}
     mkdir -p "$dir" || { printf 'deploy.sh: cannot write logs to %s\n' "$dir" >&2; exit 1; }
     LOG="$dir/$(date -u +%Y%m%dT%H%M%SZ)-pr$1.log"

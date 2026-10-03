@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-03 sha256:bf6b71a0d4b6153491fb5f942879ed1e27b60c203f35c7b0ebf361d820bc8f6a
+# fleet-deploy-lib 2026-10-03 sha256:fb30dd410d5da08cd4a4feb71d05cebd43c77eff6c450cc12b12ec1bdad1c1b1
 # shellcheck shell=bash
 # resolve <PR#> proves gh says MERGED and the merge commit IS origin/main, then sets
 # GATE_SHA: the commit whose tree deploys, and so the commit that must be gated.
@@ -9,32 +9,13 @@ json_value() {
         | head -1
 }
 
-# gh_repo prints owner/repo from `$GIT remote get-url origin`, understanding
-# git@github.com:owner/repo.git, ssh://git@github.com/owner/repo.git and
-# https://github.com/owner/repo(.git). Anything else: no output, exit 1.
-gh_repo() {
-    local url path
-    url=$($GIT remote get-url origin 2>/dev/null) || return 1
-    case "$url" in
-        git@github.com:*)       path=${url#git@github.com:} ;;
-        ssh://git@github.com/*) path=${url#ssh://git@github.com/} ;;
-        https://github.com/*)   path=${url#https://github.com/} ;;
-        *) return 1 ;;
-    esac
-    path=${path%.git}
-    printf '%s' "$path" | grep -qE '^[^/]+/[^/]+$' || return 1
-    printf '%s\n' "$path"
-}
-
+# REPO is root's to name, never the checkout's origin: fleet-deploy sets FLEET_DEPLOY_REPO, and the
+# merge commit it exported scripts/ at in FLEET_DEPLOY_MERGE_SHA. docs/DECISIONS.md (backlog 317)
 resolve() {
-    local json state tip origin_url diff_rc
-    REPO="${DEPLOY_GH_REPO:-}"
-    if [ -z "$REPO" ]; then
-        REPO="$(gh_repo)" || {
-            origin_url="$($GIT remote get-url origin 2>/dev/null)"
-            refuse "origin's URL (${origin_url}) does not name a GitHub repository; set DEPLOY_GH_REPO."
-        }
-    fi
+    local json state tip diff_rc
+    REPO="${FLEET_DEPLOY_REPO:-}"
+    [ -n "$REPO" ] || refuse "FLEET_DEPLOY_REPO is unset: root names the repository, never the checkout's origin. Deploy with: fleet-deploy <app> <PR#>"
+    [[ $REPO =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]] || refuse "FLEET_DEPLOY_REPO '$REPO' is not owner/repo."
     json=$($GH pr view "$PR" -R "$REPO" --json state,headRefOid,mergeCommit) \
         || refuse "gh could not read PR #$PR."
     detail "$json"
@@ -45,6 +26,7 @@ resolve() {
         || refuse "PR #$PR is ${state:-unreadable}, not MERGED. Only a merged pull request deploys."
     { [ -n "$HEAD_SHA" ] && [ -n "$MERGE_SHA" ]; } \
         || refuse "PR #$PR names no head commit and no merge commit."
+    [ -z "${FLEET_DEPLOY_MERGE_SHA:-}" ] || [ "$MERGE_SHA" = "$FLEET_DEPLOY_MERGE_SHA" ] || refuse "gh names merge commit $MERGE_SHA for PR #$PR, not $FLEET_DEPLOY_MERGE_SHA, the one fleet-deploy exported scripts/ at."
     $GIT fetch origin || refuse "git fetch origin failed; a deploy does not read a stale remote."
     # Both commits are proved readable before any comparison: an unreadable one makes
     # `git diff` exit 128, which is not "the trees differ".
