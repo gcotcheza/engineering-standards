@@ -17,7 +17,7 @@ text moved, so `VERSION` moves with it.
 re-vendors `docs/STANDARDS.md`, and `scripts/fleet-versions.sh` reports every project `STALE` until
 then. The three gates that compare their vendored copy against this host's canonical clone by path
 go red on every branch the moment the canonical clone is updated to this text, and stay red until
-each re-vendors.
+each re-vendors; `ROLLOUT.md` gives the merge order that keeps that window short.
 
 ## 2026-10-03 — a dirty tree writes no gate-ledger row, and the deploy-lib suite proves the hook ran and runs only as root (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **A gate run on uncommitted work no longer leaves a `<sha>-dirty` row.** `gate_ledger_sha`

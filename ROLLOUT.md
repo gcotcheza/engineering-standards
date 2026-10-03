@@ -160,7 +160,7 @@ lives with the owner, in the backlog card this came from.
 
 | Project-side work the clauses create | Projects affected |
 |---|---|
-| S1: checkouts carrying a repo-local `core.hooksPath` aimed anywhere but the fleet hooks directory | not yet measured |
+| S1: checkouts carrying a repo-local `core.hooksPath` aimed anywhere but the fleet hooks directory (a test harness's throwaway repository under the 2026-10-03 exception is not one) | not yet measured |
 | W8: deploy runbooks to audit for a name set in one fenced block and read in another | not yet measured |
 | T5: existing guard suites whose red proof changed the input, to redo by deleting the guard | not yet measured |
 
@@ -217,3 +217,14 @@ them: the library never sees a step.
 | Open work | What is missing | Owner |
 |---|---|---|
 | A step that exits 75 ends the gate with `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exit 75, never `GATE FAILED` | Each adopter's `check.sh`/`ci.sh` still turns a give-up into its ordinary failure banner, which sends someone looking for a failure that never ran. Each takes the convention when it next re-vendors `scripts/lib/deploy/`, where the header comment names it and `docs/DECISIONS.md` carries the full text. | each project, in its own re-vendor PR |
+
+## The 2026-10-03 S1 exception — merge order
+
+**Merge order.** The exception is text, and a project reads it when it re-vendors
+`docs/STANDARDS.md`; no project code changes. Three gates — fineprint's and health-tracker's
+`ci.sh` standards-drift steps and orbit's `scripts/standards-drift.sh` — compare their vendored
+copy against this host's canonical clone by path, so each goes red on every branch the moment
+that clone is pulled to the new text, not when the pull request merges. The order is therefore:
+prepare the three re-vendor branches first, merge this change, pull the canonical clone, then gate
+and merge the three re-vendors back to back. The rest notice nothing until they bump, and
+`scripts/fleet-versions.sh` reports them `STALE` until then.
