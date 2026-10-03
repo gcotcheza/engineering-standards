@@ -256,6 +256,7 @@ run_lib() {
         FAKE_CALLS="$1" \
         EXTRA_DONE="${EXTRA:-}" \
         DEPLOY_ROOT="${ROOT}" \
+        DEPLOY_RECORD_ROOT="${CASE}/records" \
         DEPLOY_GIT="git -C ${ROOT}" \
         DEPLOY_GH="${BIN}/gh" \
         DEPLOY_HEAVY="${BIN}/heavy-work" \
@@ -827,10 +828,16 @@ run_lib 'detail "step 3 composer"; detail "compose: composer failed"; fail_tail 
 contains 'a failed phase says which rc' "${OUT}" 'STEPS 2-8 FAILED rc=1 — the last 20 lines of '
 contains 'and prints the tail of its log' "${OUT}" 'compose: composer failed'
 
+# A deploy's fast-forward, as the deploy's own uid would make it; finish then reads it back as files.
+LAND='MERGE_SHA=$($GIT rev-parse origin/main); $GIT reset -q --hard "$MERGE_SHA"; '
+RECORD_ROWS='$1 == "DONE" || $1 == "ROLLBACK" || $1 == "SEED" { r = $0 } END { printf "%s", r }'
+RECORD_VERDICT='{ v = $2 ~ /^[0-9a-f]{40}$/ && $2 == sha ? 0 : 4; for (i = 3; i <= NF; i++) if (v == 0 && $i == "RED") v = 5 } END { print v + 0 }'
+tripwire_verdict() { awk "${RECORD_ROWS}" "$1" | awk -v sha="$2" "${RECORD_VERDICT}"; }
+
 fixture finish
-run_lib 'GATED=ledger; finish abc1234; printf "NOT REACHED\n" >&3'
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"; printf "NOT REACHED\n" >&3'
 contains 'DONE names what is live, what was, and how it was gated' "${OUT}" \
-    "DONE #73 live abc1234 was ${LIVE_SHORT} gated ledger log "
+    "DONE #73 live ${MERGE_SHA} was ${LIVE_SHORT} gated ledger log "
 contains 'and the paperwork line follows it' "${OUT}" \
     "PAPERWORK PR #73 deployed "
 contains 'the paperwork line ends with where it goes' "${OUT}" '— backlog and handoff'
@@ -838,9 +845,178 @@ absent 'finish ends the deploy' "${OUT}" 'NOT REACHED'
 
 fixture finish-extra
 EXTRA='root-owned 0 drift none'
-run_lib 'GATED="by hand"; finish abc1234'
+run_lib "${LAND}"'GATED="by hand"; finish "$MERGE_SHA"'
 contains 'a project adds its own facts to DONE' "${OUT}" \
-    "DONE #73 live abc1234 was ${LIVE_SHORT} gated by hand root-owned 0 drift none log "
+    "DONE #73 live ${MERGE_SHA} was ${LIVE_SHORT} gated by hand root-owned 0 drift none log "
+
+# --- 6b. root's record ------------------------------------------------------------
+# Each case's record is ${CASE}/records/root.record; the live tripwire's own awk reads it.
+RECORD_UTC='[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z'
+unrecorded() {
+    equals "$1: the exit" "RC=${RC}" 'RC=1'
+    absent "$1: and no DONE line" "${OUT}" 'DONE #73'
+    equals "$1: and no record row" "$(rows "${CASE}/records/root.record")" '0'
+}
+
+fixture record-done
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+equals 'finish appends one row to root'\''s record' "$(rows "${CASE}/records/root.record")" '1'
+matches 'the row is DONE, the full merge sha, the time and the log' "$(cat "${CASE}/records/root.record")" \
+    "^DONE ${MERGE_SHA} ${RECORD_UTC} ${LOGFILE}\$"
+equals 'the live tripwire'\''s awk reads that sha as deployed' "$(tripwire_verdict "${CASE}/records/root.record" "${MERGE_SHA}")" '0'
+equals 'a new record is a 600 file in a 700 directory' \
+    "$(stat -c %u:%a "${CASE}/records/root.record" "${CASE}/records" | tr '\n' ' ')" "$(id -u):600 $(id -u):700 "
+
+fixture record-forged
+run_lib 'runuser -u nobody -- sh -c "echo DONE \#1 live '"${FIXTURE_SIDE_SHA}"'"; '"${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+contains 'an app-uid step can print a DONE row into the log' "$(cat "${LOGFILE}")" "DONE #1 live ${FIXTURE_SIDE_SHA}"
+equals 'and root'\''s record still names the merge commit alone' \
+    "$(awk '{ print $1, $2 }' "${CASE}/records/root.record")" "DONE ${MERGE_SHA}"
+
+fixture record-red
+EXTRA='root-owned 0 RED fpm-not-reloaded'
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+matches 'a RED on DONE reaches the record row' "$(cat "${CASE}/records/root.record")" \
+    "^DONE ${MERGE_SHA} ${RECORD_UTC} ${LOGFILE} RED fpm-not-reloaded\$"
+equals 'and the live tripwire'\''s awk reads it as DONE carrying RED' "$(tripwire_verdict "${CASE}/records/root.record" "${MERGE_SHA}")" '5'
+
+fixture record-not-landed
+run_lib 'MERGE_SHA=$($GIT rev-parse origin/main); GATED=ledger; finish "$MERGE_SHA"'
+contains 'a HEAD that is not the merge commit is refused' "${OUT}" \
+    "REFUSED: ${ROOT}/.git/HEAD reads ${LIVE_SHA}, not ${MERGE_SHA}: root's record ${CASE}/records/root.record is not written."
+unrecorded 'not landed'
+
+fixture record-not-merge
+run_lib "${LAND}"'X=$($GIT rev-parse HEAD^1); $GIT reset -q --hard "$X"; GATED=ledger; finish "$X"'
+contains 'a landed sha that is not the merge commit is refused' "${OUT}" \
+    "REFUSED: finish was handed ${LIVE_SHA}, not the merge commit resolve read from GitHub (${MERGE_SHA})"
+unrecorded 'not the merge commit'
+
+fixture record-short
+run_lib "${LAND}"'GATED=ledger; finish "${MERGE_SHA:0:7}"'
+contains 'a short sha is refused, naming the re-vendor' "${OUT}" \
+    "REFUSED: finish takes the full 40-hex MERGE_SHA since deploy-lib 2026-10-03, and was handed '${MERGE_SHA:0:7}': re-vendoring changes the caller too."
+unrecorded 'short sha'
+run_lib "${LAND}"'GATED=ledger; finish "${MERGE_SHA:0:39}g"'
+contains 'a non-hex sha is refused' "${OUT}" \
+    "REFUSED: finish takes the full 40-hex MERGE_SHA since deploy-lib 2026-10-03, and was handed '${MERGE_SHA:0:39}g'"
+unrecorded 'non-hex sha'
+
+fixture record-no-root
+run_lib "${LAND}"'GATED=ledger; ROOT=""; finish "$MERGE_SHA"'
+contains 'with no ROOT nothing names the record' "${OUT}" 'REFUSED: ROOT is unset, so no record names this project.'
+equals 'no ROOT: the exit' "RC=${RC}" 'RC=1'
+equals 'no ROOT: and nothing is created' "$(find "${CASE}/records" 2>/dev/null | wc -l)" '0'
+
+unsafe() { printf "REFUSED: root's record %s/records/root.record is not a 600 file in a 700 directory" "${CASE}"; }
+fixture record-dir-755
+mkdir -m 755 "${CASE}/records"
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+contains 'a 755 record directory is refused' "${OUT}" "$(unsafe)"
+unrecorded 'dir 755'
+
+fixture record-file-644
+mkdir -m 700 "${CASE}/records"
+: >"${CASE}/records/root.record"
+chmod 644 "${CASE}/records/root.record"
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+contains 'a 644 record file is refused' "${OUT}" "$(unsafe)"
+unrecorded 'file 644'
+
+fixture record-symlink
+mkdir -m 700 "${CASE}/records"
+( umask 077; : >"${CASE}/elsewhere" )
+ln -s "${CASE}/elsewhere" "${CASE}/records/root.record"
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+contains 'a record that is a symlink is refused' "${OUT}" "$(unsafe)"
+unrecorded 'symlink'
+equals 'symlink: and its target takes no row' "$(rows "${CASE}/elsewhere")" '0'
+
+fixture record-detached
+run_lib "${LAND}"'$GIT checkout -q --detach; GATED=ledger; finish "$MERGE_SHA"'
+contains 'a detached HEAD is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'detached HEAD'
+
+fixture record-other-branch
+run_lib "${LAND}"'$GIT checkout -q -b other; GATED=ledger; finish "$MERGE_SHA"'
+contains 'a HEAD on another branch is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'another branch'
+
+# Landed on the test's side, so the case can rearrange .git before the deploy reads it.
+landed_at() { git_at reset -q --hard "${MERGE_SHA}"; }
+
+fixture record-packed
+landed_at
+git_at pack-refs --all
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+equals 'a main that lives only in packed-refs is read' "$(awk '{ print $1, $2 }' "${CASE}/records/root.record")" "DONE ${MERGE_SHA}"
+
+fixture record-packed-wrong
+landed_at
+git_at pack-refs --all
+sed -i "s#^[0-9a-f]* refs/heads/main\$#${LIVE_SHA} refs/heads/main#" "${ROOT}/.git/packed-refs"
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a packed main naming another commit is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads ${LIVE_SHA}, not ${MERGE_SHA}"
+unrecorded 'packed main elsewhere'
+
+fixture record-ref-symlink
+landed_at
+mv "${ROOT}/.git/refs/heads/main" "${CASE}/main-ref"
+ln -s "${CASE}/main-ref" "${ROOT}/.git/refs/heads/main"
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a refs/heads/main that is a symlink is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'main ref symlink'
+
+fixture record-head-symlink
+landed_at
+mv "${ROOT}/.git/HEAD" "${CASE}/HEAD-file"
+ln -s "${CASE}/HEAD-file" "${ROOT}/.git/HEAD"
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a HEAD that is a symlink is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'HEAD symlink'
+
+fixture record-other-owner
+mkdir -m 700 "${CASE}/records"
+( umask 077; : >"${CASE}/records/root.record" )
+chown nobody "${CASE}/records/root.record"
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+contains 'a 600 record owned by another uid is refused' "${OUT}" "$(unsafe)"
+unrecorded 'another owner'
+
+fixture record-live-default
+run_lib 'MERGE_SHA=$($GIT rev-parse origin/main); unset DEPLOY_RECORD_ROOT; GATED=ledger; finish "$MERGE_SHA"'
+contains 'a ROOT outside /var/www/ never defaults to the live record' "${OUT}" \
+    "REFUSED: ROOT ${ROOT} is not under /var/www/ and DEPLOY_RECORD_ROOT is unset: only a live tree writes the live record."
+equals 'live default: the exit' "RC=${RC}" 'RC=1'
+
+fixture record-bad-name
+run_lib "${LAND}"'ROOT="$ROOT/."; GATED=ledger; finish "$MERGE_SHA"'
+contains 'a ROOT whose last part is not a record name is refused' "${OUT}" \
+    "REFUSED: ROOT ${ROOT}/. ends in '.', which is not a record name the live tripwire reads."
+equals 'bad name: the exit' "RC=${RC}" 'RC=1'
+equals 'bad name: and nothing is created' "$(find "${CASE}/records" 2>/dev/null | wc -l)" '0'
+
+fixture record-torn
+mkdir -m 700 "${CASE}/records"
+( umask 077; printf 'DONE %s 2026-10-03T00:00:00Z /torn' "${LIVE_SHA}" >"${CASE}/records/root.record" )
+run_lib "${LAND}"'GATED=ledger; finish "$MERGE_SHA"'
+equals 'a row after a torn last line starts on its own line' "$(tripwire_verdict "${CASE}/records/root.record" "${MERGE_SHA}")" '0'
+
+fixture record-rollback
+run_lib "${LAND}"'( deploy_record_rollback "$MERGE_SHA" runbook-rollback ) >&3 2>&3'
+contains 'a rollback says what it recorded' "${OUT}" "ROLLBACK ${MERGE_SHA} recorded"
+matches 'the ROLLBACK row is the full sha, the time and its source' "$(cat "${CASE}/records/root.record")" \
+    "^ROLLBACK ${MERGE_SHA} ${RECORD_UTC} runbook-rollback\$"
+equals 'and the live tripwire'\''s awk reads that sha as live' "$(tripwire_verdict "${CASE}/records/root.record" "${MERGE_SHA}")" '0'
+
+fixture record-rollback-refused
+run_lib "${LAND}"'( deploy_record_rollback "${MERGE_SHA:0:7}" runbook ) >&3 2>&3; echo "rc=$?" >&3; ( deploy_record_rollback "$MERGE_SHA" "two words" ) >&3 2>&3; echo "rc=$?" >&3; ( deploy_record_rollback "$MERGE_SHA" RED ) >&3 2>&3; echo "rc=$?" >&3'
+contains 'a rollback with a short sha is refused' "${OUT}" \
+    "REFUSED: '${MERGE_SHA:0:7}' is not a full 40-hex sha, and root's record ${CASE}/records/root.record takes nothing less."
+contains 'a rollback whose source is not one word is refused' "${OUT}" 'REFUSED: a ROLLBACK row names its source in one word.'
+contains 'a rollback whose source is RED is refused' "${OUT}" 'REFUSED: RED is not a source: the live tripwire reads it as a RED verdict.'
+equals 'and each refusal returns 1' "$(printf '%s\n' "${OUT}" | grep -c '^rc=1$')" '3'
+equals 'refused rollbacks: no record row' "$(rows "${CASE}/records/root.record")" '0'
 
 # --- 7. the after-deploy cleanup ----------------------------------------------------
 on_disk() { if [ -d "$1" ]; then printf 'there'; else printf 'gone'; fi; }
@@ -866,7 +1042,7 @@ cleanup_fixture() {
 
 # Every cleanup case runs the wiring the projects will use — armed as an EXIT trap under
 # the options their deploy scripts set — so each one also proves the deploy still ends 0.
-CLEAN_CALL='REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234'
+CLEAN_CALL="${LAND}"'REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish "$MERGE_SHA"'
 FAKE_SET="$(printf 'a-lane\n' | sha256sum | cut -d' ' -f1)"
 
 cleanup_fixture cleanup-clean
@@ -988,13 +1164,13 @@ equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 # each one covers for the other; ROOT is moved here so one case can fail one of them.
 cleanup_fixture cleanup-first-block-excluded
 gh_json main main
-run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${CASE}/not-the-checkout; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${CASE}/not-the-checkout; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; exit 0"
 contains 'the first worktree git lists is never a candidate' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 0 (none)'
 equals 'and the checkout is still on disk' "$(on_disk "${ROOT}")" 'there'
 
 cleanup_fixture cleanup-root-path-excluded
-run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${WT}; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${WT}; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; exit 0"
 contains 'the worktree at the deployed path is never a candidate' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 0 (none)'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
@@ -1003,7 +1179,7 @@ cleanup_fixture cleanup-worktree-list-unreadable
 mkdir -p "${CASE}/shim"
 printf '#!/bin/sh\ncase " $* " in *" worktree "*) exit 3 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
 chmod 0755 "${CASE}/shim/git"
-run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; ${LAND}finish \"\$MERGE_SHA\""
 contains 'a worktree list that fails says so rather than reading as no worktrees' "${OUT}" \
     'CLEANUP #73 worktrees not listed (worktree list exited 3)'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
@@ -1014,7 +1190,7 @@ cleanup_fixture cleanup-head-unlisted
 mkdir -p "${CASE}/shim"
 printf '#!/bin/sh\ncase " $* " in *" worktree list "*) git "$@" | grep -v "^HEAD " ; exit 0 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
 chmod 0755 "${CASE}/shim/git"
-run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234"
+run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/shim/git -C ${ROOT}\"; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; ${LAND}finish \"\$MERGE_SHA\""
 contains 'a worktree listed with no HEAD line is kept on doubt, not judged' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 1 (headInMain)'
 equals 'and that worktree is still on disk' "$(on_disk "${WT}")" 'there'
@@ -1026,7 +1202,7 @@ run_lib "${CLEAN_CALL}"
 contains 'a reaper that errors is loud' "${OUT}" \
     'CLEANUP #73 scratch: reap exited 2 on its read-only run; no lane was reaped and the deploy is unchanged.'
 contains 'and the summary says no lane was reaped' "${OUT}" 'scratch not reaped (dry run exited 2)'
-contains 'and the deploy still reports DONE' "${OUT}" 'DONE #73 live abc1234'
+contains 'and the deploy still reports DONE' "${OUT}" "DONE #73 live ${MERGE_SHA}"
 equals 'and the deploy exit code is unchanged' "${RC}" '0'
 
 cleanup_fixture cleanup-apply-expect
@@ -1228,7 +1404,7 @@ equals 'an unset PR leaves the worktree on disk' "$(on_disk "${WT}")" 'there'
 equals 'and an unset PR under set -u still ends the deploy 0' "${RC}" '0'
 
 cleanup_fixture cleanup-no-repo
-run_lib 'set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish abc1234'
+run_lib "${LAND}"'set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; finish "$MERGE_SHA"'
 contains 'with no repository nothing is read and nothing is removed' "${OUT}" \
     'CLEANUP #73 did not run: REPO names no repository, so no pull request could be read.'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
