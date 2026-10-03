@@ -44,7 +44,13 @@ matches() {
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-git_at() { git -C "$ROOT" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@example.invalid "$@"; }
+git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
+
+# S1: fixture commits go through the real fleet hook. The bracketed letters keep this line off its own list.
+HOOK_BYPASS='--no[-]verify|core[.]hooks[P]ath|HUSK[Y]=0|GIT_CONFIG_(GLOBA[L]|SYSTE[M]|NOSYSTE[M])|HOM[E]=[^[:space:]]*[[:space:]]+(\S+/)?git([[:space:]]|$)|(commi[t]|merg[e])[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:]]|$)'
+BYPASSES="$(grep -nE -- "${HOOK_BYPASS}" "${BASH_SOURCE[0]}")"
+case $? in 0|1) ;; *) fail "the hook-bypass scan could not read ${BASH_SOURCE[0]}" ;; esac
+absent 'no fixture skips the fleet hook (S1)' "${BYPASSES}" ':'
 
 write_driver() {
     mkdir -p "${CASE}/lib"
@@ -127,38 +133,58 @@ SH
 
 # A checkout on L, origin/main on the merge M of the pull request head H. Nothing
 # here is a real checkout: every path is under mktemp -d.
+# Each case copies a repository built once per kind, so a run commits through the fleet hook
+# a handful of times, not once per case — see docs/DECISIONS.md.
+fixture_template() {
+    local ROOT="${WORK}/.template-$1"
+    [ -d "${ROOT}" ] && return 0
+    mkdir -p "${ROOT}/app"
+    git init -q -b main "${ROOT}"
+    printf 'base\n' >"${ROOT}/app/base.txt"
+    git_at add app/base.txt
+    git_at commit -q -m base
+
+    git_at checkout -q -b pr
+    printf 'feature\n' >"${ROOT}/app/feature.txt"
+    git_at add app/feature.txt
+    git_at commit -q -m feature
+
+    git_at checkout -q main
+    if [ "$1" = 'trees-differ' ]; then
+        git_at merge -q --no-ff --no-commit pr >/dev/null 2>&1
+        printf 'smuggled\n' >"${ROOT}/app/smuggled.txt"
+        git_at add app/smuggled.txt
+        git_at commit -q -m merge
+    else
+        git_at merge -q --no-ff -m merge pr
+    fi
+
+    git_at checkout -q -b side main^1
+    printf 'side\n' >"${ROOT}/app/side.txt"
+    git_at add app/side.txt
+    git_at commit -q -m side
+    git_at update-ref refs/fixture/side HEAD
+    git_at checkout -q main
+    git_at branch -q -D side
+}
+
 fixture() {
     CASE="${WORK}/$1"
     ROOT="${CASE}/root"
     BIN="${CASE}/bin"
     LEDGER="${CASE}/ledger"
     LOGS="${CASE}/logs"
-    mkdir -p "${ROOT}/app" "${BIN}" "${LOGS}"
+    mkdir -p "${BIN}" "${LOGS}"
     : >"${LEDGER}"
 
-    git init -q -b main "${ROOT}"
-    printf 'base\n' >"${ROOT}/app/base.txt"
-    git_at add app/base.txt
-    git_at commit -q --no-verify -m base
-    LIVE_SHA="$(git_at rev-parse HEAD)"
-    LIVE_SHORT="$(git_at rev-parse --short HEAD)"
-
-    git_at checkout -q -b pr
-    printf 'feature\n' >"${ROOT}/app/feature.txt"
-    git_at add app/feature.txt
-    git_at commit -q --no-verify -m feature
-    HEAD_SHA="$(git_at rev-parse HEAD)"
-
-    git_at checkout -q main
-    if [ "${2:-}" = 'trees-differ' ]; then
-        git_at merge -q --no-ff --no-commit pr >/dev/null 2>&1
-        printf 'smuggled\n' >"${ROOT}/app/smuggled.txt"
-        git_at add app/smuggled.txt
-        git_at commit -q --no-verify -m merge
-    else
-        git_at merge -q --no-ff --no-verify -m merge pr
-    fi
-    MERGE_SHA="$(git_at rev-parse HEAD)"
+    fixture_template "${2:-plain}"
+    cp -a "${WORK}/.template-${2:-plain}" "${ROOT}"
+    LIVE_SHA="$(git_at rev-parse main^1)"
+    LIVE_SHORT="$(git_at rev-parse --short main^1)"
+    HEAD_SHA="$(git_at rev-parse pr)"
+    MERGE_SHA="$(git_at rev-parse main)"
+    FIXTURE_SIDE_SHA="$(git_at rev-parse refs/fixture/side)"
+    git_at update-ref -d refs/fixture/side
 
     git clone -q --bare "${ROOT}" "${CASE}/origin.git"
     git_at remote add origin "${CASE}/origin.git"
@@ -386,7 +412,7 @@ absent 'and no commit is gated on the strength of it' "${OUT}" 'RESOLVED #73'
 
 fixture main-moved
 git_at checkout -q -b later "${MERGE_SHA}"
-git_at commit -q --no-verify --allow-empty -m later
+git_at commit -q --allow-empty -m later
 git_at push -q origin later:main
 git_at checkout -q main
 run_lib 'resolve'
@@ -631,8 +657,8 @@ matches 'and it is written as a failure' "$(tail -1 "${WRITTEN}")" \
 # clear a tree no step ever read.
 fixture ledger-head-moved
 WRITTEN="${CASE}/written"
-FIXGIT="git -C ${ROOT} -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@example.invalid"
-run_lib "$(armed "printf 'late\n' >${ROOT}/app/late.txt; ${FIXGIT} add app/late.txt; ${FIXGIT} commit -q --no-verify -m late; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3")"
+FIXGIT="git -C ${ROOT} -c user.name=t -c user.email=t@example.invalid"
+run_lib "$(armed "printf 'late\n' >${ROOT}/app/late.txt; ${FIXGIT} add app/late.txt; ${FIXGIT} commit -q -m late; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3")"
 LATE_SHA="$(git_at rev-parse HEAD)"
 contains 'a commit landing mid-run is refused, naming both commits' "${OUT}" \
     "gate-ledger: HEAD is ${LATE_SHA} but the run began at ${LIVE_SHA}, so the ci run (rc=0) is NOT recorded"
@@ -755,12 +781,8 @@ cleanup_fixture() {
     fixture "$1"
     WT="${CASE}/wt-pr"
     git_at worktree add -q "${WT}" pr
-    git_at checkout -q -b side "${LIVE_SHA}"
-    printf 'side\n' >"${ROOT}/app/side.txt"
-    git_at add app/side.txt
-    git_at commit -q --no-verify -m side
-    SIDE_SHA="$(git_at rev-parse HEAD)"
-    git_at checkout -q main
+    git_at branch -q side "${FIXTURE_SIDE_SHA}"
+    SIDE_SHA="${FIXTURE_SIDE_SHA}"
     mkdir -p "${CASE}/proc/1"
     ln -s "${CASE}" "${CASE}/proc/1/cwd"
     gh_json main pr

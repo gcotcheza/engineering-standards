@@ -899,3 +899,21 @@ and a refusal is never routed around.
 
 **The option not taken:** letting any green pull request merge itself. The adversarial review in
 W2 is what a gate cannot do, and every other author has a builder whose diff needs a second reader.
+
+## The deploy library's fixtures commit through the fleet hook, from one template per kind (2026-10-03)
+
+**No fixture skips the hook (S1, backlog 265; advisor ruling, cards 277/274).** `test.sh` used to
+build every case's repository with `-c core.hooksPath=/dev/null` and `--no-verify`. Both are gone,
+with no environment seam, test mode or carve-out in the hook: fixture content is plain text the
+real hook passes. A scan at the top of the suite fails it on any hook-bypass form in its own text,
+so the next fixture cannot quietly put one back.
+
+**Built once per kind, then copied.** Committing through the hook per case meant 245 calls to the
+personal-data checker per run and took the suite from 14 s to 145 s. The checker caps every caller
+but root at 30 calls a minute, and ghiecode's gate runs this suite as its tree's owner, so a
+re-vendored copy would have been refused by the cap. `fixture_template` builds the plain and
+`trees-differ` repositories once, the `side` commit included under `refs/fixture/side`, and each
+case copies one: 8 checker calls per run, 15 s.
+
+**The option not taken:** `git commit-tree` for the fixture commits. It needs no flag, and it also
+never runs a hook, so it is the same bypass under another name.
