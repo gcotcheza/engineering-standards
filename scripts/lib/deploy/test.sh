@@ -11,6 +11,9 @@
 # shellcheck disable=SC2016
 set -uo pipefail
 
+[ "$(id -u)" = 0 ] || { printf 'lib test.sh commits through the fleet hook: run it as root (advisor ruling 2026-10-03)\n' >&2; exit 1; }
+[ -z "${LIB_TEST_ROOT_PROBE:-}" ] || { printf 'PAST THE ROOT CHECK\n'; exit 0; }
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${DEPLOY_LIB_DIR:-${SCRIPT_DIR}}"
 PR_NUMBER=73
@@ -286,6 +289,17 @@ grew() {
     esac
 }
 SUITE_CLEAN_BEFORE="$(clean_lines)"
+
+# App users are capped at 30 hook calls a minute and this suite makes about 250.
+mkdir -p "${WORK}/notroot"
+printf '#!/bin/sh\necho 1000\n' >"${WORK}/notroot/id"
+chmod 0755 "${WORK}/notroot/id"
+OUT="$(PATH="${WORK}/notroot:${PATH}" LIB_TEST_ROOT_PROBE=1 bash "${SCRIPT_DIR}/test.sh" 2>&1)"
+RC=$?
+contains 'a run that is not root is refused, naming the ruling' "${OUT}" \
+    'lib test.sh commits through the fleet hook: run it as root (advisor ruling 2026-10-03)'
+equals 'and the refusal exits' "RC=${RC}" 'RC=1'
+absent 'and nothing past the check runs' "${OUT}" 'PAST THE ROOT CHECK'
 
 fixture hook-canary
 CANARY_BEFORE="$(clean_lines)"
@@ -625,10 +639,10 @@ matches 'the ledger line is <sha> <kind> <utc> <rc> <log>' "$(tail -1 "${WRITTEN
 fixture ledger-writer-dirty
 WRITTEN="${CASE}/written"
 printf 'uncommitted\n' >>"${ROOT}/app/base.txt"
-run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 1 /tmp/e2e.log >&3 2>&3; printf 'RC=%s\n' \$? >&3")"
+run_lib "$(armed "set -e; GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 1 /tmp/e2e.log >&3 2>&3; printf 'TEARDOWN RAN\n' >&3")"
 contains 'a dirty tree is refused in the words of the rule' "${OUT}" \
     'gate-ledger: dirty tree: no ledger row — commit, then gate the tip'
-contains 'and the refusal is non-zero' "${OUT}" 'RC=2'
+contains 'and a set -e caller still reaches its teardown' "${OUT}" 'TEARDOWN RAN'
 equals 'and no row is written, dirty-stamped or not' "$(rows "${WRITTEN}")" '0'
 
 fixture ledger-unwritable

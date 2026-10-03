@@ -3,19 +3,21 @@
 ## 2026-10-03 — a dirty tree writes no gate-ledger row, and the deploy-lib suite commits through the real hook (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **A gate run on uncommitted work no longer leaves a `<sha>-dirty` row.** `gate_ledger_sha`
 refuses with `gate-ledger: dirty tree: no ledger row — commit, then gate the tip` and exit 2;
-`gate_ledger_record` returns 2 and writes nothing (backlog 268). The only caller in this
-repository, `check.sh`'s EXIT trap, exits with the suite's own code, so its verdict is
-unchanged. `gated()` still ignores `-dirty` rows already in a ledger.
+`gate_ledger_record` prints it, writes nothing and returns 0, so a `set -e` caller's EXIT trap
+keeps its own exit code and reaches its teardown (backlog 268). `gated()` still ignores
+`-dirty` rows already in a ledger. App tests that assert a `-dirty` row change at re-vendor.
 
 `scripts/lib/deploy/test.sh` drops `core.hooksPath=/dev/null` and every `--no-verify`
-(backlog 264b) and gains a hook canary: a clean fixture commit and the whole suite must add
-`caller=root … result=clean` lines to the real checker log, and a planted random `ghp_` token
-must be refused, with no commit and the token never printed. 210 `ok` lines to 218. Red
-proofs: with `return 2` deleted from the dirty guard (header re-stamped) two assertions go
-red; with the planted token swapped for plain words three go red.
+(backlog 264b), refuses to run unless root, and gains a hook canary: a clean fixture commit and
+the whole suite must add `caller=root … result=clean` lines to the real checker log, and a
+planted random `ghp_` token must be refused, with no commit and the token never printed. 210
+`ok` lines to 221. Red proofs, one saved mutant each: the dirty guard's `return 2` deleted; the
+record's `return 0` turned back to 2 under a `set -e` caller; the root check deleted; the planted
+token swapped for plain words. **Re-vendoring needs an app-side change:** scribly, reflection,
+ghiecode and ghie-writes run this suite as the app owner and must run it as root.
 
 `ledger.sh`'s header is re-stamped and the pinned `SUITE_SHA256` becomes
-`ec574b3779dcb36d3a500d587196f7312ccad79f1a05811873b52cf2c41ac2b7`.
+`2e8cf421b9d1137b7e6a6f6fb155f0057e71cd9edeff76a27f5fa41701ae609c`.
 
 ## 2026-10-03 — the after-deploy cleanup keeps a worktree whose ignored `.env*` directory sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **Neither probe term reached `api/.env.d/prod`.** The plain `'.env*'` reaches inside a top-level

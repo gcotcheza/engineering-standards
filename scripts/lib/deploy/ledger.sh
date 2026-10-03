@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-02 sha256:8809d4f8267f21fec74c0ae2ffaf9a6822c178a7f3dd98abaaf3a19e734ad9ef
+# fleet-deploy-lib 2026-10-02 sha256:8110d5338fab78f646b6741616a7f5a49c2c912d65e5740a2019f7354c1c337a
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it is in there green —
@@ -37,7 +37,7 @@ gate_ledger_sha() {
 }
 
 gate_ledger_record() {
-    local kind=$1 rc=$2 log=${3:--} file dir sha
+    local kind=$1 rc=$2 log=${3:--} file dir sha shrc=0
     if [ "${GATE_ARMED:-0}" != 1 ]; then
         printf 'gate-ledger: gate_ledger_arm was never called, so the %s run (rc=%s) is NOT recorded\n' "$kind" "$rc" >&2
         return 0
@@ -53,10 +53,10 @@ gate_ledger_record() {
     file=${GATE_LEDGER:-/var/lib/fleet/gate-ledger}
     dir=$(dirname "$file")
 
-    sha=$(gate_ledger_sha)
-    case $? in
+    sha=$(gate_ledger_sha) || shrc=$?
+    case $shrc in
         0) ;;
-        2) return 2 ;;
+        2) return 0 ;;
         *)
             printf 'gate-ledger: git could not name HEAD, so the %s run (rc=%s) is NOT recorded\n' "$kind" "$rc" >&2
             return 0
