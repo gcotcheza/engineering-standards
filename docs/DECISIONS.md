@@ -1081,3 +1081,39 @@ still runs on its own checks; the REFUSED line and the exit code are what say no
 runs on the host as root; with `DEPLOY_RECORD_ROOT` unset, a fake `ROOT` outside `/var/www/` is refused
 rather than allowed to append to `/var/lib/fleet/deploy-on-merge`. The record's name is held to the
 tripwire's own pattern, so a `ROOT` of `/` or `…/.` cannot name a file the tripwire never reads.
+
+## Root runs a deploy only from fleet-deploy's export of root's own mirror (2026-10-03)
+
+**The attack route.** Every runbook ran `cd /var/www/<app> && scripts/deploy.sh` as root, and that
+file and the vendored lib are owned by the app user. Anything that runs as the app user — a web
+exploit, a composer or npm script — could edit them and be root at the next deploy, forging rows in
+root's deploy record on the way (backlog 317). A deploy script root runs must be one the app user
+cannot write, and the sha it was taken at must come from GitHub, not from the app's `.git`.
+
+**The route that closes it.** `/usr/local/sbin/fleet-deploy <app> <PR#>` (a fleet install packet, not
+this repo) asks root's `gh` for the merge commit, fetches `main` into `/var/lib/fleet/deploy-src/<app>.git`
+(root 700), refuses unless the merge is in `main`, exports every blob under `scripts/` at that commit
+into a root 700 run directory, and runs `deploy.sh` from there with `FLEET_DEPLOY_REPO` and
+`FLEET_DEPLOY_MERGE_SHA` set and nothing else from the caller's environment.
+
+**What the lib does about it.** `summary.sh`, the first file every `deploy.sh` sources, refuses when
+the running `deploy.sh` or `summary.sh` itself, or any directory above either up to `/`, is a
+symlink, not root's, or writable by group or others — and, once `deploy_log_open` knows `ROOT`, when
+`deploy.sh` sits at or inside it. The check is not an option: there is no variable that turns it off,
+because a switch the deploy reads from its environment is a switch the next operator flips for
+convenience. `stat -L` is used so the explicit `-L` test is the one that refuses a link; without it
+a link's own mode 777 refuses it too, and the `-L` line could be deleted with nothing going red.
+`resolve` takes `REPO` from `FLEET_DEPLOY_REPO` only. The origin URL lives in the app-owned
+`.git/config`, so `gh_repo` and the `DEPLOY_GH_REPO` override are gone; with the variable unset the
+deploy refuses and names `fleet-deploy`. When `FLEET_DEPLOY_MERGE_SHA` is set, gh's merge commit
+must equal it, so the export and the deploy cannot be about two different commits.
+
+**Rejected.** Hashing the lib before sourcing it: the expected hash would have to live somewhere the
+app user cannot write, which is this design again. A per-app copy of `deploy.sh` installed by hand:
+it drifts from what each repository merges. A refusal by path (`/var/www/*`): it misses a copy in any
+other app-writable place, where an ownership walk does not.
+
+**The suite.** Every driver now runs from `${TMPDIR:-/run}`, because `/tmp` is writable by everyone
+and the guard refuses it; the suite therefore needs a root-only `TMPDIR`, which `/run` is by default.
+The guard cases make their copies for real — app-owned with `chown nobody`, group-writable, a symlink,
+inside `ROOT` — and the old command, the tree's own copy run by root, is one of them.

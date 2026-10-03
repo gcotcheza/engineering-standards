@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-10-03 — root runs a deploy only from `fleet-deploy`'s export: the lib refuses any other copy, and `resolve` takes the repository from root (deploy-lib VERSION 2026-10-03, amended; the standard is unchanged)
+**`summary.sh` refuses to run from anywhere the app user could write** (backlog 317). When it is
+sourced, and again in `deploy_log_open` once `ROOT` is set, it walks the running `deploy.sh`,
+`summary.sh` itself and every directory above each up to `/`: a symlink, an owner other than root,
+or a group/other write bit refuses with `REFUSED: <path> is …, so root does not run it. Deploy with:
+fleet-deploy <app> <PR#>` and exit 1, before anything past the libs runs; so does a `deploy.sh` at or
+inside `ROOT`. Nothing turns it off. `fleet-deploy <app> <PR#>` (fleet install packet 317, root's
+tool) exports `scripts/` at the merge commit out of root's own mirror into a root 700 directory, which
+passes. **`resolve` takes `REPO` from `FLEET_DEPLOY_REPO` only** (`owner/repo`), never from the
+checkout's origin URL: unset, it refuses and names `fleet-deploy`. `gh_repo` and `DEPLOY_GH_REPO` are
+removed. When `FLEET_DEPLOY_MERGE_SHA` is set, gh's merge commit must equal it. The origin/main ==
+merge check stays. The suite's drivers run from `${TMPDIR:-/run}`, which must be root's alone; it
+proves the guard on real copies (app-owned, group-writable, a symlink, inside `ROOT`, and the old
+`cd /var/www/<app> && scripts/deploy.sh` shape). Red proofs, one saved mutant per guard line: the
+symlink, owner and mode tests, the call at source time, the call in `deploy_log_open`, the inside-`ROOT`
+test, and `resolve`'s unset, malformed and merge-sha refusals. `summary.sh` and `resolve.sh` are
+re-stamped.
+
+**Caller changes the re-vendor round carries, per project** (each in the same PR as the re-vendor):
+- every runbook: the one deploy command becomes `fleet-deploy <app> <PR#>` (with `--gated-by-hand`
+  where the runbook passes it); `cd /var/www/<app> && scripts/deploy.sh` and every copy run from a
+  worktree or scratch lane now refuse, so those lines go: orbit `deploy.md:36`, kidsquest `:114`,
+  health-tracker `:48`. health-tracker's `systemd-run … /var/www/health-tracker/scripts/deploy.sh <N>`
+  (`:19-21`) runs `fleet-deploy health-tracker <N>` instead; ghie-writes `:13` likewise.
+- every runbook's rollback block that sources the lib for `deploy_record_rollback`: source
+  `summary.sh` from a root 700 copy taken out of root's mirror (`/var/lib/fleet/deploy-src/<app>.git`),
+  never from the tree, which now refuses.
+- every `scripts/deploy-test.sh`: `DEPLOY_GH_REPO=` becomes `FLEET_DEPLOY_REPO=`, and the copy it runs
+  sits under a root-only directory (not `/tmp`, not the app's tree).
+- orbit `deploy.sh:82` reads `repo=${DEPLOY_GH_REPO:-$(gh_repo)}`: it becomes `repo=$FLEET_DEPLOY_REPO`.
+- fineprint `deploy.sh:46` and health-tracker `:109` run `docs-only.sh` through `$ROOT`, which is the
+  tree's copy: they reach it through the script's own directory, as memento, orbit and kidsquest do.
+- health-tracker `:154-155` pipes `git show origin/main:scripts/gate-row.sh` out of the app's `.git`
+  into root's bash: it runs `"$(dirname "$0")/gate-row.sh"` from the export instead. Its `seam_scan`
+  walks `${!DEPLOY_@}` only, so `FLEET_DEPLOY_*` is not refused; `DEPLOY_GH_REPO` leaves its lib-seam
+  list and `deploy.md:133`.
+- ghie-writes' timer path is fleet-deploy-on-merge, which (packet 317) passes `FLEET_DEPLOY_REPO`; it
+  exports only `deploy.sh` and `lib/deploy/`, so a project whose `deploy.sh` runs another `scripts/*.sh`
+  cannot be enabled there until that export widens.
+- ghiecode, scribly, reflection, kidsquest, memento: the runbook line and `deploy-test.sh` only.
+- every gate that runs this suite: `TMPDIR` unset or root-only; `/tmp` turns every driver case red.
+
 ## 2026-10-03 — `finish` writes root's deploy record, and takes only the full merge sha (deploy-lib VERSION 2026-10-03; the standard is unchanged)
 **`finish` appends `DONE <full MERGE_SHA> <utc> <log>` to `${DEPLOY_RECORD_ROOT:-/var/lib/fleet/deploy-on-merge}/<basename ROOT>.record`
 by path, before it prints DONE** (backlog 280). The live tripwire reads that file before any deploy
