@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-03 — S1: a test harness may drive git through a candidate hook in a throwaway repository it made (VERSION 2026-10-03)
+**Ghie's approval of 2026-10-03, written into S1 as one sentence with a pointer.** S1 listed every
+repo-local `core.hooksPath` as a finding, whatever the diff held. A `pre-merge-commit` or
+`pre-applypatch` hook can only be proved by running `git merge` or `git am` through it, so the rule
+left installing an untested guard live as the only way to see one run. The exception covers a test
+harness that points a repo-local `core.hooksPath` at a sha-checked, hook-ON candidate copy of the
+fleet guard, inside a repository the test created, fills with fixtures, never gives a push remote
+and deletes on every exit, and that ends by proving the real trees', the global and system
+`hooksPath` and the fleet hooks directory byte-unchanged. The seven conditions, (a) to (g), are in
+`docs/DECISIONS.md`; missing one puts the harness back under the rule. Anything that points hooks
+away from a guard stays an absolute finding. First use: fleet packet 284+285 (orbit). The standards
+text moved, so `VERSION` moves with it.
+
+**What it means for the projects.** No project code changes; each takes the text when it next
+re-vendors `docs/STANDARDS.md`, and `scripts/fleet-versions.sh` reports every project `STALE` until
+then. The three gates that compare their vendored copy against this host's canonical clone by path
+go red on every branch the moment the canonical clone is updated to this text, and stay red until
+each re-vendors.
+
 ## 2026-10-03 — a dirty tree writes no gate-ledger row, and the deploy-lib suite proves the hook ran and runs only as root (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **A gate run on uncommitted work no longer leaves a `<sha>-dirty` row.** `gate_ledger_sha`
 refuses with `gate-ledger: dirty tree: no ledger row — commit, then gate the tip` and exit 2;

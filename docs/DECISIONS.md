@@ -952,3 +952,36 @@ never goes hooks-off. Its test probe exits 3, never 0, so a leaked `LIB_TEST_ROO
 pass a gate. This supersedes the entry below's owner-run allowance: scribly and reflection (via
 `as_owner`), ghiecode and ghie-writes (whole gate under `runuser`) move the lib-suite step to
 root at re-vendor.
+
+## S1 lets a test harness drive git through a candidate hook, in a repository it made and deletes (2026-10-03)
+
+**Ghie's approval, 2026-10-03 (advisor + personal-vps).** A merge or `am` hook can only be proved
+by running git through it: `pre-merge-commit` fires on `git merge`, `pre-applypatch` on `git am`,
+and nothing short of a real merge or `am` invokes either. Without this exception the only way to see such a hook
+run is to install it live, untested, as the guard every commit on the box passes through. The
+first use is fleet packet 284+285 (orbit), the `pre-merge-commit` and `pre-applypatch` dispatchers.
+
+**Allowed only when all seven hold:**
+- (a) the repository is one the test created itself in a scratch directory, and a trap deletes it
+  on every exit;
+- (b) `core.hooksPath` points only at candidate copies of the fleet guard: a hook-ON path, a
+  directory that contains the guard — never `/dev/null` and never an empty directory;
+- (c) the repository holds fixture content only and has no push remote;
+- (d) the packet's own `DECISIONS` names this exception;
+- (e) the setting is repo-local, written inside that test-created repository: never `--global` or
+  `--system`, never a `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` redirection, never
+  `-c core.hooksPath=` on a command that touches a real tree;
+- (f) the candidate directory is sha-checked against the packet's `SHA256SUMS` before use, and the
+  harness asserts it is hook-ON;
+- (g) the harness's last step proves three things byte-unchanged: the real trees' repo-local
+  `hooksPath` (read from `/var/www/*/.git/config` with plain text tools, never git as root), the
+  global and system `hooksPath`, and the fleet hooks directory.
+
+**Everything else stays as it was.** Anything that points hooks away from a guard is an absolute
+finding, in a fixture or anywhere else. Every other repo-local `core.hooksPath` is a finding exactly
+as before, whatever the diff held; a harness that misses any one condition is not under this
+exception at all.
+
+**The option not taken:** installing the candidate hook live and watching the next real merge.
+That tests the guard on production work, and a broken dispatcher would either refuse every merge
+on the box or, worse, pass them all in silence.
