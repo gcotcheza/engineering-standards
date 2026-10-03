@@ -1011,7 +1011,7 @@ stays an S1 finding.
 That tests the guard on production work, and a broken dispatcher would either refuse every merge
 on the box or, worse, pass them all in silence.
 
-## The fleet check discovers its projects, and `docs/STANDARDS.md` is what joins one (2026-09-27)
+## The fleet check discovers its projects, and `docs/STANDARDS.md` is what joins one (2026-10-03)
 
 The list of ten project names lived in the script, so joining the fleet meant two edits in two
 repositories and a pull request nobody thinks of: vendor the standard, then come back here and
@@ -1035,10 +1035,10 @@ that loop alone.
 `*-staging` and `*-worktrees` are excluded on **both** sides — discovery and the UNLISTED row —
 through one helper, `is_fleet_project_name`, because two copies of that pattern are two things to
 keep in step and the first version of this change already had them disagree. A deployed staging
-checkout mirrors the files of the project it deploys: `ghie-writes-staging` and
-`health-tracker-staging` will carry `docs/STANDARDS.md` from their next `git pull`, and without
-the exclusion they would join the fleet as projects of their own and report STALE on their
-deploying project's schedule — a watchdog failure for a directory nobody ever adopted.
+checkout mirrors the files of the project it deploys (this box ran two when the change was first
+written, and none on the day it merged): once it pulls a vendored `docs/STANDARDS.md`, it would
+join the fleet as a project of its own without the exclusion and report STALE on its deploying
+project's schedule — a watchdog failure for a directory nobody ever adopted.
 
 Discovery cannot report a project as un-adopted, because an un-adopted directory is no longer a
 project, and something *is* lost with that. A project whose directory disappears — renamed,
@@ -1050,8 +1050,8 @@ is the hard-coding this change removes and it would have to be maintained by the
 pull request. Whether a project still exists is the box's inventory to answer, not this script's.
 
 Two consequences for the watchdog, named here rather than changed. Its MISSING-row rollout timer
-(`/usr/local/sbin/vps-health-check.sh`, the `standards.armed` / `unarmed-since` arming around
-lines 968-990) is no longer reachable from the default path: discovery emits no MISSING row, so
+(`/usr/local/sbin/vps-health-check.sh`, the `standards.armed` / `unarmed-since` arming) is no
+longer reachable from the default path: discovery emits no MISSING row, so
 only an explicit `STANDARDS_PROJECTS` list can arm it. And a project directory the running user
 cannot traverse is now invisible instead of MISSING — the glob cannot expand into it, and the
 UNLISTED row's `.git` test fails on the same permission — so a non-root run reports a smaller

@@ -10,10 +10,9 @@ asserts that order. `STANDARDS_PROJECTS` still overrides and still refuses to be
 root where nothing is vendored is still exit 2, never a clean fleet of zero.
 **A `*-staging` or `*-worktrees` directory is excluded on both sides.** Discovery and the UNLISTED
 row now share one `is_fleet_project_name`, instead of the UNLISTED row holding the only copy of
-the pattern. Two of this box's deployed staging checkouts will carry `docs/STANDARDS.md` from
-their next `git pull`; without the exclusion they would have joined the fleet as projects of
-their own and gone STALE on the deploying project's schedule, which the watchdog reads as a
-failure. Cases 19 and 20 are new, proved red first — 19 against the discovery-without-a-filter
+the pattern. A deployed staging checkout that pulls a vendored `docs/STANDARDS.md` would
+otherwise join the fleet as a project of its own and go STALE on the deploying project's
+schedule, which the watchdog reads as a failure. Cases 19 and 20 are new, proved red first — 19 against the discovery-without-a-filter
 version, 20 against the same script with the collation pin removed. What discovery gives up — a
 project whose directory *vanishes* was a MISSING row and is now invisible — and two consequences
 for the watchdog are written out in `docs/DECISIONS.md`.
