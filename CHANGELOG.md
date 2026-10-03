@@ -3,11 +3,14 @@
 ## 2026-10-03 — the deploy library's test fixtures commit through the fleet hook (deploy-lib VERSION unchanged; the standard is unchanged)
 **`scripts/lib/deploy/test.sh` no longer skips the hook.** Its fixtures committed with
 `-c core.hooksPath=/dev/null` and `--no-verify` (9 lines), against S1. Both are removed, and a
-new first check fails the suite on any hook-bypass form in its own text (210 `ok` lines to 211).
+new first check scans the suite's own text, continuation lines joined, and fails on the forms
+`docs/DECISIONS.md` lists: `core.hooksPath` in any case, `--no-verify` and its prefixes to
+`--no-v`, `HUSKY=0`, any `GIT_CONFIG_*`, a `HOME=` or `XDG_CONFIG_HOME=` assignment, `commit-tree`,
+`fast-import`, `hash-object -w`, and a short `-n` on commit or merge (210 `ok` lines to 211).
 Each case now copies a repository built once per kind, so a run makes 8 personal-data checker
 calls instead of 245 and stays at about 15 s (backlog 265). `VERSION` stays `2026-10-02`: no
 library file changed. The pinned `SUITE_SHA256` becomes
-`e947bbaf096c60865bfa3d2e8b284b817642a6d04f501d0f1785c0c08e2f8453`.
+`5861ee6dcfd9f2620fc1d326d73b5d791d83330988ed450ac30230f3ba96123b`.
 
 ## 2026-10-03 — the after-deploy cleanup keeps a worktree whose ignored `.env*` directory sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **Neither probe term reached `api/.env.d/prod`.** The plain `'.env*'` reaches inside a top-level

@@ -46,10 +46,13 @@ trap 'rm -rf "${WORK}"' EXIT
 
 git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
 
-# S1: fixture commits go through the real fleet hook. The bracketed letters keep this line off its own list.
-HOOK_BYPASS='--no[-]verify|core[.]hooks[P]ath|HUSK[Y]=0|GIT_CONFIG_(GLOBA[L]|SYSTE[M]|NOSYSTE[M])|HOM[E]=[^[:space:]]*[[:space:]]+(\S+/)?git([[:space:]]|$)|(commi[t]|merg[e])[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:]]|$)'
-BYPASSES="$(grep -nE -- "${HOOK_BYPASS}" "${BASH_SOURCE[0]}")"
-case $? in 0|1) ;; *) fail "the hook-bypass scan could not read ${BASH_SOURCE[0]}" ;; esac
+# S1: fixture commits go through the real fleet hook; bracketed letters keep these lines off their own list.
+# What is covered, and the loud false positives (merge's no-stat flag, a dash-n in a message): docs/DECISIONS.md.
+HOOK_BYPASS='--no[-]v(e(r(i(fy?)?)?)?)?([^A-Za-z-]|$)|HUSK[Y]=0|GIT_CONFI[G]_[A-Z0-9_]+|(^|[^A-Za-z0-9_])HOM[E]=|XDG_CONFIG_HOM[E]=|commit-tre[e]|fast-impor[t]|hash-objec[t][^;|&]*[[:space:]]-[A-Za-z]*w|(commi[t]|merg[e])[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:]]|$)'
+HOOK_BYPASS_ANY_CASE='core[.]hooks[p]ath'
+JOINED="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0 " "; next } print start ":" buf $0; buf = "" }' "${BASH_SOURCE[0]}")" \
+    || fail "the hook-bypass scan could not read ${BASH_SOURCE[0]}"
+BYPASSES="$(printf '%s\n' "${JOINED}" | grep -E -- "${HOOK_BYPASS}"; printf '%s\n' "${JOINED}" | grep -iE -- "${HOOK_BYPASS_ANY_CASE}")"
 absent 'no fixture skips the fleet hook (S1)' "${BYPASSES}" ':'
 
 write_driver() {
