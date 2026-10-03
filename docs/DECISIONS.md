@@ -325,10 +325,9 @@ with the reason, which is the honest reading and was always what that row meant.
 from the gate's EXIT trap and read HEAD there, so a commit that landed in the tree while
 the gate was working was handed a green row no step had ever read — the gate judged one
 tree and cleared another. `gate_ledger_arm` now reads HEAD before the first step, and the
-trap compares: if HEAD has moved, nothing is recorded and both commits are named. A
-dirty tree is still stamped `<sha>-dirty`, unchanged, because `gated()` matches the
-ledger's first field against a sha `resolve` names and `<sha>-dirty` is not one — such a
-row leaves evidence a gate ran without ever clearing a deploy. The row format is
+trap compares: if HEAD has moved, nothing is recorded and both commits are named. (A
+dirty tree was still stamped `<sha>-dirty` here; since 2026-10-03 it gets no row at all —
+see the entry below.) The row format is
 untouched: `<sha> <kind> <utc> <rc> <log>`, so a project re-vendoring this needs no
 change to any reader.
 
@@ -930,3 +929,26 @@ case copies one: 8 checker calls per run, 15 s.
 
 **The option not taken:** `git commit-tree` for the fixture commits. It needs no flag, and it also
 never runs a hook, so it is the same bypass under another name.
+
+## A dirty tree gets no ledger row, and the lib suite proves the hook ran and runs only as root (2026-10-03)
+
+**`<sha>-dirty` rows were noise that looked like evidence.** No deploy could resolve one, but
+the mistake ledger mined 24 of them as red runs against commits nobody had gated (backlog
+268). `gate_ledger_sha` now refuses a dirty tree — `dirty tree: no ledger row — commit, then
+gate the tip`, exit 2 — and `gate_ledger_record` prints that and returns 0 without writing,
+like every other refusal it makes: it runs from EXIT traps, and under `set -e` (fineprint,
+memento, orbit, kidsquest, ghiecode) a non-zero return there replaces the gate's own exit code
+and skips its teardown. The capture is `|| shrc=$?` for the same reason. `gated()` keeps
+ignoring old `-dirty` rows, and its fixture stays to prove it.
+
+**The suite proves the hook ran, and refuses to run unless root.** The entry below moved the
+fixtures through the hook; this one adds the evidence (backlog 264b). A clean fixture commit must
+add a `caller=root … result=clean` line to `/var/log/fleet-secrets-check.log`, the whole run must
+add more, and a planted random `ghp_` token must be refused without being printed. Per the
+advisor's 2026-10-03 ruling (root counted, not capped, by secrets-cap-175; app users stay capped;
+no shim, no redirected counter) the suite refuses to start unless it is root — `lib test.sh
+commits through the fleet hook: run it as root (advisor ruling 2026-10-03)` — never skips and
+never goes hooks-off. Its test probe exits 3, never 0, so a leaked `LIB_TEST_ROOT_PROBE` cannot
+pass a gate. This supersedes the entry below's owner-run allowance: scribly and reflection (via
+`as_owner`), ghiecode and ghie-writes (whole gate under `runuser`) move the lib-suite step to
+root at re-vendor.

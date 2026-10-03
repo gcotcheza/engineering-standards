@@ -5,10 +5,14 @@
 #   scripts/lib/deploy/test.sh
 #   DEPLOY_LIB_DIR=/tmp/mutant scripts/lib/deploy/test.sh   the red proofs
 #
-# It reads no checkout, runs no docker, no gh and no heavy-work.
+# It reads no checkout, runs no docker, no gh and no heavy-work. Fixture commits run the
+# real fleet hook (S1); the hook canary reads its log, so the suite runs as root.
 # FAKE_CALLS strings stay single-quoted on purpose: the driver eval's them.
 # shellcheck disable=SC2016
 set -uo pipefail
+
+[ "$(id -u)" = 0 ] || { printf 'lib test.sh commits through the fleet hook: run it as root (advisor ruling 2026-10-03)\n' >&2; exit 1; }
+[ -z "${LIB_TEST_ROOT_PROBE:-}" ] || { printf 'PAST THE ROOT CHECK\n'; exit 3; }
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${DEPLOY_LIB_DIR:-${SCRIPT_DIR}}"
@@ -314,6 +318,55 @@ REPO_OVERRIDE=''
 SUITE_PASSED_ENV=''
 ARMED_ENV=''
 HEAVY_STATUS=''
+
+# --- 0. fixture commits run the real fleet hook, and it is seen to run (backlog 264) ---
+HOOK_LOG=/var/log/fleet-secrets-check.log
+clean_lines() {
+    if [ -r "${HOOK_LOG}" ]; then grep -c ' caller=root .*result=clean$' "${HOOK_LOG}" || true
+    else printf 'unreadable'; fi
+}
+grew() {
+    case "$2$3" in
+        *[!0-9]*|'') fail "$1 — ${HOOK_LOG} could not be counted (before [$2], after [$3])" ;;
+        *) if [ "$3" -gt "$2" ]; then pass "$1 ($2 -> $3)"; else fail "$1 — stayed at $2 -> $3"; fi ;;
+    esac
+}
+SUITE_CLEAN_BEFORE="$(clean_lines)"
+
+# App users are capped at 30 hook calls a minute and this suite makes about 250.
+mkdir -p "${WORK}/notroot"
+printf '#!/bin/sh\necho 1000\n' >"${WORK}/notroot/id"
+chmod 0755 "${WORK}/notroot/id"
+OUT="$(PATH="${WORK}/notroot:${PATH}" LIB_TEST_ROOT_PROBE=1 bash "${SCRIPT_DIR}/test.sh" 2>&1)"
+RC=$?
+contains 'a run that is not root is refused, naming the ruling' "${OUT}" \
+    'lib test.sh commits through the fleet hook: run it as root (advisor ruling 2026-10-03)'
+equals 'and the refusal exits' "RC=${RC}" 'RC=1'
+absent 'and nothing past the check runs' "${OUT}" 'PAST THE ROOT CHECK'
+OUT="$(LIB_TEST_ROOT_PROBE=1 bash "${SCRIPT_DIR}/test.sh" 2>&1)"
+RC=$?
+equals 'a leaked probe variable can never pass a gate' "RC=${RC}" 'RC=3'
+
+fixture hook-canary
+CANARY_BEFORE="$(clean_lines)"
+printf 'canary\n' >"${ROOT}/app/canary.txt"
+git_at add app/canary.txt
+git_at commit -q -m canary
+grew 'a clean fixture commit reaches the real checker as root' "${CANARY_BEFORE}" "$(clean_lines)"
+
+PLANTED="ghp_$(tr -dc A-Za-z0-9 </dev/urandom | head -c36)"
+printf 'token = "%s"\n' "${PLANTED}" >"${ROOT}/app/planted.txt"
+git_at add app/planted.txt
+CANARY_HEAD="$(git_at rev-parse HEAD)"
+OUT="$(git_at commit -q -m planted 2>&1)"
+RC=$?
+contains 'a planted token is refused by the hook' "${OUT}" 'BLOCKED by secrets guard (gitleaks)'
+absent 'and the refusal is a non-zero exit' "RC=${RC}" 'RC=0'
+equals 'and no commit is made' "$(git_at rev-parse HEAD)" "${CANARY_HEAD}"
+case "${OUT}" in
+    *"${PLANTED}"*) fail 'the hook printed the token it caught (S2)' ;;
+    *) pass 'and the hook never prints the token it caught' ;;
+esac
 
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
@@ -627,10 +680,16 @@ run_lib "$(armed "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record 
 contains 'the writer says where it wrote' "${OUT}" "gate-ledger: ${LIVE_SHA:0:7} ci rc=0 -> ${WRITTEN}"
 matches 'the ledger line is <sha> <kind> <utc> <rc> <log>' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA} ci [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z 0 /tmp/ci\.log$"
+
+# Backlog 268: a red run on an uncommitted tree used to land as <sha>-dirty.
+fixture ledger-writer-dirty
+WRITTEN="${CASE}/written"
 printf 'uncommitted\n' >>"${ROOT}/app/base.txt"
-run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 1 /tmp/e2e.log >&3")"
-matches 'a dirty tree records <sha>-dirty' "$(tail -1 "${WRITTEN}")" \
-    "^${LIVE_SHA}-dirty e2e [0-9-]+T[0-9:]+Z 1 /tmp/e2e\.log$"
+run_lib "$(armed "set -e; GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 1 /tmp/e2e.log >&3 2>&3; printf 'TEARDOWN RAN\n' >&3")"
+contains 'a dirty tree is refused in the words of the rule' "${OUT}" \
+    'gate-ledger: dirty tree: no ledger row — commit, then gate the tip'
+contains 'and a set -e caller still reaches its teardown' "${OUT}" 'TEARDOWN RAN'
+equals 'and no row is written, dirty-stamped or not' "$(rows "${WRITTEN}")" '0'
 
 fixture ledger-unwritable
 run_lib "$(armed "GATE_LEDGER=/proc/nope/ledger gate_ledger_record ci 0 - >&3 2>&3; printf 'STILL HERE\n' >&3")"
@@ -1180,6 +1239,9 @@ run_lib "${CLEAN_CALL}"
 contains 'an unreadable pull request removes nothing' "${OUT}" \
     'CLEANUP #73 did not run: gh could not read the pull request (rc=1); nothing is removed.'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+grew 'the fixture commits added caller=root result=clean lines' \
+    "${SUITE_CLEAN_BEFORE}" "$(clean_lines)"
 
 if [ "${fails}" -eq 0 ]; then
     printf '\ndeploy-lib-test: all checks passed\n'

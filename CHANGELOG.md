@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-03 — a dirty tree writes no gate-ledger row, and the deploy-lib suite proves the hook ran and runs only as root (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
+**A gate run on uncommitted work no longer leaves a `<sha>-dirty` row.** `gate_ledger_sha`
+refuses with `gate-ledger: dirty tree: no ledger row — commit, then gate the tip` and exit 2;
+`gate_ledger_record` prints it, writes nothing and returns 0, so a `set -e` caller's EXIT trap
+keeps its own exit code and reaches its teardown (backlog 268). `gated()` still ignores
+`-dirty` rows already in a ledger. App tests that assert a `-dirty` row change at re-vendor.
+
+On top of the entry below, `scripts/lib/deploy/test.sh` refuses to run unless root and gains a
+hook canary (backlog 264b): a clean fixture commit and the whole suite must add `caller=root …
+result=clean` lines to the real checker log, and a planted random `ghp_` token must be refused,
+with no commit and the token never printed. The root-check probe exits 3, so a leaked
+`LIB_TEST_ROOT_PROBE` can never pass a gate. 214 `ok` lines to 226. Red proofs, one saved
+mutant each: the dirty guard's `return 2` deleted; the record's `return 0` turned back to 2
+under a `set -e` caller; the root check deleted; the probe set back to exit 0; the planted token
+swapped for plain words. **Re-vendoring needs an app-side change:** scribly, reflection,
+ghiecode and ghie-writes run this suite as the app owner and must run it as root.
+
+`ledger.sh`'s header is re-stamped and the pinned `SUITE_SHA256` becomes
+`4f5b0f5ab3addf3083967f94ffcfaf5d177f29b6a1275d07c5b630d50566d88c`.
+
 ## 2026-10-03 — the deploy library's test fixtures commit through the fleet hook (deploy-lib VERSION unchanged; the standard is unchanged)
 **`scripts/lib/deploy/test.sh` no longer skips the hook.** Its fixtures committed with
 `-c core.hooksPath=/dev/null` and `--no-verify` (9 lines), against S1. Both are removed, and a

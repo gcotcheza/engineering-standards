@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-02 sha256:af7443895d4c93ec703189a9e52885385b91777fc5a39da74132e19a43073998
+# fleet-deploy-lib 2026-10-02 sha256:8110d5338fab78f646b6741616a7f5a49c2c912d65e5740a2019f7354c1c337a
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it is in there green —
@@ -23,19 +23,21 @@ gate_ledger_arm() {
     return 0
 }
 
+# Exit 1: HEAD unreadable. Exit 2: the tree is dirty, and a dirty tree gets no row at all.
 gate_ledger_sha() {
     local git=${GATE_LEDGER_GIT:-git} sha
     # shellcheck disable=SC2086
     sha=$($git rev-parse HEAD 2>/dev/null) || return 1
     # shellcheck disable=SC2086
     if [ -n "$($git --no-optional-locks status --porcelain 2>/dev/null)" ]; then
-        sha="${sha}-dirty"
+        printf 'gate-ledger: dirty tree: no ledger row — commit, then gate the tip\n' >&2
+        return 2
     fi
     printf '%s' "$sha"
 }
 
 gate_ledger_record() {
-    local kind=$1 rc=$2 log=${3:--} file dir sha now
+    local kind=$1 rc=$2 log=${3:--} file dir sha shrc=0
     if [ "${GATE_ARMED:-0}" != 1 ]; then
         printf 'gate-ledger: gate_ledger_arm was never called, so the %s run (rc=%s) is NOT recorded\n' "$kind" "$rc" >&2
         return 0
@@ -51,15 +53,18 @@ gate_ledger_record() {
     file=${GATE_LEDGER:-/var/lib/fleet/gate-ledger}
     dir=$(dirname "$file")
 
-    sha=$(gate_ledger_sha) || {
-        printf 'gate-ledger: git could not name HEAD, so the %s run (rc=%s) is NOT recorded\n' "$kind" "$rc" >&2
-        return 0
-    }
-    # One reading of the tree stamps the row and answers "did HEAD move?".
-    now=${sha%-dirty}
-    if [ "$now" != "$GATE_ARMED_SHA" ]; then
+    sha=$(gate_ledger_sha) || shrc=$?
+    case $shrc in
+        0) ;;
+        2) return 0 ;;
+        *)
+            printf 'gate-ledger: git could not name HEAD, so the %s run (rc=%s) is NOT recorded\n' "$kind" "$rc" >&2
+            return 0
+            ;;
+    esac
+    if [ "$sha" != "$GATE_ARMED_SHA" ]; then
         printf 'gate-ledger: HEAD is %s but the run began at %s, so the %s run (rc=%s) is NOT recorded\n' \
-            "$now" "${GATE_ARMED_SHA:-an unreadable HEAD}" "$kind" "$rc" >&2
+            "$sha" "${GATE_ARMED_SHA:-an unreadable HEAD}" "$kind" "$rc" >&2
         return 0
     fi
     [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || {
