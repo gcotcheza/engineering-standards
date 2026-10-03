@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-02 sha256:f2b48648a7b0cd8d3783c9c9737e6801e966a6fd56b08b418765793d1a11ab79
+# fleet-deploy-lib 2026-10-02 sha256:0fadd7581e986b3ea96ce4548bebbc2583cd4f11de240447186167a14da1abd2
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -77,8 +77,8 @@ cleanup_rootfiles() {
 
 cleanup_envfiles() {
     local wt=$1 rc=0 out
-    # Any depth (reflection keeps api/.env), but not vendored packages' own .envrc files.
-    out=$(${WT_GIT-} -C "$wt" ls-files -o -i --exclude-standard -- '.env*' ':(glob)**/.env*' \
+    # Any depth (api/.env, api/.env.d/prod), but not vendored packages' own .envrc files.
+    out=$(${WT_GIT-} -C "$wt" ls-files -o -i --exclude-standard -- '.env*' ':(glob)**/.env*' ':(glob)**/.env*/**' \
         ':(glob,exclude)**/vendor/**' ':(glob,exclude)**/node_modules/**' 2>&1) || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep envfiles "$wt (ls-files exited ${rc}, so an ignored .env could not be ruled out)"; return 1; }
     [ -z "$out" ] || { cleanup_keep envfiles "$wt (it carries an ignored $out)"; return 1; }
