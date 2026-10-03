@@ -984,6 +984,21 @@ finding, in a fixture or anywhere else. Every other repo-local `core.hooksPath` 
 exactly as before, whatever the diff held; a harness that misses any one condition is not under
 this exception at all.
 
+**Deliberately broken copies, for T5 (Ghie's approval, 2026-10-03, advisor + personal-vps).** T5
+asks for a guard's test to go red with the guard line deleted, so a harness may run a saved mutant
+of a hook or of itself — which (f)'s hook-ON assert would refuse — only when (a)–(g) hold and also:
+- (1) mutant mode is switched on by name (`HARNESS_MODE=t5` and `HARNESS_MUTANT=<file>`); without
+  it the harness admits only `githooks/` entries of its `SHA256SUMS`, by sha;
+- (2) every mutant is listed in the packet's `SHA256SUMS`;
+- (3) the real fleet pre-commit stays in the same hooks directory, so setup commits still pass it;
+- (4) the harness makes the repository itself with `mktemp -d` under its own lane, writes a marker
+  file into it, and refuses mutant mode unless the repository's top level is that marked
+  directory — never under `/var/www`, never a registered worktree, never a path passed in;
+- (5) before any mutant runs, it asserts that no remote has a reachable push URL.
+
+This applies only inside a T5 harness that meets (1)–(5) as well as (a)–(g); it is not a
+`hooksPath` precedent, and every other use stays an S1 finding.
+
 **The option not taken:** installing the candidate hook live and watching the next real merge.
 That tests the guard on production work, and a broken dispatcher would either refuse every merge
 on the box or, worse, pass them all in silence.
