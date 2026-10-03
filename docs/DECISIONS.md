@@ -1101,7 +1101,9 @@ the running `deploy.sh` or `summary.sh` itself, or any directory above either up
 symlink, not root's, or writable by group or others — and, once `deploy_log_open` knows `ROOT`, when
 `deploy.sh` sits at or inside it. The check is not an option: there is no variable that turns it off,
 because a switch the deploy reads from its environment is a switch the next operator flips for
-convenience. `stat -L` is used so the explicit `-L` test is the one that refuses a link; without it
+convenience. It is not a boundary: it lives in code the app user can write, so an app user who edits
+`deploy.sh` deletes it, and a `bash -s` fed from a root directory passes it. It catches the old habit of
+running the tree's copy; the boundary is `fleet-deploy` and the runbooks that call it. `stat -L` is used so the explicit `-L` test is the one that refuses a link; without it
 a link's own mode 777 refuses it too, and the `-L` line could be deleted with nothing going red.
 `resolve` takes `REPO` from `FLEET_DEPLOY_REPO` only. The origin URL lives in the app-owned
 `.git/config`, so `gh_repo` and the `DEPLOY_GH_REPO` override are gone; with the variable unset the
@@ -1120,7 +1122,9 @@ app user cannot write, which is this design again. A per-app copy of `deploy.sh`
 it drifts from what each repository merges. A refusal by path (`/var/www/*`): it misses a copy in any
 other app-writable place, where an ownership walk does not.
 
-**The suite.** Every driver now runs from `${TMPDIR:-/run}`, because `/tmp` is writable by everyone
-and the guard refuses it; the suite therefore needs a root-only `TMPDIR`, which `/run` is by default.
+**The suite.** Every driver runs from a work directory fixed under `/srv/worker-scratch` (root 755,
+exec-capable), never from `TMPDIR`: `/tmp` is writable by everyone, so the guard refuses it, `/run` is
+mounted `noexec` (the fakes are executables), and ghiecode's and scribly's gates refuse any name the
+suite reads with a default that is exported, so the suite reads no `TMPDIR` at all.
 The guard cases make their copies for real — app-owned with `chown nobody`, group-writable, a symlink,
 inside `ROOT` — and the old command, the tree's own copy run by root, is one of them.

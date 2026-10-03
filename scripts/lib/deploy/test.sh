@@ -7,8 +7,8 @@
 #
 # It reads no checkout, runs no docker, no gh and no heavy-work. Fixture commits run the
 # real fleet hook (S1); the hook canary reads its log, so the suite runs as root.
-# FAKE_CALLS strings stay single-quoted on purpose: the driver eval's them. Every driver runs from
-# under ${TMPDIR:-/run}, which must be root's alone: summary.sh refuses any other location (backlog 317).
+# FAKE_CALLS strings stay single-quoted on purpose: the driver eval's them. WORK is fixed under
+# /srv/worker-scratch (root 755, exec), never TMPDIR: summary.sh refuses /tmp and /run is noexec.
 # shellcheck disable=SC2016
 set -uo pipefail
 
@@ -46,7 +46,7 @@ matches() {
     if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi
 }
 
-WORK="$(mktemp -d -p "${TMPDIR:-/run}" deploy-lib-test.XXXXXXXX)"
+WORK="$(mktemp -d -p /srv/worker-scratch deploy-lib-test.XXXXXXXX)" || { printf 'cannot make a work directory under /srv/worker-scratch\n' >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
 
 git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
