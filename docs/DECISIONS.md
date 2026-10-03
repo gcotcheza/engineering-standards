@@ -1108,6 +1108,13 @@ a link's own mode 777 refuses it too, and the `-L` line could be deleted with no
 deploy refuses and names `fleet-deploy`. When `FLEET_DEPLOY_MERGE_SHA` is set, gh's merge commit
 must equal it, so the export and the deploy cannot be about two different commits.
 
+**What the walk does not refuse, and why that is enough.** A root-owned copy outside the app tree, in
+a scratch lane or root's own clone, passes the walk: the app user cannot write it. It still refuses in
+`resolve` unless someone sets `FLEET_DEPLOY_REPO` by hand, which is root's own act, not the app
+user's. The walk reads `BASH_SOURCE`, so `deploy.sh` is started by absolute path, as `fleet-deploy`
+and `fleet-deploy-on-merge` do; a relative one resolves against `ROOT` after the `cd` and refuses in
+`deploy_log_open`, never passes.
+
 **Rejected.** Hashing the lib before sourcing it: the expected hash would have to live somewhere the
 app user cannot write, which is this design again. A per-app copy of `deploy.sh` installed by hand:
 it drifts from what each repository merges. A refusal by path (`/var/www/*`): it misses a copy in any
