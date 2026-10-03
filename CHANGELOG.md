@@ -6,11 +6,13 @@
 new first check scans the suite's own text, continuation lines joined, and fails on the forms
 `docs/DECISIONS.md` lists: `core.hooksPath` in any case, `--no-verify` and its prefixes to
 `--no-v`, `HUSKY=0`, any `GIT_CONFIG_*`, a `HOME=` or `XDG_CONFIG_HOME=` assignment, `commit-tree`,
-`fast-import`, `hash-object -w`, and a short `-n` on commit or merge (210 `ok` lines to 211).
+`fast-import`, `hash-object -w`, and a short `-n` on commit or merge. An unreadable file or a
+grep that exits above 1 (a broken pattern) fails the scan instead of reading as clean, and two
+new assertions hold that (210 `ok` lines to 213).
 Each case now copies a repository built once per kind, so a run makes 8 personal-data checker
 calls instead of 245 and stays at about 15 s (backlog 265). `VERSION` stays `2026-10-02`: no
 library file changed. The pinned `SUITE_SHA256` becomes
-`5861ee6dcfd9f2620fc1d326d73b5d791d83330988ed450ac30230f3ba96123b`.
+`ec490bd30d1af35f0a7d647a2e9bed8b8c6441f353c07dece5fb94907280069a`.
 
 ## 2026-10-03 — the after-deploy cleanup keeps a worktree whose ignored `.env*` directory sits in a subfolder (deploy-lib VERSION 2026-10-02, amended; the standard is unchanged)
 **Neither probe term reached `api/.env.d/prod`.** The plain `'.env*'` reaches inside a top-level

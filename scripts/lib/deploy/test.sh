@@ -50,10 +50,22 @@ git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
 # What is covered, and the loud false positives (merge's no-stat flag, a dash-n in a message): docs/DECISIONS.md.
 HOOK_BYPASS='--no[-]v(e(r(i(fy?)?)?)?)?([^A-Za-z-]|$)|HUSK[Y]=0|GIT_CONFI[G]_[A-Z0-9_]+|(^|[^A-Za-z0-9_])HOM[E]=|XDG_CONFIG_HOM[E]=|commit-tre[e]|fast-impor[t]|hash-objec[t][^;|&]*[[:space:]]-[A-Za-z]*w|(commi[t]|merg[e])[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:]]|$)'
 HOOK_BYPASS_ANY_CASE='core[.]hooks[p]ath'
-JOINED="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0 " "; next } print start ":" buf $0; buf = "" }' "${BASH_SOURCE[0]}")" \
-    || fail "the hook-bypass scan could not read ${BASH_SOURCE[0]}"
-BYPASSES="$(printf '%s\n' "${JOINED}" | grep -E -- "${HOOK_BYPASS}"; printf '%s\n' "${JOINED}" | grep -iE -- "${HOOK_BYPASS_ANY_CASE}")"
+scan_bypasses() {
+    local joined any_case
+    joined="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0 " "; next } print start ":" buf $0; buf = "" }' "$1")" || return 2
+    BYPASSES="$(printf '%s\n' "${joined}" | grep -E -- "$2")"
+    case $? in 0|1) ;; *) return 2 ;; esac
+    any_case="$(printf '%s\n' "${joined}" | grep -iE -- "$3")"
+    case $? in 0|1) ;; *) return 2 ;; esac
+    BYPASSES+=$'\n'"${any_case}"
+}
+scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}" \
+    || fail "the hook-bypass scan could not read ${BASH_SOURCE[0]} or run its grep"
 absent 'no fixture skips the fleet hook (S1)' "${BYPASSES}" ':'
+scan_bypasses "${BASH_SOURCE[0]}" '(' "${HOOK_BYPASS_ANY_CASE}" 2>/dev/null
+equals 'a broken grep in the bypass scan fails it' "$?" 2
+scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" '(' 2>/dev/null
+equals 'a broken any-case grep in the bypass scan fails it' "$?" 2
 
 write_driver() {
     mkdir -p "${CASE}/lib"

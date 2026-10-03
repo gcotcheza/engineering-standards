@@ -918,6 +918,8 @@ bypass built at runtime (a flag in a variable, a `-c` key assembled from pieces,
 seen, and review stays the check for those. Two false positives are known and fail loudly rather
 than pass quietly: merge's own `-n` (no-stat) and a dash-n inside a `-m` message. Rephrase the
 line; never widen the scan's exemptions.
+An unreadable suite file, or either grep exiting above 1 (a pattern grep cannot compile), fails the
+scan: grep's "no match" and "could not run" must never both read as clean.
 
 **Built once per kind, then copied.** Committing through the hook per case meant 245 calls to the
 personal-data checker per run and took the suite from 14 s to 145 s. The checker caps every caller
