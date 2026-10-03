@@ -899,7 +899,38 @@ and a refusal is never routed around.
 **The option not taken:** letting any green pull request merge itself. The adversarial review in
 W2 is what a gate cannot do, and every other author has a builder whose diff needs a second reader.
 
-## A dirty tree gets no ledger row, and the lib's fixtures commit through the real hook (2026-10-03)
+## The deploy library's fixtures commit through the fleet hook, from one template per kind (2026-10-03)
+
+**No fixture skips the hook (S1, backlog 265; advisor ruling, cards 277/274).** `test.sh` used to
+build every case's repository with `-c core.hooksPath=/dev/null` and `--no-verify`. Both are gone,
+with no environment seam, test mode or carve-out in the hook: fixture content is plain text the
+real hook passes.
+
+**What the self-scan covers, and nothing more.** A check at the top of the suite reads its own text,
+with `\`-continued lines joined, and fails on: `core.hooksPath` in any letter case (git config
+keys ignore case); `--no-verify` and every prefix of it down to `--no-v`; `HUSKY=0`; any
+`GIT_CONFIG_*` name (`GLOBAL`, `SYSTEM`, `NOSYSTEM`, `PARAMETERS`, `COUNT`, ...); any `HOME=`
+assignment, exported, inline or prefixed; `XDG_CONFIG_HOME=`; the plumbing that stands a commit up
+without a hook (`commit-tree`, `fast-import`, `hash-object` with `-w`); and a short `-n` flag
+cluster after `commit` or `merge` on the same logical line. It is a text scan, not a parser: a
+bypass built at runtime (a flag in a variable, a `-c` key assembled from pieces, an alias) is not
+seen, and review stays the check for those. Two false positives are known and fail loudly rather
+than pass quietly: merge's own `-n` (no-stat) and a dash-n inside a `-m` message. Rephrase the
+line; never widen the scan's exemptions.
+An unreadable suite file, or either grep exiting above 1 (a pattern grep cannot compile), fails the
+scan: grep's "no match" and "could not run" must never both read as clean.
+
+**Built once per kind, then copied.** Committing through the hook per case meant 245 calls to the
+personal-data checker per run and took the suite from 14 s to 145 s. The checker caps every caller
+but root at 30 calls a minute, and ghiecode's gate runs this suite as its tree's owner, so a
+re-vendored copy would have been refused by the cap. `fixture_template` builds the plain and
+`trees-differ` repositories once, the `side` commit included under `refs/fixture/side`, and each
+case copies one: 8 checker calls per run, 15 s.
+
+**The option not taken:** `git commit-tree` for the fixture commits. It needs no flag, and it also
+never runs a hook, so it is the same bypass under another name.
+
+## A dirty tree gets no ledger row, and the lib suite proves the hook ran and runs only as root (2026-10-03)
 
 **`<sha>-dirty` rows were noise that looked like evidence.** No deploy could resolve one, but
 the mistake ledger mined 24 of them as red runs against commits nobody had gated (backlog
@@ -910,16 +941,14 @@ memento, orbit, kidsquest, ghiecode) a non-zero return there replaces the gate's
 and skips its teardown. The capture is `|| shrc=$?` for the same reason. `gated()` keeps
 ignoring old `-dirty` rows, and its fixture stays to prove it.
 
-**The fixtures stop switching the hook off.** `git_at`, the head-moved case and every fixture
-commit used `-c core.hooksPath=/dev/null` and `--no-verify` (backlog 264b, S1). With the
-checker counting root without capping it (secrets-cap-175), the advisor's 2026-10-03 ruling
-is that root suites commit through the real fleet hook — no shim, no redirected counter. The
-suite therefore proves the hook ran: a clean commit adds a `caller=root … result=clean` line
-to `/var/log/fleet-secrets-check.log`, the whole suite adds more, and a planted random
-`ghp_` token is refused without being printed. The suite refuses to start unless it is root — `lib test.sh commits through
-the fleet hook: run it as root (advisor ruling 2026-10-03)` — because app users stay capped at
-30 hook calls a minute and it makes about 250; it never skips and never goes hooks-off. Four
-apps run it as their owner today (scribly and reflection through `as_owner`, ghiecode and
-ghie-writes under `runuser`), so the re-vendor round moves that one step to root. Merge commits made by `git merge` run no pre-commit
-hook by git's own design; that is not a bypass.
-
+**The suite proves the hook ran, and refuses to run unless root.** The entry below moved the
+fixtures through the hook; this one adds the evidence (backlog 264b). A clean fixture commit must
+add a `caller=root … result=clean` line to `/var/log/fleet-secrets-check.log`, the whole run must
+add more, and a planted random `ghp_` token must be refused without being printed. Per the
+advisor's 2026-10-03 ruling (root counted, not capped, by secrets-cap-175; app users stay capped;
+no shim, no redirected counter) the suite refuses to start unless it is root — `lib test.sh
+commits through the fleet hook: run it as root (advisor ruling 2026-10-03)` — never skips and
+never goes hooks-off. Its test probe exits 3, never 0, so a leaked `LIB_TEST_ROOT_PROBE` cannot
+pass a gate. This supersedes the entry below's owner-run allowance: scribly and reflection (via
+`as_owner`), ghiecode and ghie-writes (whole gate under `runuser`) move the lib-suite step to
+root at re-vendor.
