@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-04 — `scripts/guard-mutants.sh` runs T5's deletion proof from a manifest (the standard is unchanged)
+**A runner that deletes each guard line and expects red** (backlog 330). A manifest names a test command
+and, per guard, the file, the guard line as a fixed string (it must equal exactly one line, blanks
+around it ignored) and an `expect` string: the gate's own failure line. The test must pass on an
+unmutated copy first, else the run is ERROR and nothing is judged. Each entry then runs in its own
+`mktemp -d` beneath the work directory the caller names, with a `TMPDIR` of its own and a timeout,
+output saved to a file: caught is non-zero *and* `expect` printed; exit 0 is SURVIVED; anything else
+(a syntax error, a timeout, a line matching 0 or 2+ lines, an `expect` the unmutated test already
+prints) is errored. One line per entry, then
+`guard-mutants: <n> caught, <s> survived, <e> errored of <t>`; exit 0 only when every entry is caught.
+`-j N` runs entries at once, and two whole runs at once share no path. The caller's root is never
+written, and every copy is removed on any exit, a SIGTERM included.
+`scripts/guard-mutants-test.sh` is the new gate step 8 (the deploy-lib test moves to step 9).
+`scripts/guard-mutants-self.manifest` lists the runner's own 32 guard lines; the runner run on it
+reports all 32 caught. It deletes lines only: a mutant that swaps text stays a hand-made one.
+
 ## 2026-10-03 — root runs a deploy only from `fleet-deploy`'s export: the lib refuses any other copy, and `resolve` takes the repository from root (deploy-lib VERSION 2026-10-03, amended; the standard is unchanged)
 **`summary.sh` refuses to run from anywhere the app user could write** (backlog 317). When it is
 sourced, and again in `deploy_log_open` once `ROOT` is set, it walks the running `deploy.sh`,

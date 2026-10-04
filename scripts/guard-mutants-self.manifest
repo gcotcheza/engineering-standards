@@ -1,0 +1,132 @@
+# guard-mutants.sh proving itself: each guard line deleted in turn, its own suite must go red.
+#   scripts/guard-mutants.sh -r scripts -w <work dir> -j 4 scripts/guard-mutants-self.manifest
+test: GUARD_MUTANTS_TEST_DIR="$TMPDIR" GUARD_MUTANTS_SH=./guard-mutants.sh ./guard-mutants-test.sh
+timeout: 300
+
+file: guard-mutants.sh
+line: [ $# -eq 1 ] || { usage; exit 2; }
+expect: FAIL usage no manifest argument: exit
+
+file: guard-mutants.sh
+line: *) usage; exit 2 ;;
+expect: FAIL usage bad option: prints usage
+
+file: guard-mutants.sh
+line: [ -d "$ROOT" ] || die "-r names no directory: '$ROOT'"
+expect: FAIL root not a directory
+
+file: guard-mutants.sh
+line: [ -d "$WORK" ] || die "-w names no directory: '$WORK'"
+expect: FAIL work dir not a directory
+
+file: guard-mutants.sh
+line: [ -f "$MANIFEST" ] || die "no manifest file '$MANIFEST'"
+expect: FAIL missing manifest: named
+
+file: guard-mutants.sh
+line: [[ $JOBS =~ ^[1-9][0-9]*$ ]] || die "-j takes a whole number above 0, not '$JOBS'"
+expect: FAIL usage -j 0
+
+file: guard-mutants.sh
+line: [[ "$WORK/" != "$ROOT/"* ]] || die "the work directory $WORK is inside the root $ROOT"
+expect: FAIL inside root
+
+file: guard-mutants.sh
+line: [[ $l == *:* ]] || die "manifest line $ln is not 'key: value'"
+expect: FAIL usage nokey: named
+
+file: guard-mutants.sh
+line: [ -z "$TEST" ] || die "manifest line $ln: a second test:"
+expect: FAIL usage twotests
+
+file: guard-mutants.sh
+line: [ "$n" -gt 0 ] || die "manifest line $ln: $key: before any file:"
+expect: FAIL usage orphan
+
+file: guard-mutants.sh
+line: [ -z "${LINES[n]+set}" ] || die "manifest line $ln: a second line: in one entry"
+expect: FAIL usage twolines
+
+file: guard-mutants.sh
+line: [ -z "${EXPECTS[n]+set}" ] || die "manifest line $ln: a second expect: in one entry"
+expect: FAIL usage twoexpects
+
+file: guard-mutants.sh
+line: *) die "manifest line $ln: unknown key '$key'" ;;
+expect: FAIL usage unknown
+
+file: guard-mutants.sh
+line: [ -n "$TEST" ] || die "the manifest has no test:"
+expect: FAIL usage notest
+
+file: guard-mutants.sh
+line: [[ $TIMEOUT =~ ^[1-9][0-9]*$ ]] || die "timeout: takes whole seconds above 0, not '$TIMEOUT'"
+expect: FAIL usage badtimeout
+
+file: guard-mutants.sh
+line: [ -n "${FILES[k]}" ] || die "entry $k has an empty file:"
+expect: FAIL usage nofile
+
+file: guard-mutants.sh
+line: [ -n "${LINES[k]:-}" ] || die "entry $k (${FILES[k]}) has no line:"
+expect: FAIL usage noline
+
+file: guard-mutants.sh
+line: [ -n "${EXPECTS[k]:-}" ] || die "entry $k (${FILES[k]}) has no expect:, so any red would count, a syntax error included"
+expect: FAIL no expect: exit
+
+file: guard-mutants.sh
+line: [ -z "$p" ] || { kill $p 2>/dev/null; wait; }
+expect: FAIL sigterm: test process gone
+
+file: guard-mutants.sh
+line: rm -rf -- "${RUN:?}"
+expect: FAIL real: work dir left
+
+file: guard-mutants.sh
+line: trap cleanup EXIT
+expect: FAIL real: work dir left
+
+file: guard-mutants.sh
+line: trap '[ -z "$tp" ] || { kill "$tp" 2>/dev/null; wait "$tp"; }; exit 143' TERM
+expect: FAIL sigterm: test process gone
+
+file: guard-mutants.sh
+line: export TMPDIR="$m/tmp"
+expect: FAIL parallel: first summary
+
+file: guard-mutants.sh
+line: [[ "$(realpath -e -- "$tree/${FILES[k]}" 2>/dev/null)" == "$tree"/* ]] || { put "$k" errored "no such file inside the root"; return; }
+expect: FAIL escape: summary
+
+file: guard-mutants.sh
+line: [ "$count" = 1 ] || { put "$k" errored "the line matches ${count:-no} lines, not one"; return; }
+expect: FAIL match: summary
+
+file: guard-mutants.sh
+line: [ "$rc" -ne 0 ] || { v=SURVIVED; why="the test passed without this line"; }
+expect: FAIL toothless: summary
+
+file: guard-mutants.sh
+line: [ "$rc" -eq 0 ] || grep -qF -- "${EXPECTS[k]}" "$out" || { v=errored; why="rc=$rc without the expect string"; }
+expect: FAIL syntax error: summary
+
+file: guard-mutants.sh
+line: { [ "$rc" -ne 124 ] && [ "$rc" -ne 137 ]; } || { v=errored; why="timed out after ${TIMEOUT}s"; }
+expect: FAIL timeout: summary
+
+file: guard-mutants.sh
+line: [ "$base" = 0 ] || { printf 'guard-mutants: ERROR, the test fails on an unmutated copy (%s); nothing judged\n' "${base:-no result}"; exit 1; }
+expect: FAIL baseline: only the ERROR line
+
+file: guard-mutants.sh
+line: if [ "$running" -ge "$JOBS" ]; then wait -n; running=$((running - 1)); fi
+expect: FAIL jobs cap: summary
+
+file: guard-mutants.sh
+line: { [ "$s" -eq 0 ] && [ "$e" -eq 0 ] && [ "$n" -gt 0 ]; } || exit 1
+expect: FAIL toothless: exit
+
+file: guard-mutants.sh
+line: [ "$rc" -eq 0 ] || ! grep -qF -- "${EXPECTS[k]}" "$RUN/base.out" || { v=errored; why="the unmutated test prints the expect string too"; }
+expect: FAIL baseline prints expect: summary
