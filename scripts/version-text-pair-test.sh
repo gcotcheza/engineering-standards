@@ -85,7 +85,7 @@ FAKE
 chmod +x "${WORK}/git-diff-fails"
 OUT="$(VERSION_PAIR_GIT="${WORK}/git-diff-fails" "${CHECK}" "${REPO}" 2>&1)"
 RC=$?
-matches 'case 4b: a failing git diff is named' "${OUT}" '^version-text-pair: git diff against [0-9a-f]{40} failed, so nothing was judged\.$'
+matches 'case 4b: a failing comparison is named' "${OUT}" '^version-text-pair: the changed-file comparison against [0-9a-f]{40} failed, so nothing was judged\.$'
 equals  'case 4b: exit code' "${RC}" 2
 equals  'case 4b: no ok line is printed' "$(printf '%s' "${OUT}" | grep -c 'version-text-pair: ok')" 0
 

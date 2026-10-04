@@ -31,7 +31,7 @@ base="$("${GIT}" merge-base HEAD "${BASE_REF}" 2>/dev/null)"
 [ -n "${base}" ] || fail_base
 
 if ! changed="$("${GIT}" diff --name-only "${base}" --)"; then
-    printf 'version-text-pair: git diff against %s failed, so nothing was judged.\n' "${base}" >&2
+    printf 'version-text-pair: the changed-file comparison against %s failed, so nothing was judged.\n' "${base}" >&2
     exit 2
 fi
 
