@@ -1152,9 +1152,10 @@ through `env_file:`, which the policy holds inside `ROOT`.
 **The policy is a tripwire, not the boundary.** Main is the boundary: a merged PR is reviewed. The jq
 check catches one that slipped in a host escape. It reads `--profile '*'`, because `config` hides a
 service whose profile is not active, and `--no-env-resolution`, so no `.env` value is ever in its input. Paths are judged by `realpath -m`, so a symlink inside `ROOT` that points out is
-outside. It is not widened to let a project pass: today four projects refuse on
-`security_opt: no-new-privileges:true` and two on audio binds outside `ROOT`, which is a ruling for the
-owner, not for the lib.
+outside. Two exceptions are the moderator's rulings (backlog 320 fix round): `security_opt` may hold only
+`no-new-privileges`, which only hardens; and a bind source outside `ROOT` passes only when it equals a
+path in root's `/etc/fleet/app-binds/<app>`, never a prefix and never a host path the box needs kept
+(`/etc`, `/usr`, `/var/lib/docker`, …). The list is root's file, so a merged PR cannot widen it.
 
 **Deviation from the design: the build context is checked against root's mirror, not with `git status`
 as the app user.** The app user controls its own `.git` (index, config, hooks), so its `git status` is
@@ -1169,3 +1170,9 @@ are not compared: they run inside the build container, never on the host.
 is this design again. Running compose as the app user: membership of the docker group is root.
 A per-app allow-list in the mirror as the boundary: main already is, and a list there is one more file
 the same PR can change.
+
+**Red proofs run unprivileged (fleet rule 26).** The compose mutants run `compose-test.sh` as `nobody`.
+`DEPLOY_ROOT_UID` is the uid the env and bind-list files must belong to; it exists for that run alone.
+A deploy never sets it (fleet-deploy's `env -i` passes none, and a `deploy.sh` that set it is main's
+code). `summary.sh`'s self-location walk keeps uid 0 with no switch, so `compose-test.sh` defines its
+own `say`/`refuse` instead of sourcing it.

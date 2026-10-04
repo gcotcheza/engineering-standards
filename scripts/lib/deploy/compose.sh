@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-04 sha256:ae178b4006ee496e50843c51ab3d8bae906aab9c82f438376e72a73243d06556
+# fleet-deploy-lib 2026-10-04 sha256:9b49d1e38499f2f5c81aa1b0e75e23e46d36819a99d73ca2604e64c6f3d396df
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -14,9 +14,14 @@ FLEET_COMPOSE_POLICY='
   (select($v.pid == "host") | "F\t\($s)\tpid"),
   (select($v.ipc == "host") | "F\t\($s)\tipc"),
   (select($v.network_mode == "host") | "F\t\($s)\tnetwork_mode"),
+  (select($v.uts == "host") | "F\t\($s)\tuts"),
+  (select($v.userns_mode == "host") | "F\t\($s)\tuserns_mode"),
+  (select($v.cgroup == "host") | "F\t\($s)\tcgroup"),
   (select(($v.cap_add // []) | length > 0) | "F\t\($s)\tcap_add"),
   (select(($v.devices // []) | length > 0) | "F\t\($s)\tdevices"),
-  (select(($v.security_opt // []) | length > 0) | "F\t\($s)\tsecurity_opt"),
+  (select(($v.security_opt // [])
+    - ["no-new-privileges:true", "no-new-privileges=true", "no-new-privileges"]
+    | length > 0) | "F\t\($s)\tsecurity_opt"),
   (select(any($v.volumes[]?; (.source // "") | test("docker[.]sock$"))) | "F\t\($s)\tvolumes (docker.sock)"),
   (select(($v.build.secrets // []) | length > 0) | "F\t\($s)\tbuild.secrets"),
   (select(($v.build.ssh // []) | length > 0) | "F\t\($s)\tbuild.ssh"),
@@ -31,12 +36,36 @@ FLEET_COMPOSE_POLICY='
 empty
 '
 
+deploy_compose_root_only() { [ ! -L "$1" ] && [ "$(stat -c %u "$1")" = "${DEPLOY_ROOT_UID:-0}" ] && (( (8#$(stat -c %a "$1") & 8#022) == 0 )); }
+
+# Root's list of extra bind sources outside ROOT, /etc/fleet/app-binds/<app>: exact paths, no prefixes.
+deploy_compose_binds() { # root -> DEPLOY_COMPOSE_BINDS, or 1 with DEPLOY_COMPOSE_ERR
+    local f line
+    f="${DEPLOY_APP_BINDS_DIR:-/etc/fleet/app-binds}/$(basename -- "$1")"
+    DEPLOY_COMPOSE_BINDS=()
+    [ -e "$f" ] || [ -L "$f" ] || return 0
+    { [ -f "$f" ] && deploy_compose_root_only "$f" && deploy_compose_root_only "$(dirname -- "$f")"; } || { DEPLOY_COMPOSE_ERR="$f is not a root-owned file in a root-owned directory that only root can write"; return 1; }
+    while IFS= read -r line || [ -n "$line" ]; do
+        case $line in ''|'#'*) continue ;; /*) ;; *) DEPLOY_COMPOSE_ERR="$f has a line that is not an absolute path"; return 1 ;; esac
+        DEPLOY_COMPOSE_BINDS+=("$(realpath -m -- "$line")")
+    done <"$f"
+}
+
+deploy_compose_bind_listed() { # path -> 0 when it is exactly a listed path and none the host needs kept
+    local real b
+    real=$(realpath -m -- "$1")
+    case $real in /|/etc*|/root*|/proc*|/sys*|/dev*|/boot*|/usr*|/var/run*|/run*|/var/lib/docker*|/var/lib/fleet*|/home*|*docker.sock) return 1 ;; esac
+    for b in "${DEPLOY_COMPOSE_BINDS[@]}"; do [ "$b" != "$real" ] || return 0; done
+    return 1
+}
+
 deploy_compose_policy() { # root, config json -> 0, or 1 with DEPLOY_COMPOSE_ERR naming service and key
     local root=$1 rules kind svc key path
+    deploy_compose_binds "$root" || return 1
     rules=$(printf '%s' "$2" | jq -r "$FLEET_COMPOSE_POLICY") || { DEPLOY_COMPOSE_ERR="jq could not read the compose config, so no compose call runs"; return 1; }
     while IFS=$'\t' read -r kind svc key path; do
         [ "$kind" != F ] || { DEPLOY_COMPOSE_ERR="compose $svc sets $key, which root's compose does not run (policy, backlog 320)"; return 1; }
-        [ "$kind" != P ] || [[ $path == /* && "$(realpath -m -- "$path")/" == "$root"/* ]] || { DEPLOY_COMPOSE_ERR="compose $svc: $key reaches outside $root (policy, backlog 320)"; return 1; }
+        [ "$kind" != P ] || [[ $path == /* && "$(realpath -m -- "$path")/" == "$root"/* ]] || { [ "$key" = volumes ] && deploy_compose_bind_listed "$path"; } || { DEPLOY_COMPOSE_ERR="compose $svc: $key reaches outside $root (policy, backlog 320)"; return 1; }
     done <<<"$rules"
 }
 
@@ -111,7 +140,7 @@ deploy_compose_pieces() { # root, env file, run dir, file… -> 0, or 1 with DEP
     done
     d=$(dirname -- "$env")
     [ "$(basename -- "$env")" = "$(basename -- "$root").env" ] || { DEPLOY_COMPOSE_ERR="$env is not named after $root"; return 1; }
-    { [ -d "$d" ] && [ ! -L "$d" ] && [ "$(stat -c %u:%a "$d")" = 0:700 ] && [ -f "$env" ] && [ ! -L "$env" ] && [ "$(stat -c %u:%a "$env")" = 0:600 ]; } \
+    { [ -d "$d" ] && [ ! -L "$d" ] && [ "$(stat -c %u:%a "$d")" = "${DEPLOY_ROOT_UID:-0}:700" ] && [ -f "$env" ] && [ ! -L "$env" ] && [ "$(stat -c %u:%a "$env")" = "${DEPLOY_ROOT_UID:-0}:600" ]; } \
         || { DEPLOY_COMPOSE_ERR="$env is not a root 600 file in a root 700 directory: packet 320's app-env seed writes it, then deploy with: fleet-deploy <app> <PR#>"; return 1; }
 }
 
