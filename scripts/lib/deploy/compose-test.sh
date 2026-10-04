@@ -57,7 +57,8 @@ say() { printf '%s\n' "$*"; }
 refuse() { say "REFUSED: $*"; exit 1; }
 . "${D}/lib/deploy/compose.sh"
 [ -z "${C_UID}" ] || export DEPLOY_ROOT_UID="${C_UID}"
-ROOT=$C_ROOT DOCKER=$C_DOCKER DEPLOY_APP_ENV_DIR=$C_ENV_DIR DEPLOY_APP_BINDS_DIR=$C_BINDS_DIR
+ROOT=$C_ROOT DOCKER=$C_DOCKER DEPLOY_APP_ENV_DIR=$C_ENV_DIR
+export DEPLOY_APP_BINDS_DIR=$C_BINDS_DIR
 eval "$C_CALLS"
 SH
 }
@@ -204,7 +205,7 @@ if root_only_case 'env value: read as the app user (sudo)'; then
     contains 'env value: read as the app user' "${OUT}" 'VAL=https://demo.invalid'
     rm -f "${CROOT}/.env"; printf 'APP_URL=root-only\n' >"${CF}/root-only"; chmod 600 "${CF}/root-only"; ln -s "${CF}/root-only" "${CROOT}/.env"
     crun 'printf "VAL=%s\n" "$(DEPLOY_APP_USER=nobody deploy_app_env_value APP_URL)"'
-    contains 'env value: a link to a root-only file reads nothing' "${OUT}" 'VAL='
+    contains 'env value: a link to a root-only file refuses' "${OUT}" "REFUSED: ${CROOT}/.env could not be read as nobody (sudo)"
     absent 'env value: and never its content' "${OUT}" 'root-only'
 fi
 
@@ -249,6 +250,77 @@ contains 'binds dir writable: a group-writable list directory refuses' "${OUT}" 
 cfx binds-not-volumes; printf '%s\n' "${CF}/audio" >"${CBINDS}"; cjson ".services.app.env_file = [{path: \"${CF}/audio\"}]"
 crun "${INIT}"
 contains 'binds not-volumes: the list frees binds only, not env_file' "${OUT}" 'REFUSED: compose app: env_file reaches outside'
+
+# Fix round 2: more host escapes, watch, the dockerfile's place, the policy again at exec, the seven argv guards.
+policy_case device_cgroup_rules '.services.app.device_cgroup_rules = ["c 1:3 mr"]' 'compose app sets device_cgroup_rules,'
+policy_case net_container '.services.app.network_mode = "container:abc"' 'compose app sets network_mode (container:),'
+policy_case pid_container '.services.app.pid = "container:abc"' 'compose app sets pid (container:),'
+policy_case ipc_container '.services.app.ipc = "container:abc"' 'compose app sets ipc (container:),'
+policy_case volumes_from '.services.app.volumes_from = ["container:abc"]' 'compose app sets volumes_from (container:),'
+policy_case provider '.services.app.provider = {type: "model"}' 'compose app sets provider,'
+policy_case build_privileged '.services.app.build.privileged = true' 'compose app sets build.privileged,'
+policy_case build_entitlements '.services.app.build.entitlements = ["network.host"]' 'compose app sets build.entitlements,'
+policy_case build_network '.services.app.build.network = "host"' 'compose app sets build.network,'
+policy_case volume_external '.volumes.data.external = true' 'compose volume data sets external,'
+policy_case network_driver_host '.networks = {n: {driver: "host"}}' 'compose network n sets driver host,'
+policy_case network_external_host '.networks = {n: {external: true, name: "host"}}' 'compose network n sets external host,'
+cfx policy-service-forms; cjson '.services.app.volumes_from = ["db"] | .services.app.network_mode = "service:db" | .networks = {n: {external: true, name: "web"}}'
+crun "${INIT}"
+contains 'policy service forms: another service, service: and a non-host external network pass' "${OUT}" 'policy clean'
+cfx watch
+crun "${INIT}; deploy_compose watch"
+contains 'compose: watch is refused' "${OUT}" 'REFUSED: compose watch copies the app tree into running containers, so root does not run it'
+absent 'compose: and never reaches docker' "${ARGV}" ' watch'
+build_case dockerfile_outside 'printf "FROM x\n" | tee "${CROOT}/Dockerfile" >"${CRUN}/buildcheck/Dockerfile"; cjson ".services.app.build.dockerfile = \"../../Dockerfile\""' "build.dockerfile @ROOT@/docker/app/../../Dockerfile is outside its context @ROOT@/docker/app, so nothing is built"
+cfx policy-swap
+crun "${INIT}; ln -s /etc ${CROOT}/storage; deploy_compose up -d"
+contains 'policy swap: init passed before the swap' "${OUT}" 'policy clean'
+contains 'policy swap: a bind swapped to a symlink out after init is refused at up' "${OUT}" 'REFUSED: compose app: volumes reaches outside'
+absent 'policy swap: and nothing runs' "${ARGV}" ' up -d'
+cfx binds-up; mkdir -p "${CF}/audio"; printf '%s\n' "${CF}/audio" >"${CBINDS}"
+cjson ".services.app.volumes += [{type: \"bind\", source: \"${CF}/audio\", target: \"/a\"}]"
+crun "${INIT}; deploy_compose up -d"
+contains 'binds up: the policy at up reads the same list' "${ARGV}" "--env-file ${CENV} up -d"
+
+drun() { # direct run mode, as a job's text calls it
+    OUT="$(env -i PATH=/usr/bin:/bin ${C_UID:+DEPLOY_ROOT_UID=${C_UID}} bash "${CRUN}/scripts/lib/deploy/compose.sh" "$@" 2>&1)"
+    ARGV="$(cat "${CF}/bin/argv" 2>/dev/null)"
+}
+cfx direct-ok
+drun run "${CROOT}" "${CF}/bin/docker" "${CENV}" docker-compose.yml -- ps
+contains 'direct: a well-formed run reaches docker' "${ARGV}" "--env-file ${CENV} ps"
+cfx direct-argnum
+drun walk "${CROOT}" "${CF}/bin/docker" "${CENV}" docker-compose.yml -- ps
+contains 'direct: a first word other than run is refused' "${OUT}" 'REFUSED: compose.sh runs only as:'
+equals 'direct: and calls no docker (run word)' "${ARGV}" ''
+cfx direct-dashdash
+drun run "${CROOT}" "${CF}/bin/docker" "${CENV}" docker-compose.yml ps
+contains 'direct: no -- before the compose arguments is refused' "${OUT}" 'REFUSED: compose.sh run has no -- before the compose arguments'
+cfx direct-docker-word; cp "${CF}/bin/docker" "${CF}/bin/dock er"
+drun run "${CROOT}" "${CF}/bin/dock er" "${CENV}" docker-compose.yml -- ps
+contains 'direct: a docker command that is not one word is refused' "${OUT}" 'REFUSED: the docker command is not one plain word'
+equals 'direct: and calls no docker (docker word)' "${ARGV}" ''
+cfx direct-root-link; mkdir -p "${CF}/alt"; ln -s "${CROOT}" "${CF}/alt/demo"
+drun run "${CF}/alt/demo" "${CF}/bin/docker" "${CENV}" docker-compose.yml -- ps
+contains 'direct: a ROOT reached through a symlink is refused' "${OUT}" "REFUSED: ROOT '${CF}/alt/demo' is not a plain absolute directory"
+equals 'direct: and calls no docker (ROOT)' "${ARGV}" ''
+cfx direct-env-word; mkdir -m 700 "${CF}/app env"; cp -p "${CENV}" "${CF}/app env/demo.env"
+drun run "${CROOT}" "${CF}/bin/docker" "${CF}/app env/demo.env" docker-compose.yml -- ps
+contains 'direct: an env file path that is not one word is refused' "${OUT}" "REFUSED: the env file path '${CF}/app env/demo.env' is not one plain word"
+equals 'direct: and calls no docker (env word)' "${ARGV}" ''
+cfx direct-env-name; cp -p "${CENV}" "${CF}/app-env/other.env"
+drun run "${CROOT}" "${CF}/bin/docker" "${CF}/app-env/other.env" docker-compose.yml -- ps
+contains 'direct: an env file not named after ROOT is refused' "${OUT}" "REFUSED: ${CF}/app-env/other.env is not named after ${CROOT}"
+equals 'direct: and calls no docker (env name)' "${ARGV}" ''
+cfx init-docker-glob
+crun "DOCKER='${CF}/bin/docke?'; ${INIT}; deploy_compose ps"
+contains 'init: a DOCKER that is not one word (a glob) is refused' "${OUT}" "REFUSED: DOCKER '${CF}/bin/docke?' is not one plain word."
+equals 'init: and calls no docker (DOCKER)' "${ARGV}" ''
+cfx env-value-sudo-fails; printf '#!/bin/sh\nexit 1\n' >"${CF}/bin/sudo"; chmod 755 "${CF}/bin/sudo"
+C_EXTRA="PATH=${CF}/bin:/usr/bin:/bin"
+crun 'v=$(DEPLOY_APP_USER=nobody deploy_app_env_value APP_URL) || printf "RC=%s\n" "$?"; printf "VAL=[%s]\n" "${v:-}"'
+contains 'env value: a failed sudo refuses on stderr' "${OUT}" "REFUSED: ${CROOT}/.env could not be read as nobody (sudo), so no value is guessed"
+contains 'env value: and returns 1 with no value' "${OUT}" $'RC=1\nVAL=[]'
 
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 if [ "${fails}" -eq 0 ]; then printf '\ncompose-test: all checks passed\n'; exit 0; fi

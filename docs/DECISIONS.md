@@ -1152,7 +1152,10 @@ through `env_file:`, which the policy holds inside `ROOT`.
 **The policy is a tripwire, not the boundary.** Main is the boundary: a merged PR is reviewed. The jq
 check catches one that slipped in a host escape. It reads `--profile '*'`, because `config` hides a
 service whose profile is not active, and `--no-env-resolution`, so no `.env` value is ever in its input. Paths are judged by `realpath -m`, so a symlink inside `ROOT` that points out is
-outside. Two exceptions are the moderator's rulings (backlog 320 fix round): `security_opt` may hold only
+outside at check time only (see the known gap below). Fix round 2 added `device_cgroup_rules`, a
+`container:` `network_mode`/`pid`/`ipc` or `volumes_from`, a `provider:` service, build `privileged`/
+`entitlements`/`network: host`, an external volume and a `host` network; `compose watch` is refused.
+Two exceptions are the moderator's rulings (backlog 320 fix round): `security_opt` may hold only
 `no-new-privileges`, which only hardens; and a bind source outside `ROOT` passes only when it equals a
 path in root's `/etc/fleet/app-binds/<app>`, never a prefix and never a host path the box needs kept
 (`/etc`, `/usr`, `/var/lib/docker`, …). The list is root's file, so a merged PR cannot widen it.
@@ -1160,11 +1163,19 @@ path in root's `/etc/fleet/app-binds/<app>`, never a prefix and never a host pat
 **Deviation from the design: the build context is checked against root's mirror, not with `git status`
 as the app user.** The app user controls its own `.git` (index, config, hooks), so its `git status` is
 the app user's answer. Instead every tracked build-context file is compared with `cmp` to the blob
-`fleet-deploy` exported, and `find -P` lists nothing untracked under `docker/` or beside a context's
-Dockerfile. What remains: a race between the check and compose reading the files, since the tree stays
+`fleet-deploy` exported, `find -P` lists nothing untracked under `docker/`, each build context's
+Dockerfile (and a `.dockerignore` beside it or at the context root, when one exists) is tracked, and
+the Dockerfile lies inside its context. What remains: a race between the check and compose reading the files, since the tree stays
 app-writable; a full fix builds from a root-owned copy of the context, left as follow-up work. Context
 files outside `docker/`, the Dockerfile and `.dockerignore` (scribly's and reflection's `api/` source)
 are not compared: they run inside the build container, never on the host.
+
+**Known gap: check to daemon start.** The policy runs at init and again in `deploy_compose_exec` right
+before every `build`/`up`/`run`/`create`, so a bind source swapped to an outward symlink after init is
+refused (case `policy swap`). After that last check the tree is still app-writable, and the review of
+fix round 1 proved both routes open in that window: dockerd follows a symlinked bind source to its
+target, and compose inlines a symlinked `env_file`'s content. Closing it needs binds and env files root
+alone can write; the moderator files that structural fix as its own card.
 
 **Rejected (card 320).** Hashing compose files against a list: the list needs a root-owned source, which
 is this design again. Running compose as the app user: membership of the docker group is root.
@@ -1173,6 +1184,8 @@ the same PR can change.
 
 **Red proofs run unprivileged (fleet rule 26).** The compose mutants run `compose-test.sh` as `nobody`.
 `DEPLOY_ROOT_UID` is the uid the env and bind-list files must belong to; it exists for that run alone.
+Two cases still run only as root, against fakes: an env file another user owns, and a `.env` read
+through a real `sudo -u nobody`. The failed-sudo case uses a stub `sudo`, so it runs as `nobody`.
 A deploy never sets it (fleet-deploy's `env -i` passes none, and a `deploy.sh` that set it is main's
 code). `summary.sh`'s self-location walk keeps uid 0 with no switch, so `compose-test.sh` defines its
 own `say`/`refuse` instead of sourcing it.

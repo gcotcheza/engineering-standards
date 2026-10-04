@@ -8,10 +8,14 @@ into, found from the lib's own location. `deploy_compose_init <MERGE_SHA>` runs 
 compose call: it refuses, naming `fleet-deploy`, when `<run>/compose/`, `<run>/export-sha` or a named
 file is missing (an export from the 317 `fleet-deploy` or `fleet-deploy-on-merge` has none), when the
 env file is not root 600 in a root 700 directory, or when the files were exported at another sha. It
-then reads `--profile '*' config --no-env-resolution --format json` (every profile's services) through jq and refuses `privileged`, `pid`/`ipc`/
-`network_mode`/`uts`/`userns_mode`/`cgroup: host`, `cap_add`, `devices`, any `security_opt` but
-`no-new-privileges` (`:true`, `=true` or bare), a `docker.sock` mount, build `secrets`/`ssh`/
-`additional_contexts`, a volume's `driver_opts`, and any bind source, `env_file`, build context or
+then reads `--profile '*' config --no-env-resolution --format json` (every profile's services) through
+jq, and `deploy_compose_exec` reads it again right before every `build`, `up`, `run` or `create`; both
+refuse `privileged`, `pid`/`ipc`/`network_mode`/`uts`/`userns_mode`/`cgroup: host`, a `container:`
+`pid`/`ipc`/`network_mode` or `volumes_from`, `cap_add`, `devices`, `device_cgroup_rules`, any
+`security_opt` but `no-new-privileges` (`:true`, `=true` or bare), a `docker.sock` mount, a `provider:`
+service, build `secrets`/`ssh`/`additional_contexts`/`entitlements`, `build.privileged`,
+`build.network: host`, a volume's `driver_opts`, an external volume, a network with `driver: host` or
+external and named `host`, and any bind source, `env_file`, build context or
 secret/config file that resolves outside `ROOT`. A bind source outside `ROOT` passes only when it equals
 a path in root's `/etc/fleet/app-binds/<app>` (root-owned, not group/other-writable, exact paths, no
 prefixes; `/`, `/etc*`, `/root*`, `/proc*`, `/sys*`, `/dev*`, `/boot*`, `/usr*`, `/var/run*`, `/run*`,
@@ -21,10 +25,12 @@ It sets `DEPLOY_COMPOSE` (`bash <lib>/compose.sh run …`), which works in-proce
 Before `build`, `up`, `run` or `create`, every file `fleet-deploy` exported to `<run>/buildcheck/`
 (tracked `docker/**`, `Dockerfile*`, `.dockerignore`) must `cmp` equal to the tree's copy, reached through
 no symlink; `docker/` holds nothing untracked; each build context's Dockerfile and `.dockerignore` are
-tracked. A caller's own `-f`, `--env-file`, `--project-directory` or `-p` refuses, and no `COMPOSE_*` from
-the caller reaches docker. `deploy_app_env_value KEY` reads `.env` through `sudo -n -u <app>`. Its suite is
+tracked, and the Dockerfile lies inside its context. `compose watch` refuses. A caller's own `-f`, `--env-file`, `--project-directory` or `-p` refuses, and no `COMPOSE_*` from
+the caller reaches docker. `deploy_app_env_value KEY` reads `.env` through `sudo -n -u <app>`; when sudo fails it prints a
+`REFUSED:` line on stderr and returns 1, so a caller writes `v=$(deploy_app_env_value KEY) || refuse …`. Its suite is
 the new `compose-test.sh` (stub docker), which `test.sh` runs as root; the red proofs, one saved mutant
-per guard line (45 deletions, 2 edits for the two `--profile '*'`), run it as `nobody` with
+per guard line (66 deletions, among them each argv check of the run mode, and 2 edits for the two
+`--profile '*'`), run it as `nobody` with
 `DEPLOY_ROOT_UID` standing in for root (a test seam; unset, as under fleet-deploy's `env -i`, the owner
 must be uid 0), and live in the lane of backlog 320. Both suites check that `/dev/null` keeps its mode
 and owner. Every lib file is re-stamped for VERSION 2026-10-04.
@@ -44,13 +50,14 @@ ghiecode, ghie-writes and pig-dice-game run no compose.
   `compose/`, `buildcheck/` and `export-sha`, and `DEPLOY_APP_ENV_DIR` naming a root 700 directory.
 - health-tracker: `seam_scan` walks every `DEPLOY_*` shell variable, so `deploy_compose_init` runs after
   it (the lib sets no `DEPLOY_*` name when sourced).
-- root's chown sweeps become `find -P … -exec chown -h …`: memento `deploy.sh:169`, orbit `:205`,
-  scribly and reflection `root_owned_find -exec chown` (`:112`, `:118`); memento's `chown -R memento:memento
-  $ROOT/node_modules` (`:135`) becomes the same `find -P` form. fineprint (`:104`) already passes `-h`.
-- `.env` read by root goes through `deploy_app_env_value` or is dropped: `grep '^APP_URL=' "$ROOT/.env"` in
-  fineprint `:30`, kidsquest `:44`, ghiecode `:34`, ghie-writes `:58`; kidsquest's `ASSET_URL` grep (`:228`).
-  kidsquest's `chmod 600 "$ROOT/.env"` (`:66`, `:134`) runs as the app user (`sudo -n -u kidsquest`), since
-  chmod follows a symlink.
+- root's chown sweeps become `find -P … -exec chown -h …`: memento's `deploy_job`, orbit's
+  `rooted_count`, scribly's and reflection's `root_owned`; memento's `chown -R memento:memento
+  $ROOT/node_modules` in `deploy_job` becomes the same `find -P` form. fineprint's `repair_ownership`
+  already passes `-h`.
+- `.env` read by root goes through `deploy_app_env_value` or is dropped: the `APP_URL` grep in `site_url`
+  (fineprint, kidsquest, ghiecode, ghie-writes); kidsquest's `ASSET_URL` grep in `main`.
+  kidsquest's `chmod 600 "$ROOT/.env"` (in `land` and in `deploy_job`'s job text) runs as the app user
+  (`sudo -n -u kidsquest`), since chmod follows a symlink.
 - every gate that runs this suite: nothing new; `compose-test.sh` needs `jq`, and its two root-only cases
   (an env file another user owns, a `.env` read through `sudo -u nobody`) run when `test.sh` runs as root.
 

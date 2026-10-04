@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-04 sha256:9b49d1e38499f2f5c81aa1b0e75e23e46d36819a99d73ca2604e64c6f3d396df
+# fleet-deploy-lib 2026-10-04 sha256:19e800e998b969a76daec8ea8482f201115d73448ecde618e860900e87adc1d3
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -19,6 +19,10 @@ FLEET_COMPOSE_POLICY='
   (select($v.cgroup == "host") | "F\t\($s)\tcgroup"),
   (select(($v.cap_add // []) | length > 0) | "F\t\($s)\tcap_add"),
   (select(($v.devices // []) | length > 0) | "F\t\($s)\tdevices"),
+  (select(($v.device_cgroup_rules // []) | length > 0) | "F\t\($s)\tdevice_cgroup_rules"),
+  ($v | to_entries[] | select(.key == "network_mode" or .key == "pid" or .key == "ipc") | select(.value | type == "string" and startswith("container:")) | "F\t\($s)\t\(.key) (container:)"),
+  (select(any($v.volumes_from[]?; startswith("container:"))) | "F\t\($s)\tvolumes_from (container:)"),
+  (select($v.provider != null) | "F\t\($s)\tprovider"),
   (select(($v.security_opt // [])
     - ["no-new-privileges:true", "no-new-privileges=true", "no-new-privileges"]
     | length > 0) | "F\t\($s)\tsecurity_opt"),
@@ -26,11 +30,17 @@ FLEET_COMPOSE_POLICY='
   (select(($v.build.secrets // []) | length > 0) | "F\t\($s)\tbuild.secrets"),
   (select(($v.build.ssh // []) | length > 0) | "F\t\($s)\tbuild.ssh"),
   (select(($v.build.additional_contexts // {}) | length > 0) | "F\t\($s)\tbuild.additional_contexts"),
+  (select($v.build.privileged == true) | "F\t\($s)\tbuild.privileged"),
+  (select(($v.build.entitlements // []) | length > 0) | "F\t\($s)\tbuild.entitlements"),
+  (select($v.build.network == "host") | "F\t\($s)\tbuild.network"),
   ($v.volumes[]? | select(.type == "bind") | "P\t\($s)\tvolumes\t\(.source // "")"),
   ($v.env_file[]? | "P\t\($s)\tenv_file\t\(if type == "object" then .path else . end)"),
   ($v.build? // empty | "P\t\($s)\tbuild.context\t\(.context // "")"),
   empty)),
 (.volumes // {} | to_entries[] | select((.value.driver_opts // {}) | length > 0) | "F\tvolume \(.key)\tdriver_opts"),
+(.volumes // {} | to_entries[] | select(.value.external == true) | "F\tvolume \(.key)\texternal"),
+(.networks // {} | to_entries[] | select(.value.driver == "host") | "F\tnetwork \(.key)\tdriver host"),
+(.networks // {} | to_entries[] | select(.value.external == true and (.value.name // .key) == "host") | "F\tnetwork \(.key)\texternal host"),
 (.secrets // {} | to_entries[] | select(.value.file) | "P\tsecret \(.key)\tfile\t\(.value.file)"),
 (.configs // {} | to_entries[] | select(.value.file) | "P\tconfig \(.key)\tfile\t\(.value.file)"),
 empty
@@ -84,6 +94,7 @@ deploy_compose_buildcheck() { # root, run dir, config json -> 0, or 1 with DEPLO
     while IFS=$'\t' read -r ctx df; do
         [ -n "$ctx" ] || continue
         [[ $df == /* ]] || df=$ctx/$df
+        [[ "$(realpath -m -- "$df")" == "$(realpath -m -- "$ctx")"/* ]] || { DEPLOY_COMPOSE_ERR="build.dockerfile $df is outside its context $ctx, so nothing is built"; return 1; }
         for f in "$df" "$df.dockerignore" "$ctx/.dockerignore"; do
             [ "$f" = "$df" ] || [ -e "$f" ] || [ -L "$f" ] || continue
             [ -f "$bc/${f#"$root"/}" ] || { DEPLOY_COMPOSE_ERR="$f is not in the merged commit, so nothing is built"; return 1; }
@@ -117,8 +128,10 @@ deploy_compose_exec() {
         esac
     done
     case $sub in
+        watch) printf 'REFUSED: compose watch copies the app tree into running containers, so root does not run it\n' >&2; return 1 ;;
         build|up|run|create)
-            json=$("$docker" "${argv[@]}" --profile '*' config --no-env-resolution --format json) || { printf 'REFUSED: compose config failed, so the build context was not checked\n' >&2; return 1; }
+            json=$("$docker" "${argv[@]}" --profile '*' config --no-env-resolution --format json) || { printf 'REFUSED: compose config failed, so the policy and the build context were not checked\n' >&2; return 1; }
+            deploy_compose_policy "$root" "$json" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; }
             deploy_compose_buildcheck "$root" "$run" "$json" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
     esac
     for f in "${!COMPOSE_@}"; do unset "$f"; done
@@ -163,10 +176,13 @@ deploy_compose_init() {
 
 deploy_compose() { [ -n "${DEPLOY_COMPOSE:-}" ] || refuse "deploy_compose_init has not run."; $DEPLOY_COMPOSE "$@"; }
 
-# A value from the app's .env, read as the app user: root never follows a link the app user made.
+# A value from the app's .env, read as the app user (root never follows the app user's link);
+# a failed sudo returns 1 on stderr, never an empty value.
 deploy_app_env_value() {
+    local user=${DEPLOY_APP_USER:-$(basename -- "$ROOT")} dotenv
     [[ ${1:-} =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || refuse "'${1:-}' is not an env key."
-    sudo -n -u "${DEPLOY_APP_USER:-$(basename -- "$ROOT")}" -- grep -m1 "^$1=" "$ROOT/.env" 2>/dev/null | cut -d= -f2-
+    dotenv=$(sudo -n -u "$user" -- cat -- "$ROOT/.env" 2>/dev/null) || { printf 'REFUSED: %s/.env could not be read as %s (sudo), so no value is guessed\n' "$ROOT" "$user" >&2; return 1; }
+    printf '%s\n' "$dotenv" | grep -m1 "^$1=" | cut -d= -f2-
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then deploy_compose_exec "$@"; exit; fi
