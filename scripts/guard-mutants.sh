@@ -19,6 +19,9 @@ MANIFEST is plain text, one "key: value" per line; blank lines and # lines are s
                        one line of the file, blanks around either side ignored
   expect: <text>       required; a fixed string the test prints when the guard is gone,
                        the gate's own failure line
+A guard is one physical line: a "\" continuation is two lines, and only one is deleted.
+expect is matched as a fixed substring of the output, and blanks after it count.
+Give -r a plain directory or clone: a test can write through a symlink or a worktree's .git link.
 
 The test runs on an unmutated copy first; unless that exits 0 the run is ERROR and
 nothing is judged. Then, per entry:
@@ -56,6 +59,7 @@ TEST='' TIMEOUT=120 n=0 ln=0
 FILES=() LINES=() EXPECTS=()
 while IFS= read -r l || [ -n "$l" ]; do
     ln=$((ln + 1))
+    [[ $l != *$'\r'* ]] || die "manifest line $ln holds a carriage return; save the file with Unix line ends"
     [[ $l =~ ^[[:space:]]*(#|$) ]] && continue
     [[ $l == *:* ]] || die "manifest line $ln is not 'key: value'"
     key=${l%%:*} val=${l#*:} val=${val# }
@@ -89,10 +93,10 @@ RUN=$(mktemp -d -p "$WORK" guard-mutants.XXXXXXXX) || die "cannot make a directo
 # Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
 # shellcheck disable=SC2317
 cleanup() {
-    local p
-    p=$(jobs -pr)
-    # shellcheck disable=SC2086  # one pid per word
-    [ -z "$p" ] || { kill $p 2>/dev/null; wait; }
+    local f pg
+    : >"${RUN:?}/stopping"
+    for f in "$RUN"/m*/pg; do pg=$(cat -- "$f" 2>/dev/null) && kill -TERM -- "-$pg" "$pg" 2>/dev/null; done
+    wait
     rm -rf -- "${RUN:?}"
 }
 trap cleanup EXIT
@@ -104,15 +108,14 @@ match_lines() {
     NEEDLE=$2 MODE=$1 awk '
         BEGIN { want = ENVIRON["NEEDLE"]; gsub(/^[ \t]+|[ \t]+$/, "", want) }
         { t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t) }
-        t == want { c++; if (ENVIRON["MODE"] == "drop") next }
+        t "" == want "" { c++; if (ENVIRON["MODE"] == "drop") next }
         ENVIRON["MODE"] == "drop" { print }
         END { if (ENVIRON["MODE"] == "count") print c + 0 }' "$3"
 }
 
 # run_one K: entry K in a directory of its own; K=0 is the unmutated baseline.
 run_one() {
-    local k=$1 m tree out rc count tp='' v why
-    trap '[ -z "$tp" ] || { kill "$tp" 2>/dev/null; wait "$tp"; }; exit 143' TERM
+    local k=$1 m tree out rc count tp v why
     m=$(mktemp -d -p "${RUN:?}" "m$k.XXXXXX") || { put "$k" errored "cannot make its directory"; return; }
     tree=$m/tree out=$m/out
     { mkdir -- "$m/tmp" && cp -a -- "$ROOT" "$tree"; } || { put "$k" errored "cannot copy the root"; return; }
@@ -124,9 +127,11 @@ run_one() {
         { match_lines drop "${LINES[k]}" "$tree/${FILES[k]}" >"$m/mutant" && cat -- "$m/mutant" >"$tree/${FILES[k]}"; } \
             || { put "$k" errored "cannot write the mutant"; return; }
     fi
-    (cd -- "$tree" && exec timeout -k 5 "$TIMEOUT" bash -c "$TEST") >"$out" 2>&1 </dev/null &
+    # timeout leads a process group of its own; pg names it before anything runs, so cleanup can end it.
+    (echo "$BASHPID" >"$m/pg"; [ ! -e "$RUN/stopping" ] || exit 143; cd -- "$tree" && exec timeout -k 5 "$TIMEOUT" bash -c "$TEST") >"$out" 2>&1 </dev/null &
     tp=$!
-    wait "$tp"; rc=$?; tp=''
+    wait "$tp"; rc=$?
+    kill -TERM -- "-$tp" 2>/dev/null; rm -f -- "$m/pg"
     if [ "$k" -eq 0 ]; then
         [ "$rc" -eq 0 ] || tail -n 5 -- "$out" >&2
         cp -- "$out" "$RUN/base.out"; put 0 base "$rc"; return

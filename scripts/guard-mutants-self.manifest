@@ -76,20 +76,12 @@ line: [ -n "${EXPECTS[k]:-}" ] || die "entry $k (${FILES[k]}) has no expect:, so
 expect: FAIL no expect: exit
 
 file: guard-mutants.sh
-line: [ -z "$p" ] || { kill $p 2>/dev/null; wait; }
-expect: FAIL sigterm: test process gone
-
-file: guard-mutants.sh
 line: rm -rf -- "${RUN:?}"
 expect: FAIL real: work dir left
 
 file: guard-mutants.sh
 line: trap cleanup EXIT
 expect: FAIL real: work dir left
-
-file: guard-mutants.sh
-line: trap '[ -z "$tp" ] || { kill "$tp" 2>/dev/null; wait "$tp"; }; exit 143' TERM
-expect: FAIL sigterm: test process gone
 
 file: guard-mutants.sh
 line: export TMPDIR="$m/tmp"
@@ -130,3 +122,39 @@ expect: FAIL toothless: exit
 file: guard-mutants.sh
 line: [ "$rc" -eq 0 ] || ! grep -qF -- "${EXPECTS[k]}" "$RUN/base.out" || { v=errored; why="the unmutated test prints the expect string too"; }
 expect: FAIL baseline prints expect: summary
+
+file: guard-mutants.sh
+line: [[ $l != *$'\r'* ]] || die "manifest line $ln holds a carriage return; save the file with Unix line ends"
+expect: FAIL usage crlf
+
+file: guard-mutants.sh
+line: [[ $l =~ ^[[:space:]]*(#|$) ]] && continue
+expect: FAIL real: summary
+
+file: guard-mutants.sh
+line: RUN=$(mktemp -d -p "$WORK" guard-mutants.XXXXXXXX) || die "cannot make a directory beneath $WORK"
+expect: FAIL real: summary
+
+file: guard-mutants.sh
+line: m=$(mktemp -d -p "${RUN:?}" "m$k.XXXXXX") || { put "$k" errored "cannot make its directory"; return; }
+expect: FAIL real: summary
+
+file: guard-mutants.sh
+line: { IFS=$'\t' read -r v why <"$RUN/res.$k"; } 2>/dev/null || { v=errored why="no result"; }
+expect: FAIL real: summary
+
+file: guard-mutants.sh
+line: : >"${RUN:?}/stopping"
+expect: FAIL window TERM: the test never started
+
+file: guard-mutants.sh
+line: for f in "$RUN"/m*/pg; do pg=$(cat -- "$f" 2>/dev/null) && kill -TERM -- "-$pg" "$pg" 2>/dev/null; done
+expect: FAIL sighup: test process gone
+
+file: guard-mutants.sh
+line: t "" == want "" { c++; if (ENVIRON["MODE"] == "drop") next }
+expect: FAIL 1 is not 1.0, 01 or 1e0: summary
+
+file: guard-mutants.sh
+line: kill -TERM -- "-$tp" 2>/dev/null; rm -f -- "$m/pg"
+expect: FAIL leftover:

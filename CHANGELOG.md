@@ -11,10 +11,14 @@ output saved to a file: caught is non-zero *and* `expect` printed; exit 0 is SUR
 prints) is errored. One line per entry, then
 `guard-mutants: <n> caught, <s> survived, <e> errored of <t>`; exit 0 only when every entry is caught.
 `-j N` runs entries at once, and two whole runs at once share no path. The caller's root is never
-written, and every copy is removed on any exit, a SIGTERM included.
+written, and every copy is removed on any exit. Each test runs under `timeout` in a process group of
+its own, which the runner ends when the test returns (anything it left behind goes with it) and from
+its EXIT trap on TERM, INT or HUP, sent to the runner or to its whole group; a test not yet started
+when the signal lands never starts. Guard lines are compared as strings (`1` is not `1.0`), and a
+manifest with a carriage return is a usage error.
 `scripts/guard-mutants-test.sh` is the new gate step 8 (the deploy-lib test moves to step 9).
-`scripts/guard-mutants-self.manifest` lists the runner's own 32 guard lines; the runner run on it
-reports all 32 caught. It deletes lines only: a mutant that swaps text stays a hand-made one.
+`scripts/guard-mutants-self.manifest` lists the runner's own 39 guard lines; the runner run on it
+reports all 39 caught. It deletes lines only: a mutant that swaps text stays a hand-made one.
 
 ## 2026-10-03 — root runs a deploy only from `fleet-deploy`'s export: the lib refuses any other copy, and `resolve` takes the repository from root (deploy-lib VERSION 2026-10-03, amended; the standard is unchanged)
 **`summary.sh` refuses to run from anywhere the app user could write** (backlog 317). When it is

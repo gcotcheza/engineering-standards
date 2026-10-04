@@ -1155,8 +1155,15 @@ once over one manifest and one work directory and requires identical reports; a 
 each entry a fixed directory turns that case red.
 
 **The self-proof stays out of the gate.** `scripts/guard-mutants-self.manifest` runs the suite once
-per guard line, 32 times, about a minute at `-j 4`. The gate runs the suite once (step 8); the
+per guard line, 39 times, a minute or two at `-j 4`. The gate runs the suite once (step 8); the
 self-manifest is rerun by hand whenever the runner's guards change, and the PR quotes its summary.
+
+**A test's processes end with the runner.** `timeout` puts each test in a process group of its own,
+so a signal to the runner's group never reaches it: on befb3e7, INT or HUP to the group left the test
+and its `timeout` running after the runner was gone. Each test's group id is written to its entry
+directory before the test starts, the EXIT trap kills every recorded group, and a `stopping` file it
+writes first stops a test that was about to start. No INT/HUP/TERM trap of its own: deleting each one
+left the suite green, because bash runs the EXIT trap on all three, so they were dead code.
 
 **Step order.** Timed alone under a load average of 5 to 6, the suite took 6.23s to 6.68s, against
 5.52s to 7.19s for `gate-image-tags-test.sh` and 49.6s for the deploy-lib test in the same window. It
