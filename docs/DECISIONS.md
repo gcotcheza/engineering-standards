@@ -1177,6 +1177,13 @@ fix round 1 proved both routes open in that window: dockerd follows a symlinked 
 target, and compose inlines a symlinked `env_file`'s content. Closing it needs binds and env files root
 alone can write; the moderator files that structural fix as its own card.
 
+**Known limits: keys the policy does not judge.**
+- `build.network: container:…` — open: it joins another container's network namespace (not the host's), so a build can reach that container's ports; the service-level `container:` form is refused and this one should follow.
+- `cgroup_parent` — not a host escape: it changes which cgroup limits apply, not what the container can reach; what is left is resource exhaustion, named open as a DoS route.
+- `runtime` — not a host escape here: only runtimes registered in the daemon can be named, and this box registers `runc` and `io.containerd.runc.v2` alone (`docker info`, 2026-10-04); a new runtime in daemon.json reopens it.
+- `sysctls` — not a host escape: docker accepts only namespaced sysctls (`net.*`, IPC, `fs.mqueue.*`), and `net.*` only off the host network, which the policy refuses.
+- `group_add` — not a host escape: groups apply only to what is mounted, which the policy holds to `ROOT` and root's bind list with no `docker.sock` and no devices.
+
 **Rejected (card 320).** Hashing compose files against a list: the list needs a root-owned source, which
 is this design again. Running compose as the app user: membership of the docker group is root.
 A per-app allow-list in the mirror as the boundary: main already is, and a list there is one more file
