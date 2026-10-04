@@ -48,6 +48,7 @@ matches() {
 
 WORK="$(mktemp -d -p /srv/worker-scratch deploy-lib-test.XXXXXXXX)" || { printf 'cannot make a work directory under /srv/worker-scratch\n' >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
+DEVNULL_BEFORE="$(stat -c '%a %u %g %F' /dev/null)"
 
 git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
 
@@ -381,7 +382,7 @@ esac
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date, with an optional same-day serial' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$'
 EMPTY_SET="$(printf '' | sha256sum | cut -d' ' -f1)"
-for f in summary resolve ledger preflight cleanup; do
+for f in summary resolve ledger preflight cleanup compose; do
     line1="$(head -1 "${LIB_DIR}/${f}.sh")"
     body="$(tail -n +2 "${LIB_DIR}/${f}.sh" | sha256sum | cut -d' ' -f1)"
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
@@ -1703,8 +1704,16 @@ contains 'an unreadable pull request removes nothing' "${OUT}" \
     'CLEANUP #73 did not run: gh could not read the pull request (rc=1); nothing is removed.'
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
 
+# --- 8. root's compose (backlog 320): its own suite, which the red proofs also run as nobody ---
+OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" bash "${SCRIPT_DIR}/compose-test.sh" 2>&1)"
+RC=$?
+contains 'compose-test.sh passes as root' "${OUT}" 'compose-test: all checks passed'
+equals 'compose-test.sh exits' "${RC}" 0
+
 grew 'the fixture commits added caller=root result=clean lines' \
     "${SUITE_CLEAN_BEFORE}" "$(clean_lines)"
+
+equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 
 if [ "${fails}" -eq 0 ]; then
     printf '\ndeploy-lib-test: all checks passed\n'

@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-10-04 — root's `docker compose` reads only root's files: `compose.sh` (deploy-lib VERSION 2026-10-04.3; the standard is unchanged)
+**New file `scripts/lib/deploy/compose.sh`** (backlog 320). Every root compose call goes through one
+argv: `docker compose --project-directory <ROOT> -p <app> -f <run>/compose/<file> [-f …] --env-file
+/etc/fleet/app-env/<app>.env …`, where `<run>` is the directory `fleet-deploy` exported `scripts/`
+into, found from the lib's own location. `deploy_compose_init <MERGE_SHA>` runs before the first
+compose call: it refuses, naming `fleet-deploy`, when `<run>/compose/`, `<run>/export-sha` or a named
+file is missing (an export from the 317 `fleet-deploy` or `fleet-deploy-on-merge` has none), when the
+env file is not root 600 in a root 700 directory, or when the files were exported at another sha. It
+then reads `--profile '*' config --no-env-resolution --format json` (every profile's services) through
+jq, and `deploy_compose_exec` reads it again right before every `build`, `up`, `run` or `create`; both
+refuse `privileged`, `pid`/`ipc`/`network_mode`/`uts`/`userns_mode`/`cgroup: host`, a `container:`
+`pid`/`ipc`/`network_mode` or `volumes_from`, `cap_add`, `devices`, `device_cgroup_rules`, any
+`security_opt` but `no-new-privileges` (`:true`, `=true` or bare), a `docker.sock` mount, a `provider:`
+service, build `secrets`/`ssh`/`additional_contexts`/`entitlements`, `build.privileged`,
+`build.network: host`, a volume's `driver_opts`, an external volume, a network with `driver: host` or
+external and named `host`, an external network not on `FLEET_COMPOSE_SHARED_NETWORKS` (`whisper-net`
+only), a normalised project `name` other than the app, a top-level volume or network not named
+`<app>_…`, and any bind source, `env_file`, build context or
+secret/config file that resolves outside `ROOT`. Then it refuses any key not on its allow-lists, which
+hold exactly what the seven apps' deploy compose files use today: 4 top-level keys plus `x-*`, 21
+service keys, 3 `build` keys, 6 volume-entry keys and the types `bind`/`volume`, 2 top-level volume and
+4 top-level network keys, with a volume `driver` only `local`, a network `driver` only `bridge` and
+`ipam` empty (`env_file`, `sysctls`, `runtime`, `cgroup_parent`, `group_add`, `volumes_from`,
+`network_mode` and `build.network` among the refused); the lists are in docs/DECISIONS.md. A bind source outside `ROOT` passes only when it equals
+a path in root's `/etc/fleet/app-binds/<app>` (root-owned, not group/other-writable, exact paths, no
+prefixes; `/`, `/etc*`, `/root*`, `/proc*`, `/sys*`, `/dev*`, `/boot*`, `/usr*`, `/var/run*`, `/run*`,
+`/var/lib/docker*`, `/var/lib/fleet*`, `/home*` and `docker.sock` never). The refusal names the service
+and key, never a value.
+It sets `DEPLOY_COMPOSE` (`bash <lib>/compose.sh run …`), which works in-process and inside a job's text.
+Before `build`, `up`, `run` or `create`, every file `fleet-deploy` exported to `<run>/buildcheck/`
+(tracked `docker/**`, `Dockerfile*`, `.dockerignore`) must `cmp` equal to the tree's copy, reached through
+no symlink; `docker/` holds nothing untracked; each build context's Dockerfile and `.dockerignore` are
+tracked, and the Dockerfile lies inside its context. `compose watch` refuses. A caller's own `-f`, `--env-file`, `--project-directory` or `-p` refuses, and no `COMPOSE_*` from
+the caller reaches docker. `deploy_app_env_value KEY` reads `.env` through `sudo -n -u <app>`; when sudo fails it prints a
+`REFUSED:` line on stderr and returns 1, so a caller writes `v=$(deploy_app_env_value KEY) || refuse …`. Its suite is
+the new `compose-test.sh` (stub docker), which `test.sh` runs as root; the red proofs, one saved mutant
+per guard line (88 deletions, among them each argv check of the run mode, each allow-list, each driver pin, the
+name pin and `-p`, and 4 edits: the two `--profile '*'`, the shared list emptied, whose red includes
+scribly's and reflection's replay rows, and the shared list given a second name), run it as `nobody` with
+`DEPLOY_ROOT_UID` standing in for root (a test seam; unset, as under fleet-deploy's `env -i`, the owner
+must be uid 0), and live in the lane of backlog 320. Both suites check that `/dev/null` keeps its mode
+and owner. Every lib file is re-stamped for VERSION 2026-10-04.3. The lib now needs `FLEET_DEPLOY_REPO` (fleet-deploy
+and fleet-deploy-on-merge set it) to name the app; an app's `deploy.sh` needs no change for it.
+
+**Re-vendor only after fleet install packet 320 is INSTALLED** (its env seed first, then `fleet-deploy`
+and `fleet-deploy-on-merge`): under the 317 tools the new lib refuses at `deploy_compose_init`.
+**Policy verdicts on today's deploy compose files** (values stubbed, with packet 320's bind lists for
+scribly `/var/scribly-audio` and reflection `/var/journal-audio`): all seven compose projects pass;
+ghiecode, ghie-writes and pig-dice-game run no compose.
+
+**Caller changes the re-vendor round carries, per project** (runbooks unchanged):
+- every project that runs compose: copy `compose.sh` with the other lib files and source it; after
+  `resolve`, call `deploy_compose_init "$MERGE_SHA"` and set `COMPOSE=$DEPLOY_COMPOSE` (or call
+  `deploy_compose`) for every compose call, the job text included; drop `DEPLOY_COMPOSE` as an
+  override. kidsquest, scribly and reflection set `DEPLOY_COMPOSE_FILES=docker-compose.prod.yml` instead
+  of `-f docker-compose.prod.yml`. `scripts/deploy-test.sh` fixtures gain a run directory with
+  `compose/`, `buildcheck/` and `export-sha`, and `DEPLOY_APP_ENV_DIR` naming a root 700 directory.
+- health-tracker: `seam_scan` walks every `DEPLOY_*` shell variable, so `deploy_compose_init` runs after
+  it (the lib sets no `DEPLOY_*` name when sourced).
+- root's chown sweeps become `find -P … -exec chown -h …`: memento's `deploy_job`, orbit's
+  `rooted_count`, scribly's and reflection's `root_owned`; memento's `chown -R memento:memento
+  $ROOT/node_modules` in `deploy_job` becomes the same `find -P` form. fineprint's `repair_ownership`
+  already passes `-h`.
+- `.env` read by root goes through `deploy_app_env_value` or is dropped: the `APP_URL` grep in `site_url`
+  (fineprint, kidsquest, ghiecode, ghie-writes); kidsquest's `ASSET_URL` grep in `main`.
+  kidsquest's `chmod 600 "$ROOT/.env"` (in `land` and in `deploy_job`'s job text) runs as the app user
+  (`sudo -n -u kidsquest`), since chmod follows a symlink.
+- every gate that runs this suite: nothing new; `compose-test.sh` needs `jq`, and its two root-only cases
+  (an env file another user owns, a `.env` read through `sudo -u nobody`) run when `test.sh` runs as root.
+
 ## 2026-10-04 — the deploy owes ledger rows by test scope: docs-only none, non-UI `ci`, anything else `ci` and `e2e` (deploy-lib VERSION 2026-10-04.2; VERSION 2026-10-04)
 **`gated` now classifies what the deploy changes** — the checkout's HEAD against the gated commit —
 by the project's own `.fleet/test-scope` in that commit, and asks only for the rows that class owes.

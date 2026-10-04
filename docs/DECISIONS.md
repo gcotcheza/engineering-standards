@@ -1137,6 +1137,107 @@ suite reads with a default that is exported, so the suite reads no `TMPDIR` at a
 The guard cases make their copies for real — app-owned with `chown nobody`, group-writable, a symlink,
 inside `ROOT` — and the old command, the tree's own copy run by root, is one of them.
 
+## Root's compose reads only files root alone wrote (2026-10-04)
+
+**The attack route.** After backlog 317 root runs only scripts exported from its own mirror, but those
+scripts still ran root's `docker compose` with its working directory in `/var/www/<app>`, reading the
+app-owned `docker-compose*.yml`, `.env` (untracked, so the clean-tree check never sees it; compose
+honours `COMPOSE_FILE` and interpolation from it) and the build context. Nothing re-checked a tracked
+compose file after the fast-forward. Either route lets the app user add a host bind and be root at the
+next deploy (backlog 320).
+
+**The route that closes it.** `fleet-deploy` (fleet install packet 320) also exports, at the merge
+commit, every tracked top-level `docker-compose*.yml`/`compose*.yml` into `<run>/compose/` and every
+tracked `docker/**`, `Dockerfile*` and `.dockerignore` into `<run>/buildcheck/`, judged blob by blob as
+`scripts/` is, and refuses a compose file with a top-level `include:` or an `extends:` with `file:`
+(both would read app-tree files back in). Root's interpolation variables live in
+`/etc/fleet/app-env/<app>.env` (root 600, seeded once from today's `.env` by that packet, key names
+only in its preview). `compose.sh` builds the one argv from those and finds `<run>` from its own
+location, so no new variable can point it elsewhere; with `--env-file` given, compose never loads the
+project directory's `.env` (measured with compose 5.5.1). No app's deploy compose file uses `env_file:`,
+so the allow-list below refuses it; its path rule stays as a second line.
+
+**The policy is a tripwire, not the boundary.** Main is the boundary: a merged PR is reviewed. The jq
+check catches one that slipped in a host escape. It reads `--profile '*'`, because `config` hides a
+service whose profile is not active, and `--no-env-resolution`, so no `.env` value is ever in its input. Paths are judged by `realpath -m`, so a symlink inside `ROOT` that points out is
+outside at check time only (see the known gap below). Fix round 2 added `device_cgroup_rules`, a
+`container:` `network_mode`/`pid`/`ipc` or `volumes_from`, a `provider:` service, build `privileged`/
+`entitlements`/`network: host`, an external volume, a `host` network and an external network not on
+`FLEET_COMPOSE_SHARED_NETWORKS`; `compose watch` is refused.
+Two exceptions are the moderator's rulings (backlog 320 fix round): `security_opt` may hold only
+`no-new-privileges`, which only hardens; and a bind source outside `ROOT` passes only when it equals a
+path in root's `/etc/fleet/app-binds/<app>`, never a prefix and never a host path the box needs kept
+(`/etc`, `/usr`, `/var/lib/docker`, …). The list is root's file, so a merged PR cannot widen it.
+
+**Deviation from the design: the build context is checked against root's mirror, not with `git status`
+as the app user.** The app user controls its own `.git` (index, config, hooks), so its `git status` is
+the app user's answer. Instead every tracked build-context file is compared with `cmp` to the blob
+`fleet-deploy` exported, `find -P` lists nothing untracked under `docker/`, each build context's
+Dockerfile (and a `.dockerignore` beside it or at the context root, when one exists) is tracked, and
+the Dockerfile lies inside its context. What remains: a race between the check and compose reading the files, since the tree stays
+app-writable; a full fix builds from a root-owned copy of the context, left as follow-up work. Context
+files outside `docker/`, the Dockerfile and `.dockerignore` (scribly's and reflection's `api/` source)
+are not compared: they run inside the build container, never on the host.
+
+**Known gap: check to daemon start.** The policy runs at init and again in `deploy_compose_exec` right
+before every `build`/`up`/`run`/`create`, so a bind source swapped to an outward symlink after init is
+refused (case `policy swap`). After that last check the tree is still app-writable, and the review of
+fix round 1 proved both routes open in that window: dockerd follows a symlinked bind source to its
+target, and compose inlines a symlinked `env_file`'s content (now refused outright, so only the bind route
+is left). Closing it needs binds root alone can write; the moderator files that structural fix as its own card.
+
+**Last round: allow-lists, so an unknown key is refused (Ghie via advisor, 2026-10-04).** Deny-lists
+missed a key each round, so the policy now refuses any key not on a list, each list being exactly what
+the seven apps' deploy compose files use today (normalised `config --format json`, every profile):
+- top level (4): `name`, `networks`, `services`, `volumes`; plus any `x-` key, the one extra: compose ignores extension fields.
+- service (21): `build`, `cap_drop`, `command`, `depends_on`, `entrypoint`, `environment`, `healthcheck`, `image`, `mem_limit`, `memswap_limit`, `networks`, `ports`, `profiles`, `read_only`, `restart`, `security_opt`, `stop_grace_period`, `tmpfs`, `user`, `volumes`, `working_dir`.
+- `build` (3): `args`, `context`, `dockerfile`.
+- a service's volume entry (6): `bind`, `read_only`, `source`, `target`, `type`, `volume`; `type` (2): `bind`, `volume`.
+- top-level volume (2): `driver`, `name`; top-level network (4): `driver`, `external`, `ipam`, `name`.
+
+A key off a list is refused as "compose <service> sets <key>, which is not on root's compose list". Every
+earlier rule stays and still judges a listed key by value (`security_opt`, binds, build context, a
+`host` network); those lines come first, so a key both refuse is named by its own rule, and each rule's
+mutant stays red. Value pins on listed keys, from the apps' values (a driver plugin is never trusted to be absent):
+- a top-level volume's `driver`, when set, is `local`.
+- a top-level network's `driver`, when set, is `bridge` (the only one the apps set).
+- a top-level network's `ipam` is empty (compose writes `{}`; no app sets one): its `driver` or `config` subnet could claim the host's.
+
+Other sub-keys below these levels (`bind.propagation`, `healthcheck`, `ports`) are not listed: they reach
+no host path. Cost check: newly refuses 0 of 7 real app deploys (policy-apps.sh on
+86fb073, 2026-10-04 13:23Z); on this round's candidate, 0 of 7 (same replay over the policy committed here, 2026-10-04 13:38Z).
+
+**The keys earlier rounds left unjudged, now refused by absence** (no app uses any of them):
+`build.network` (so `container:` too), `cgroup_parent`, `runtime`, `sysctls` and `group_add`; also
+`env_file`, and `volumes_from` and `network_mode` in every form. None remains allowed.
+
+**Rejected (card 320).** Hashing compose files against a list: the list needs a root-owned source, which
+is this design again. Running compose as the app user: membership of the docker group is root.
+A per-app allow-list in the mirror as the boundary: main already is, and a list there is one more file
+the same PR can change.
+
+**Red proofs run unprivileged (fleet rule 26).** The compose mutants run `compose-test.sh` as `nobody`.
+`DEPLOY_ROOT_UID` is the uid the env and bind-list files must belong to; it exists for that run alone.
+A deploy never sets it (fleet-deploy's `env -i` passes none, and a `deploy.sh` that set it is main's
+code). `summary.sh`'s self-location walk keeps uid 0 with no switch, so `compose-test.sh` defines its
+own `say`/`refuse` instead of sourcing it. Two cases still run only as root, against fakes: an env
+file another user owns, and a `.env` read through a real `sudo -u nobody`. The failed-sudo case uses
+a stub `sudo`, so it runs as `nobody`.
+
+**The project and its resource names are pinned (2026-10-04, card 320's last round).** The project is
+the app root names: the repository part of `FLEET_DEPLOY_REPO`, which fleet-deploy sets and which must
+equal `basename ROOT` (never the `run.*` export directory the compose files sit in). The lib passes
+`-p <app>`, so a file's own `name:` cannot choose, and the policy refuses a normalised `.name` other than
+the app. Every non-external top-level volume and network must be named `<app>_…`, so one app's compose
+file cannot open another's `memento_pgdata`. An external network passes only by exact name from
+`FLEET_COMPOSE_SHARED_NETWORKS` (`whisper-net`: scribly and reflection share one whisper stack by design);
+`host` stays refused and an external volume stays refused. Cost: newly refuses 0 of 7 real app deploys
+(policy-apps.sh on the final candidate, 2026-10-04). The policy, including FLEET_COMPOSE_SHARED_NETWORKS,
+ships in the merged tree and is protected by merge review like the compose file it judges; fleet-deploy
+does not pin its content yet; card 335 (deploy lib pinned by sha from root's ES mirror) closes that.
+The env files root reads are written by `fleet-app-env-seed`, installed by packet 320 as a maintained
+tool; the missing-env refusal names it.
+
 ## Step 1 runs the box's guard-diff lint on the host, folded into step 1 (2026-10-04)
 
 **On the host, not in a container.** `/usr/local/sbin/fleet-lint-guard-diff` is the box's own
