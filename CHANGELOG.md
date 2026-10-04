@@ -18,7 +18,7 @@ fails the step loudly when `/usr/local/sbin/fleet-lint-guard-diff` is not on the
 and `/var/www/*/scripts` finds it only in vendored copies of this library, which the re-vendor
 replaces: `resolve.sh` and `test.sh` in fineprint, ghie-writes, health-tracker, reflection and
 scribly (at `resolve.sh:63`) and in ghiecode (`resolve.sh:45`). No project's own script pins
-either string, and nothing outside this repo pins the `version-text-pair` sentence.
+either string, and neither tree pins the `version-text-pair` sentence.
 
 ## 2026-10-03 — root runs a deploy only from `fleet-deploy`'s export: the lib refuses any other copy, and `resolve` takes the repository from root (deploy-lib VERSION 2026-10-03, amended; the standard is unchanged)
 **`summary.sh` refuses to run from anywhere the app user could write** (backlog 317). When it is
