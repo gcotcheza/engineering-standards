@@ -24,7 +24,7 @@ C_UID=''
 COMPOSE_SHA=1111111111111111111111111111111111111111
 cfx() {
     CF="${WORK}/compose-$1"
-    CRUN="${CF}/run" CROOT="${CF}/www/demo" CENV="${CF}/app-env/demo.env" CBINDS="${CF}/app-binds/demo"
+    CRUN="${CF}/${C_RUNDIR:-run}" CROOT="${CF}/www/demo" CENV="${CF}/app-env/demo.env" CBINDS="${CF}/app-binds/demo"
     mkdir -p "${CRUN}/scripts/lib/deploy" "${CRUN}/compose" "${CRUN}/buildcheck/docker/app" "${CROOT}/docker/app" "${CF}/app-env" "${CF}/app-binds" "${CF}/bin"
     chmod 755 "${CF}/app-binds"
     cp "${LIB_DIR}/compose.sh" "${CRUN}/scripts/lib/deploy/"
@@ -37,7 +37,7 @@ cfx() {
     chmod 700 "${CF}/app-env"
     printf 'DB_PASSWORD=stub\n' >"${CENV}"
     chmod 600 "${CENV}"
-    jq -n --arg r "${CROOT}" '{services: {app: {image: "x", build: {context: "\($r)/docker/app", dockerfile: "Dockerfile"},
+    jq -n --arg r "${CROOT}" '{name: "demo", services: {app: {image: "x", build: {context: "\($r)/docker/app", dockerfile: "Dockerfile"},
         volumes: [{type: "bind", source: "\($r)/storage", target: "/s"}, {type: "volume", source: "data", target: "/d"}]}},
         volumes: {data: {}}}' >"${CF}/config.json"
     cat >"${CF}/bin/docker" <<'SH'
@@ -66,7 +66,7 @@ cjson() { local t; t=$(jq --arg r "${CROOT}" "$1" "${CF}/config.json") && printf
 crun() {
     # shellcheck disable=SC2086
     OUT="$(env -i PATH=/usr/bin:/bin C_ROOT="${CROOT}" C_DOCKER="${CF}/bin/docker" C_ENV_DIR="${CF}/app-env" C_BINDS_DIR="${CF}/app-binds" C_UID="${C_UID}" \
-        ${C_EXTRA:-} C_CALLS="$1" bash "${CRUN}/scripts/deploy.sh" 2>&1)"
+        FLEET_DEPLOY_REPO=gcotcheza/demo ${C_EXTRA:-} C_CALLS="$1" bash "${CRUN}/scripts/deploy.sh" 2>&1)"
     RC=$?
     ARGV="$(cat "${CF}/bin/argv" 2>/dev/null)"
     C_EXTRA=''
@@ -78,9 +78,9 @@ crun "${INIT}; deploy_compose up -d; deploy_compose exec -T app true"
 contains 'compose: a clean export passes the policy' "${OUT}" "COMPOSE root's files: docker-compose.yml at ${COMPOSE_SHA:0:12}, env ${CENV}, policy clean"
 equals 'compose: and exits 0' "${RC}" 0
 contains 'compose: every call names the exported file, the project directory and root'"'"'s env file' "${ARGV}" \
-    "compose --project-directory ${CROOT} -f ${CRUN}/compose/docker-compose.yml --env-file ${CENV} up -d"
+    "compose --project-directory ${CROOT} -p demo -f ${CRUN}/compose/docker-compose.yml --env-file ${CENV} up -d"
 equals 'compose: the policy, the first call, reads every profile'"'"'s services, without resolving env files' "$(head -1 "${CF}/bin/argv")" \
-    "compose --project-directory ${CROOT} -f ${CRUN}/compose/docker-compose.yml --env-file ${CENV} --profile * config --no-env-resolution --format json"
+    "compose --project-directory ${CROOT} -p demo -f ${CRUN}/compose/docker-compose.yml --env-file ${CENV} --profile * config --no-env-resolution --format json"
 absent 'compose: never the tree'"'"'s docker-compose.yml' "${ARGV}" "${CROOT}/docker-compose.yml"
 absent 'compose: never the tree'"'"'s .env' "${ARGV}" "${CROOT}/.env"
 equals 'compose: up checks the build context, exec does not (config runs twice)' "$(grep -c ' config ' "${CF}/bin/argv")" 2
@@ -266,9 +266,9 @@ policy_case build_network '.services.app.build.network = "host"' 'compose app se
 policy_case volume_external '.volumes.data.external = true' 'compose volume data sets external,'
 policy_case network_driver_host '.networks = {n: {driver: "host"}}' 'compose network n sets driver host,'
 policy_case network_external_host '.networks = {n: {external: true, name: "host"}}' 'compose network n sets external host,'
-cfx policy-listed-forms; cjson '.networks = {n: {external: true, name: "web"}, m: {driver: "bridge", ipam: {}}} | .volumes.data.driver = "local" | ."x-common" = {a: 1}'
+cfx policy-listed-forms; cjson '.networks = {"whisper-net": {external: true, name: "whisper-net"}, m: {driver: "bridge", ipam: {}}} | .volumes.data.driver = "local" | ."x-common" = {a: 1}'
 crun "${INIT}"
-contains 'policy listed forms: a non-host external network, bridge, an empty ipam, a local volume and an x- key pass' "${OUT}" 'policy clean'
+contains 'policy listed forms: the shared external whisper-net, bridge, an empty ipam, a local volume and an x- key pass' "${OUT}" 'policy clean'
 cfx watch
 crun "${INIT}; deploy_compose watch"
 contains 'compose: watch is refused' "${OUT}" 'REFUSED: compose watch copies the app tree into running containers, so root does not run it'
@@ -285,7 +285,7 @@ crun "${INIT}; deploy_compose up -d"
 contains 'binds up: the policy at up reads the same list' "${ARGV}" "--env-file ${CENV} up -d"
 
 drun() { # direct run mode, as a job's text calls it
-    OUT="$(env -i PATH=/usr/bin:/bin ${C_UID:+DEPLOY_ROOT_UID=${C_UID}} bash "${CRUN}/scripts/lib/deploy/compose.sh" "$@" 2>&1)"
+    OUT="$(env -i PATH=/usr/bin:/bin FLEET_DEPLOY_REPO=gcotcheza/demo ${C_UID:+DEPLOY_ROOT_UID=${C_UID}} bash "${CRUN}/scripts/lib/deploy/compose.sh" "$@" 2>&1)"
     ARGV="$(cat "${CF}/bin/argv" 2>/dev/null)"
 }
 cfx direct-ok
@@ -349,6 +349,45 @@ policy_case network_driver '.networks = {n: {driver: "macvlan"}}' 'compose netwo
 policy_case network_ipam '.networks = {n: {ipam: {config: [{subnet: "10.0.0.0/8"}]}}}' 'compose network n sets ipam,'
 policy_case allow_value '.services.app.security_opt = ["apparmor:unconfined"]' 'compose app sets security_opt,'
 
+# The project is the app root names (FLEET_DEPLOY_REPO), forced with -p; volume and network names carry its prefix.
+C_RUNDIR=run.Ab12Cd34 cfx export-dir
+crun "${INIT}; deploy_compose up -d"
+contains 'export dir: the project is the app, not the run.* directory the files sit in' "${ARGV}" "compose --project-directory ${CROOT} -p demo -f ${CF}/run.Ab12Cd34/compose/docker-compose.yml --env-file ${CENV} up -d"
+cfx repo-other
+C_EXTRA='FLEET_DEPLOY_REPO=gcotcheza/other'
+crun "${INIT}"
+contains 'repo: a FLEET_DEPLOY_REPO naming another app is refused' "${OUT}" "REFUSED: FLEET_DEPLOY_REPO names other, not demo"
+equals 'repo: and no docker call is made (other)' "${ARGV}" ''
+cfx repo-unset
+C_EXTRA='FLEET_DEPLOY_REPO='
+crun "${INIT}"
+contains 'repo: an unset FLEET_DEPLOY_REPO is refused' "${OUT}" "REFUSED: FLEET_DEPLOY_REPO '' names no app: root names it. Deploy with: fleet-deploy <app> <PR#>"
+cfx policy-no-app
+crun 'deploy_compose_policy "$ROOT" "{}" || printf "ERR=%s\n" "$DEPLOY_COMPOSE_ERR"'
+contains 'policy no_app: the policy refuses without an app name' "${OUT}" 'ERR=the policy was given no app name'
+policy_case top_name '.name = "memento"' 'compose top level sets name,'
+policy_case volume_name '.volumes.data.name = "memento_pgdata"' 'compose volume data sets name,'
+policy_case network_name '.networks = {n: {name: "memento_default"}}' 'compose network n sets name,'
+policy_case network_external_unlisted '.networks = {n: {external: true, name: "proxy"}}' "compose network n sets external (not on the shared list),"
+cfx names-own
+cjson '.volumes.data.name = "demo_data" | .networks = {n: {name: "demo_n"}, "whisper-net": {external: true, name: "whisper-net"}}'
+crun "${INIT}; deploy_compose up -d"
+contains 'shared: own-prefixed names and the shared whisper-net pass' "${ARGV}" "--env-file ${CENV} up -d"
+equals "shared: root's list is exactly whisper-net" "$(bash -c '. "$1"; printf %s "$FLEET_COMPOSE_SHARED_NETWORKS"' _ "${LIB_DIR}/compose.sh")" whisper-net
+
+cfx no-file-named
+crun "DEPLOY_COMPOSE_FILES=' '; ${INIT}"
+contains 'pieces: no compose file named refuses' "${OUT}" 'REFUSED: no compose file is named'
+cfx init-root-missing
+crun "ROOT='${CF}/nowhere'; ${INIT}"
+contains 'init: a ROOT that is not a directory refuses' "${OUT}" "REFUSED: ROOT '${CF}/nowhere' is not a directory."
+cfx init-policy; cjson '.services.app.privileged = true'
+crun "${INIT}"
+contains 'init: the policy refuses at init, before any other call' "${OUT}" 'REFUSED: compose app sets privileged'
+absent 'init: and says nothing clean' "${OUT}" 'policy clean'
+cfx env-key
+crun 'deploy_app_env_value "bad key"'
+contains 'env value: a key that is not a name refuses' "${OUT}" "REFUSED: 'bad key' is not an env key."
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 if [ "${fails}" -eq 0 ]; then printf '\ncompose-test: all checks passed\n'; exit 0; fi
 printf '\ncompose-test: %s check(s) failed\n' "${fails}" >&2

@@ -1162,7 +1162,8 @@ check catches one that slipped in a host escape. It reads `--profile '*'`, becau
 service whose profile is not active, and `--no-env-resolution`, so no `.env` value is ever in its input. Paths are judged by `realpath -m`, so a symlink inside `ROOT` that points out is
 outside at check time only (see the known gap below). Fix round 2 added `device_cgroup_rules`, a
 `container:` `network_mode`/`pid`/`ipc` or `volumes_from`, a `provider:` service, build `privileged`/
-`entitlements`/`network: host`, an external volume and a `host` network; `compose watch` is refused.
+`entitlements`/`network: host`, an external volume, a `host` network and an external network not on
+`FLEET_COMPOSE_SHARED_NETWORKS`; `compose watch` is refused.
 Two exceptions are the moderator's rulings (backlog 320 fix round): `security_opt` may hold only
 `no-new-privileges`, which only hardens; and a bind source outside `ROOT` passes only when it equals a
 path in root's `/etc/fleet/app-binds/<app>`, never a prefix and never a host path the box needs kept
@@ -1222,6 +1223,20 @@ code). `summary.sh`'s self-location walk keeps uid 0 with no switch, so `compose
 own `say`/`refuse` instead of sourcing it. Two cases still run only as root, against fakes: an env
 file another user owns, and a `.env` read through a real `sudo -u nobody`. The failed-sudo case uses
 a stub `sudo`, so it runs as `nobody`.
+
+**The project and its resource names are pinned (2026-10-04, card 320's last round).** The project is
+the app root names: the repository part of `FLEET_DEPLOY_REPO`, which fleet-deploy sets and which must
+equal `basename ROOT` (never the `run.*` export directory the compose files sit in). The lib passes
+`-p <app>`, so a file's own `name:` cannot choose, and the policy refuses a normalised `.name` other than
+the app. Every non-external top-level volume and network must be named `<app>_…`, so one app's compose
+file cannot open another's `memento_pgdata`. An external network passes only by exact name from
+`FLEET_COMPOSE_SHARED_NETWORKS` (`whisper-net`: scribly and reflection share one whisper stack by design);
+`host` stays refused and an external volume stays refused. Cost: newly refuses 0 of 7 real app deploys
+(policy-apps.sh on the final candidate, 2026-10-04). The policy, including FLEET_COMPOSE_SHARED_NETWORKS,
+ships in the merged tree and is protected by merge review like the compose file it judges; fleet-deploy
+does not pin its content yet; card 335 (deploy lib pinned by sha from root's ES mirror) closes that.
+The env files root reads are written by `fleet-app-env-seed`, installed by packet 320 as a maintained
+tool; the missing-env refusal names it.
 
 ## Step 1 runs the box's guard-diff lint on the host, folded into step 1 (2026-10-04)
 

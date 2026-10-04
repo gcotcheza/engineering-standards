@@ -1,10 +1,12 @@
-# fleet-deploy-lib 2026-10-04 sha256:c2fcc5fcf99944e53b10f99d495b0ab09c0e3cb87c063fa74e203bef344023b5
+# fleet-deploy-lib 2026-10-04.3 sha256:03b7df47170c3ffaa5f86603e6ee29589b7d3d1951648046f7fe922bcf3c5aaa
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
 
 FLEET_COMPOSE_LIB="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/compose.sh"
 FLEET_COMPOSE_WORD='^/?[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$'
+# External networks an app may join, by exact name: scribly and reflection share whisper (docs/DECISIONS.md).
+FLEET_COMPOSE_SHARED_NETWORKS="whisper-net"
 
 # One rule a line, F|A <service> <key> or P <service> <key> <path>; values never leave jq.
 # A lines come last, so a key both lists refuse is named by its F rule (docs/DECISIONS.md, backlog 320).
@@ -46,6 +48,10 @@ def fleet_off($ok): select(IN($ok[]) | not);
 (.volumes // {} | to_entries[] | select(.value.driver != null and .value.driver != "local") | "F\tvolume \(.key)\tdriver"),
 (.networks // {} | to_entries[] | select(.value.driver != null and .value.driver != "bridge") | "F\tnetwork \(.key)\tdriver"),
 (.networks // {} | to_entries[] | select((.value.ipam // {}) | length > 0) | "F\tnetwork \(.key)\tipam"),
+(select(.name != $app) | "F\ttop level\tname"),
+(.volumes // {} | to_entries[] | select(.value.external != true and ((.value.name // "\($app)_\(.key)") | startswith("\($app)_") | not)) | "F\tvolume \(.key)\tname"),
+(.networks // {} | to_entries[] | select(.value.external != true and ((.value.name // "\($app)_\(.key)") | startswith("\($app)_") | not)) | "F\tnetwork \(.key)\tname"),
+(.networks // {} | to_entries[] | select((.value.external == true) and (IN(.value.name // .key; $shared | splits(" +")) | not)) | "F\tnetwork \(.key)\texternal (not on the shared list)"),
 (.secrets // {} | to_entries[] | select(.value.file) | "P\tsecret \(.key)\tfile\t\(.value.file)"),
 (.configs // {} | to_entries[] | select(.value.file) | "P\tconfig \(.key)\tfile\t\(.value.file)"),
 (keys[] | select(startswith("x-") | not) | fleet_off(["name", "networks", "services", "volumes"]) | "A\ttop level\t\(.)"),
@@ -83,10 +89,11 @@ deploy_compose_bind_listed() { # path -> 0 when it is exactly a listed path and 
     return 1
 }
 
-deploy_compose_policy() { # root, config json -> 0, or 1 with DEPLOY_COMPOSE_ERR naming service and key
-    local root=$1 rules kind svc key path
+deploy_compose_policy() { # root, config json, app -> 0, or 1 with DEPLOY_COMPOSE_ERR naming service and key
+    local root=$1 app=${3:-} rules kind svc key path
+    [[ $app =~ ^[a-z0-9-]+$ ]] || { DEPLOY_COMPOSE_ERR="the policy was given no app name"; return 1; }
     deploy_compose_binds "$root" || return 1
-    rules=$(printf '%s' "$2" | jq -r "$FLEET_COMPOSE_POLICY") || { DEPLOY_COMPOSE_ERR="jq could not read the compose config, so no compose call runs"; return 1; }
+    rules=$(printf '%s' "$2" | jq -r --arg app "$app" --arg shared "$FLEET_COMPOSE_SHARED_NETWORKS" "$FLEET_COMPOSE_POLICY") || { DEPLOY_COMPOSE_ERR="jq could not read the compose config, so no compose call runs"; return 1; }
     while IFS=$'\t' read -r kind svc key path; do
         [ "$kind" != F ] || { DEPLOY_COMPOSE_ERR="compose $svc sets $key, which root's compose does not run (policy, backlog 320)"; return 1; }
         [ "$kind" != A ] || { DEPLOY_COMPOSE_ERR="compose $svc sets $key, which is not on root's compose list (policy, backlog 320)"; return 1; }
@@ -130,6 +137,7 @@ deploy_compose_exec() {
     deploy_compose_pieces "$root" "$env" "$run" "${files[@]}" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; }
     [[ $docker =~ $FLEET_COMPOSE_WORD ]] || { printf 'REFUSED: the docker command is not one plain word\n' >&2; return 1; }
     argv=(compose --project-directory "$root")
+    argv+=(-p "$DEPLOY_COMPOSE_APP")
     for f in "${files[@]}"; do argv+=(-f "$run/compose/$f"); done
     argv+=(--env-file "$env")
     sub=''
@@ -146,7 +154,7 @@ deploy_compose_exec() {
         watch) printf 'REFUSED: compose watch copies the app tree into running containers, so root does not run it\n' >&2; return 1 ;;
         build|up|run|create)
             json=$("$docker" "${argv[@]}" --profile '*' config --no-env-resolution --format json) || { printf 'REFUSED: compose config failed, so the policy and the build context were not checked\n' >&2; return 1; }
-            deploy_compose_policy "$root" "$json" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; }
+            deploy_compose_policy "$root" "$json" "$DEPLOY_COMPOSE_APP" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; }
             deploy_compose_buildcheck "$root" "$run" "$json" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
     esac
     for f in "${!COMPOSE_@}"; do unset "$f"; done
@@ -169,7 +177,11 @@ deploy_compose_pieces() { # root, env file, run dir, file… -> 0, or 1 with DEP
     d=$(dirname -- "$env")
     [ "$(basename -- "$env")" = "$(basename -- "$root").env" ] || { DEPLOY_COMPOSE_ERR="$env is not named after $root"; return 1; }
     { [ -d "$d" ] && [ ! -L "$d" ] && [ "$(stat -c %u:%a "$d")" = "${DEPLOY_ROOT_UID:-0}:700" ] && [ -f "$env" ] && [ ! -L "$env" ] && [ "$(stat -c %u:%a "$env")" = "${DEPLOY_ROOT_UID:-0}:600" ]; } \
-        || { DEPLOY_COMPOSE_ERR="$env is not a root 600 file in a root 700 directory: packet 320's app-env seed writes it, then deploy with: fleet-deploy <app> <PR#>"; return 1; }
+        || { DEPLOY_COMPOSE_ERR="$env is not a root 600 file in a root 700 directory: fleet-app-env-seed writes it, then deploy with: fleet-deploy <app> <PR#>"; return 1; }
+    DEPLOY_COMPOSE_APP=${FLEET_DEPLOY_REPO:-}
+    [[ $DEPLOY_COMPOSE_APP =~ ^[A-Za-z0-9-]+/[a-z0-9-]+$ ]] || { DEPLOY_COMPOSE_ERR="FLEET_DEPLOY_REPO '${FLEET_DEPLOY_REPO:-}' names no app: root names it. Deploy with: fleet-deploy <app> <PR#>"; return 1; }
+    DEPLOY_COMPOSE_APP=${DEPLOY_COMPOSE_APP#*/}
+    [ "$DEPLOY_COMPOSE_APP" = "$(basename -- "$root")" ] || { DEPLOY_COMPOSE_ERR="FLEET_DEPLOY_REPO names $DEPLOY_COMPOSE_APP, not $(basename -- "$root")"; return 1; }
 }
 
 # deploy_compose_init <merge sha>, before the first compose call; ROOT set, DEPLOY_COMPOSE_FILES optional.
@@ -185,7 +197,7 @@ deploy_compose_init() {
     [[ ${DOCKER:-docker} =~ $FLEET_COMPOSE_WORD ]] || refuse "DOCKER '${DOCKER:-}' is not one plain word."
     DEPLOY_COMPOSE="bash $FLEET_COMPOSE_LIB run $root ${DOCKER:-docker} $env ${DEPLOY_COMPOSE_FILE_LIST[*]} --"
     json=$($DEPLOY_COMPOSE --profile '*' config --no-env-resolution --format json) || refuse "compose config failed, so the policy could not be checked."
-    deploy_compose_policy "$root" "$json" || refuse "$DEPLOY_COMPOSE_ERR"
+    deploy_compose_policy "$root" "$json" "$DEPLOY_COMPOSE_APP" || refuse "$DEPLOY_COMPOSE_ERR"
     say "COMPOSE root's files: ${DEPLOY_COMPOSE_FILE_LIST[*]} at ${exported:0:12}, env $env, policy clean"
 }
 
