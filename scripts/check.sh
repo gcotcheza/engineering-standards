@@ -12,7 +12,7 @@
 #   6) shellcheck, style severity, in the pinned image — a missing image is a
 #      loud failure here, never a silent skip (C9)
 #   7) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
-#   8) scripts/guard-mutants-test.sh, the T5 mutation runner's own test
+#   8) scripts/guard-mutants-test.sh, the T5 mutation runner's own test (as nobody when root)
 #   9) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh)
 #
 #   scripts/check.sh            all nine steps; records a FULL run to the fleet ledger
@@ -146,8 +146,16 @@ step_7() {
     "${REPO_ROOT}/scripts/gate-image-tags-test.sh" || fail_step 7
 }
 
+# The suite refuses root (rule 26), so a root gate runs it as nobody in a dir nobody owns.
 step_8() {
-    "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 8
+    [ "$(id -u)" -eq 0 ] || { "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 8; return; }
+    gm_dir=$(mktemp -d -p "${GUARD_MUTANTS_TEST_DIR:-/srv/worker-scratch}" guard-mutants-gate.XXXXXXXX) || fail_step 8
+    chown nobody:nogroup "${gm_dir}" \
+        && (cd -- "${gm_dir}" && GUARD_MUTANTS_TEST_DIR=${gm_dir} setpriv --reuid=nobody --regid=nogroup --clear-groups \
+            "${REPO_ROOT}/scripts/guard-mutants-test.sh")
+    gm_rc=$?
+    rm -rf -- "${gm_dir:?}"
+    [ "${gm_rc}" -eq 0 ] || fail_step 8
 }
 
 step_9() {

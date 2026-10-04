@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # Fixtures only: a small project with three guards drives the real scripts/guard-mutants.sh.
-# Red proofs: GUARD_MUTANTS_SH=<mutant copy>; GUARD_MUTANTS_TEST_DIR=<dir> moves the work dir.
+# Red proofs: GUARD_MUTANTS_SH=<mutant copy>; GUARD_MUTANTS_TEST_DIR=<dir> moves the work dir;
+# GUARD_MUTANTS_DEVNULL_PATH=<sink file> stands in for /dev/null.
 # shellcheck disable=SC2016  # the fixtures hold shell text, quoted literally
 set -uo pipefail
+[ "$(id -u)" -ne 0 ] || { printf 'guard-mutants-test: refused as root; fixtures run unprivileged (check.sh step 8 drops to nobody)\n'; exit 1; }
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CHECK=$(realpath -e -- "${GUARD_MUTANTS_SH:-${SCRIPT_DIR}/guard-mutants.sh}") || exit 1
-# /srv/worker-scratch (root 755, exec), as scripts/lib/deploy/test.sh: never /tmp.
+# /srv/worker-scratch by default, never /tmp; an unprivileged run names a dir it owns.
 WORK=$(mktemp -d -p "${GUARD_MUTANTS_TEST_DIR:-/srv/worker-scratch}" guard-mutants-test.XXXXXXXX) || exit 1
 trap 'rm -rf -- "${WORK:?}"' EXIT
+DEVNULL=${GUARD_MUTANTS_DEVNULL_PATH:-/dev/null}
+DEVNULL_BEFORE=$(stat -c '%a %U %G' -- "$DEVNULL") || exit 1
 
 fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
 has()    { if grep -qF -- "$3" "$2"; then pass "$1"; else fail "$1: no [$3] in $(tr '\n' '|' <"$2")"; fi; }
+# Signals go only to a pid whose environment names this run's work dir, never to a reused one.
+ours() { tr '\0' '\n' 2>/dev/null <"/proc/$1/environ" | grep -qF -- "$WORK/"; }
 empty_dir() { if [ -z "$(ls -A -- "$2")" ]; then pass "$1: work dir left empty"; else fail "$1: work dir left $(ls -A -- "$2")"; fi; }
 
 P=$WORK/proj
@@ -152,7 +158,7 @@ manifest leftover 'test: sleep 0.3; while read -r p; do ! kill -0 "$p" 2>/dev/nu
 LEFTOVERS=$WORK/leftovers run leftover leftover
 equals "leftover: summary" "$(summary leftover)" "guard-mutants: 1 caught, 0 survived, 0 errored of 1"
 alive=0
-while read -r pid; do kill -0 "$pid" 2>/dev/null && { alive=$((alive + 1)); kill "$pid"; }; done <"$WORK/leftovers"
+while read -r pid; do ours "$pid" && { alive=$((alive + 1)); kill "$pid"; }; done <"$WORK/leftovers"
 equals "leftover: processes a test left behind are ended" "$alive" 0
 
 manifest timeout 'test: ./slow.sh' 'timeout: 2' "$E_EMPTY"
@@ -253,7 +259,7 @@ kill -TERM "$runner"
 wait "$runner"
 equals "sigterm: exit" "$?" 143
 hung=$(cat "$WORK/hang.pid" 2>/dev/null)
-if [ -n "$hung" ] && kill -0 "$hung" 2>/dev/null; then
+if [ -n "$hung" ] && ours "$hung"; then
     fail "sigterm: test process gone (pid $hung still runs)"; kill "$hung" 2>/dev/null
 else pass "sigterm: test process gone"; fi
 empty_dir sigterm "$WORK/w-term"
@@ -265,7 +271,7 @@ mkdir -p "$WORK/shim"
 printf '#!/usr/bin/env bash\n[ "$1" != -a ] || echo >>"$CP_CALLS"\n[ "$1" != -a ] || [ "$(wc -l <"$CP_CALLS")" -lt 2 ] || { echo "$$" >"$CP_SLOW"; sleep 2; }\nexec %s "$@"\n' "$REAL_CP" >"$WORK/shim/cp"
 chmod 755 "$WORK/shim/cp"
 window_signal() {
-    local c=$1 sig=$2 launcher hung cpid
+    local c=$1 sig=$2 launcher hung cpid rp
     manifest "$c" 'test: ./hang.sh' 'timeout: 60' "$E_EMPTY"
     mkdir -p "$WORK/w-$c"; rm -f -- "$WORK/hang.pid" "$WORK/cp.calls" "$WORK/cp.slow"
     PATH=$WORK/shim:$PATH CP_CALLS=$WORK/cp.calls CP_SLOW=$WORK/cp.slow HANG_PID=$WORK/hang.pid \
@@ -274,14 +280,14 @@ window_signal() {
         >"$WORK/$c.out" 2>&1 </dev/null &
     launcher=$!
     for _ in $(seq 100); do [ -s "$WORK/cp.slow" ] && break; sleep 0.1; done
-    kill -"$sig" "$(cat "$WORK/$c.rpid")"
+    rp=$(cat "$WORK/$c.rpid"); ours "$rp" && kill -"$sig" "$rp"
     for _ in $(seq 80); do kill -0 "$launcher" 2>/dev/null || break; sleep 0.1; done
     hung=$(cat "$WORK/hang.pid" 2>/dev/null)
     if [ -z "$hung" ]; then pass "$c: the test never started"
-    else fail "$c: the test never started (pid $hung ran)"; kill "$hung" 2>/dev/null; fi
+    else fail "$c: the test never started (pid $hung ran)"; ! ours "$hung" || kill "$hung"; fi
     { wait "$launcher"; } 2>/dev/null
     cpid=$(cat "$WORK/cp.slow" 2>/dev/null)
-    if [ -n "$cpid" ] && kill -0 "$cpid" 2>/dev/null; then fail "$c: nothing outlives the runner (copy $cpid runs)"
+    if [ -n "$cpid" ] && ours "$cpid"; then fail "$c: nothing outlives the runner (copy $cpid runs)"
     else pass "$c: nothing outlives the runner"; fi
     sleep 2.5
     empty_dir "$c" "$WORK/w-$c"
@@ -292,7 +298,7 @@ window_signal "window HUP" HUP 2>/dev/null
 
 # What a terminal sends: the signal to the runner's whole process group, INT and HUP not ignored.
 group_signal() {
-    local c=$1 sig=$2 want=$3 launcher hung
+    local c=$1 sig=$2 want=$3 launcher hung rp
     manifest "$c" 'test: ./hang.sh' 'timeout: 60' "$E_EMPTY"
     mkdir -p "$WORK/w-$c"; rm -f -- "$WORK/hang.pid"
     HANG_PID=$WORK/hang.pid setsid perl -e '$SIG{INT} = $SIG{HUP} = "DEFAULT"; exec @ARGV' \
@@ -300,12 +306,12 @@ group_signal() {
         >"$WORK/$c.out" 2>&1 </dev/null &
     launcher=$!
     for _ in $(seq 100); do [ -s "$WORK/hang.pid" ] && break; sleep 0.1; done
-    kill -"$sig" -- "-$(cat "$WORK/$c.rpid")"
+    rp=$(cat "$WORK/$c.rpid"); ours "$rp" && kill -"$sig" -- "-$rp"
     { wait "$launcher"; } 2>/dev/null
     equals "$c: exit" "$?" "$want"
     sleep 0.5
     hung=$(cat "$WORK/hang.pid" 2>/dev/null)
-    if [ -n "$hung" ] && kill -0 "$hung" 2>/dev/null; then
+    if [ -n "$hung" ] && ours "$hung"; then
         fail "$c: test process gone (pid $hung still runs)"; kill "$hung" 2>/dev/null
     else pass "$c: test process gone"; fi
     empty_dir "$c" "$WORK/w-$c"
@@ -313,6 +319,21 @@ group_signal() {
 group_signal sigint INT 130
 group_signal sighup HUP 129
 
+# A recorded pid that now names a process outside the run (pid reuse): cleanup leaves it alone.
+sleep 60 &
+sleeper=$!
+manifest stale 'test: sed -i "s/^[0-9]*/${SLEEPER:?}/" ../pg; : >"${READY:?}"; sleep 2' "$E_EMPTY"
+mkdir -p "$WORK/w-stale"
+SLEEPER=$sleeper READY=$WORK/stale.ready "$CHECK" -r "$P" -w "$WORK/w-stale" "$WORK/stale.manifest" >"$WORK/stale.out" 2>&1 &
+runner=$!
+for _ in $(seq 100); do [ -e "$WORK/stale.ready" ] && break; sleep 0.1; done
+kill -TERM "$runner"
+wait "$runner"
+if kill -0 "$sleeper" 2>/dev/null; then pass "stale pid: an unrelated process survives cleanup"; kill "$sleeper"
+else fail "stale pid: cleanup signalled unrelated pid $sleeper"; fi
+empty_dir "stale pid" "$WORK/w-stale"
+
+equals "$DEVNULL keeps its mode and owner" "$(stat -c '%a %U %G' -- "$DEVNULL")" "$DEVNULL_BEFORE"
 equals "the caller's tree is byte-identical" "$(tree_sum "$P")" "$BEFORE"
 
 if [ "$fails" -eq 0 ]; then printf 'guard-mutants-test: all checks passed\n'; exit 0; fi

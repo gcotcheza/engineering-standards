@@ -65,7 +65,8 @@ it could not read is a refusal (exit 1), not a note under a green run; a line th
 script: for each guard line the manifest names it deletes that line in a fresh copy of the root, runs
 the manifest's test, and counts the guard caught only when the test fails *and* prints the entry's
 `expect` line. The manifest format is in its usage text; `scripts/guard-mutants-self.manifest` is the
-runner proving its own guard lines.
+runner proving its own guard lines. Run it as an unprivileged user (nobody) in a work dir that user
+owns: each mutant runs with the runner's rights. Its suite refuses root, and gate step 8 drops to nobody.
 
 ## Vendored scripts
 

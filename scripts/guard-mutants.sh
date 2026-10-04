@@ -22,6 +22,7 @@ MANIFEST is plain text, one "key: value" per line; blank lines and # lines are s
 A guard is one physical line: a "\" continuation is two lines, and only one is deleted.
 expect is matched as a fixed substring of the output, and blanks after it count.
 Give -r a plain directory or clone: a test can write through a symlink or a worktree's .git link.
+Run it as an unprivileged user (nobody) in a work dir that user owns: a mutant runs with your rights.
 
 The test runs on an unmutated copy first; unless that exits 0 the run is ERROR and
 nothing is judged. Then, per entry:
@@ -93,14 +94,20 @@ RUN=$(mktemp -d -p "$WORK" guard-mutants.XXXXXXXX) || die "cannot make a directo
 # Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
 # shellcheck disable=SC2317
 cleanup() {
-    local f pg
+    local f pg st
     : >"${RUN:?}/stopping"
-    for f in "$RUN"/m*/pg; do pg=$(cat -- "$f" 2>/dev/null) && kill -TERM -- "-$pg" "$pg" 2>/dev/null; done
+    for f in "$RUN"/m*/pg; do
+        read -r pg st 2>/dev/null <"$f" || continue
+        # A pid is signalled only while it is still the process that wrote it: same start time.
+        { [ -n "$st" ] && [ "$(starttime "$pg")" = "$st" ]; } || continue
+        kill -TERM -- "-$pg" "$pg" 2>/dev/null
+    done
     wait
     rm -rf -- "${RUN:?}"
 }
 trap cleanup EXIT
 
+starttime() { local s f; read -r s 2>/dev/null <"/proc/$1/stat" || return 1; read -ra f <<<"${s##*) }"; printf '%s' "${f[19]}"; }
 put() { printf '%s\t%s\n' "$2" "$3" >"${RUN:?}/res.$1"; }
 
 # Counts (MODE=count) or drops (MODE=drop) the lines equal to NEEDLE once both are trimmed.
@@ -127,8 +134,8 @@ run_one() {
         { match_lines drop "${LINES[k]}" "$tree/${FILES[k]}" >"$m/mutant" && cat -- "$m/mutant" >"$tree/${FILES[k]}"; } \
             || { put "$k" errored "cannot write the mutant"; return; }
     fi
-    # timeout leads a process group of its own; pg names it before anything runs, so cleanup can end it.
-    (echo "$BASHPID" >"$m/pg"; [ ! -e "$RUN/stopping" ] || exit 143; cd -- "$tree" && exec timeout -k 5 "$TIMEOUT" bash -c "$TEST") >"$out" 2>&1 </dev/null &
+    # timeout leads a process group of its own; pg names it, with its start time, before anything runs.
+    (p=$BASHPID; echo "$p $(starttime "$p")" >"$m/pg"; [ ! -e "$RUN/stopping" ] || exit 143; cd -- "$tree" && exec timeout -k 5 "$TIMEOUT" bash -c "$TEST") >"$out" 2>&1 </dev/null &
     tp=$!
     wait "$tp"; rc=$?
     kill -TERM -- "-$tp" 2>/dev/null; rm -f -- "$m/pg"

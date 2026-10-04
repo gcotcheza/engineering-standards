@@ -14,11 +14,14 @@ prints) is errored. One line per entry, then
 written, and every copy is removed on any exit. Each test runs under `timeout` in a process group of
 its own, which the runner ends when the test returns (anything it left behind goes with it) and from
 its EXIT trap on TERM, INT or HUP, sent to the runner or to its whole group; a test not yet started
-when the signal lands never starts. Guard lines are compared as strings (`1` is not `1.0`), and a
+when the signal lands never starts. A pid read back from an entry's directory is signalled only while
+its start time in `/proc` still equals the one recorded at launch, so a reused pid is left alone.
+The suite refuses to run as root, gate step 8 runs it as `nobody` in a directory `nobody` owns, and
+the suite fails if `/dev/null` (a seam names a stand-in) changes mode or owner. Guard lines are compared as strings (`1` is not `1.0`), and a
 manifest with a carriage return is a usage error.
 `scripts/guard-mutants-test.sh` is the new gate step 8 (the deploy-lib test moves to step 9).
-`scripts/guard-mutants-self.manifest` lists the runner's own 39 guard lines; the runner run on it
-reports all 39 caught. It deletes lines only: a mutant that swaps text stays a hand-made one.
+`scripts/guard-mutants-self.manifest` lists the runner's own 42 guard lines; the runner run on it,
+as `nobody`, reports all 42 caught. It deletes lines only: a mutant that swaps text stays a hand-made one.
 
 ## 2026-10-04 — two messages the guard-diff lint misread are reworded, and this gate runs the lint (deploy-lib VERSION 2026-10-04; the standard is unchanged and VERSION is not bumped)
 **`fleet-lint-guard-diff` read message text as a `git diff` call**, so it failed every gate that
