@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-10-04 — root's `docker compose` reads only root's files: `compose.sh` (deploy-lib VERSION 2026-10-04; the standard is unchanged)
+**New file `scripts/lib/deploy/compose.sh`** (backlog 320). Every root compose call goes through one
+argv: `docker compose --project-directory <ROOT> -f <run>/compose/<file> [-f …] --env-file
+/etc/fleet/app-env/<app>.env …`, where `<run>` is the directory `fleet-deploy` exported `scripts/`
+into, found from the lib's own location. `deploy_compose_init <MERGE_SHA>` runs before the first
+compose call: it refuses, naming `fleet-deploy`, when `<run>/compose/`, `<run>/export-sha` or a named
+file is missing (an export from the 317 `fleet-deploy` or `fleet-deploy-on-merge` has none), when the
+env file is not root 600 in a root 700 directory, or when the files were exported at another sha. It
+then reads `--profile '*' config --no-env-resolution --format json` (every profile's services) through jq and refuses `privileged`, `pid`/`ipc`/
+`network_mode: host`, `cap_add`, `devices`, `security_opt`, a `docker.sock` mount, build `secrets`/`ssh`/
+`additional_contexts`, a volume's `driver_opts`, and any bind source, `env_file`, build context or
+secret/config file that resolves outside `ROOT`; the refusal names the service and key, never a value.
+It sets `DEPLOY_COMPOSE` (`bash <lib>/compose.sh run …`), which works in-process and inside a job's text.
+Before `build`, `up`, `run` or `create`, every file `fleet-deploy` exported to `<run>/buildcheck/`
+(tracked `docker/**`, `Dockerfile*`, `.dockerignore`) must `cmp` equal to the tree's copy, reached through
+no symlink; `docker/` holds nothing untracked; each build context's Dockerfile and `.dockerignore` are
+tracked. A caller's own `-f`, `--env-file`, `--project-directory` or `-p` refuses, and no `COMPOSE_*` from
+the caller reaches docker. `deploy_app_env_value KEY` reads `.env` through `sudo -n -u <app>`. The suite
+(section 8) runs a stub docker; red proofs, one saved mutant per guard line (35 deletions, 2 edits
+for the two `--profile '*'`), live in the lane of backlog 320. Every lib file is re-stamped for VERSION 2026-10-04.
+
+**Re-vendor only after fleet install packet 320 is INSTALLED** (its env seed first, then `fleet-deploy`
+and `fleet-deploy-on-merge`): under the 317 tools the new lib refuses at `deploy_compose_init`.
+**Policy verdicts on today's deploy compose files** (values stubbed): fineprint, memento, orbit and
+health-tracker refuse on `security_opt` (every service sets `no-new-privileges:true`); scribly and
+reflection refuse on binds outside `ROOT` (`/var/scribly-audio`, `/var/journal-audio`); kidsquest passes;
+ghiecode, ghie-writes and pig-dice-game run no compose. Those six cannot re-vendor until that is ruled on.
+
+**Caller changes the re-vendor round carries, per project** (runbooks unchanged):
+- every project that runs compose: copy `compose.sh` with the other lib files and source it; after
+  `resolve`, call `deploy_compose_init "$MERGE_SHA"` and set `COMPOSE=$DEPLOY_COMPOSE` (or call
+  `deploy_compose`) for every compose call, the job text included; drop `DEPLOY_COMPOSE` as an
+  override. kidsquest, scribly and reflection set `DEPLOY_COMPOSE_FILES=docker-compose.prod.yml` instead
+  of `-f docker-compose.prod.yml`. `scripts/deploy-test.sh` fixtures gain a run directory with
+  `compose/`, `buildcheck/` and `export-sha`, and `DEPLOY_APP_ENV_DIR` naming a root 700 directory.
+- health-tracker: `seam_scan` walks every `DEPLOY_*` shell variable, so `deploy_compose_init` runs after
+  it (the lib sets no `DEPLOY_*` name when sourced).
+- root's chown sweeps become `find -P … -exec chown -h …`: memento `deploy.sh:169`, orbit `:205`,
+  scribly and reflection `root_owned_find -exec chown` (`:112`, `:118`); memento's `chown -R memento:memento
+  $ROOT/node_modules` (`:135`) becomes the same `find -P` form. fineprint (`:104`) already passes `-h`.
+- `.env` read by root goes through `deploy_app_env_value` or is dropped: `grep '^APP_URL=' "$ROOT/.env"` in
+  fineprint `:30`, kidsquest `:44`, ghiecode `:34`, ghie-writes `:58`; kidsquest's `ASSET_URL` grep (`:228`).
+  kidsquest's `chmod 600 "$ROOT/.env"` (`:66`, `:134`) runs as the app user (`sudo -n -u kidsquest`), since
+  chmod follows a symlink.
+- every gate that runs this suite: nothing new; section 8 needs `jq` and runs as root (it reads a fake
+  `.env` as `nobody`).
+
 ## 2026-10-03 — root runs a deploy only from `fleet-deploy`'s export: the lib refuses any other copy, and `resolve` takes the repository from root (deploy-lib VERSION 2026-10-03, amended; the standard is unchanged)
 **`summary.sh` refuses to run from anywhere the app user could write** (backlog 317). When it is
 sourced, and again in `deploy_log_open` once `ROOT` is set, it walks the running `deploy.sh`,

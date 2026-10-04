@@ -65,8 +65,9 @@ it could not read is a refusal (exit 1), not a note under a green run; a line th
 
 `scripts/lib/deploy/` is the half of a project's `scripts/deploy.sh` that is the same
 everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (which commit a pull
-request number means), `ledger.sh` (the gate ledger) and `preflight.sh`. A project copies those
-four files and `VERSION` into its own `scripts/lib/deploy/`, byte-identical, and sources them.
+request number means), `ledger.sh` (the gate ledger), `preflight.sh`, `cleanup.sh` and `compose.sh`
+(root's compose, from `fleet-deploy`'s export only). A project copies those files and `VERSION` into
+its own `scripts/lib/deploy/`, byte-identical, and sources them.
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
 project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After

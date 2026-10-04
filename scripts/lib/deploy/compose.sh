@@ -1,0 +1,143 @@
+# fleet-deploy-lib 2026-10-04 sha256:ae178b4006ee496e50843c51ab3d8bae906aab9c82f438376e72a73243d06556
+# shellcheck shell=bash
+# Root's compose reads no file the app user can edit: compose files exported beside this lib by
+# fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
+
+FLEET_COMPOSE_LIB="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/compose.sh"
+FLEET_COMPOSE_WORD='^/?[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$'
+
+# One rule a line, F <service> <key> or P <service> <key> <path>; values never leave jq.
+# shellcheck disable=SC2016
+FLEET_COMPOSE_POLICY='
+(.services // {} | to_entries[] | .key as $s | .value as $v | (
+  (select($v.privileged == true) | "F\t\($s)\tprivileged"),
+  (select($v.pid == "host") | "F\t\($s)\tpid"),
+  (select($v.ipc == "host") | "F\t\($s)\tipc"),
+  (select($v.network_mode == "host") | "F\t\($s)\tnetwork_mode"),
+  (select(($v.cap_add // []) | length > 0) | "F\t\($s)\tcap_add"),
+  (select(($v.devices // []) | length > 0) | "F\t\($s)\tdevices"),
+  (select(($v.security_opt // []) | length > 0) | "F\t\($s)\tsecurity_opt"),
+  (select(any($v.volumes[]?; (.source // "") | test("docker[.]sock$"))) | "F\t\($s)\tvolumes (docker.sock)"),
+  (select(($v.build.secrets // []) | length > 0) | "F\t\($s)\tbuild.secrets"),
+  (select(($v.build.ssh // []) | length > 0) | "F\t\($s)\tbuild.ssh"),
+  (select(($v.build.additional_contexts // {}) | length > 0) | "F\t\($s)\tbuild.additional_contexts"),
+  ($v.volumes[]? | select(.type == "bind") | "P\t\($s)\tvolumes\t\(.source // "")"),
+  ($v.env_file[]? | "P\t\($s)\tenv_file\t\(if type == "object" then .path else . end)"),
+  ($v.build? // empty | "P\t\($s)\tbuild.context\t\(.context // "")"),
+  empty)),
+(.volumes // {} | to_entries[] | select((.value.driver_opts // {}) | length > 0) | "F\tvolume \(.key)\tdriver_opts"),
+(.secrets // {} | to_entries[] | select(.value.file) | "P\tsecret \(.key)\tfile\t\(.value.file)"),
+(.configs // {} | to_entries[] | select(.value.file) | "P\tconfig \(.key)\tfile\t\(.value.file)"),
+empty
+'
+
+deploy_compose_policy() { # root, config json -> 0, or 1 with DEPLOY_COMPOSE_ERR naming service and key
+    local root=$1 rules kind svc key path
+    rules=$(printf '%s' "$2" | jq -r "$FLEET_COMPOSE_POLICY") || { DEPLOY_COMPOSE_ERR="jq could not read the compose config, so no compose call runs"; return 1; }
+    while IFS=$'\t' read -r kind svc key path; do
+        [ "$kind" != F ] || { DEPLOY_COMPOSE_ERR="compose $svc sets $key, which root's compose does not run (policy, backlog 320)"; return 1; }
+        [ "$kind" != P ] || [[ $path == /* && "$(realpath -m -- "$path")/" == "$root"/* ]] || { DEPLOY_COMPOSE_ERR="compose $svc: $key reaches outside $root (policy, backlog 320)"; return 1; }
+    done <<<"$rules"
+}
+
+deploy_compose_buildcheck() { # root, run dir, config json -> 0, or 1 with DEPLOY_COMPOSE_ERR
+    local root=$1 bc=$2/buildcheck f rel ctx df
+    { [ -d "$bc" ] && [ ! -L "$bc" ]; } || { DEPLOY_COMPOSE_ERR="$bc is missing: this deploy.sh was not exported by a fleet-deploy that checks the build context (packet 320). Deploy with: fleet-deploy <app> <PR#>"; return 1; }
+    while IFS= read -r -d '' f; do
+        rel=${f#"$bc"/}
+        { [ -f "$root/$rel" ] && [ "$(realpath -e -- "$root/$rel" 2>/dev/null)" = "$root/$rel" ]; } || { DEPLOY_COMPOSE_ERR="$root/$rel is missing, not a plain file, or reached through a symlink, so the build context is not the merged one"; return 1; }
+        cmp -s -- "$f" "$root/$rel" || { DEPLOY_COMPOSE_ERR="$root/$rel differs from the merged commit, so nothing is built"; return 1; }
+    done < <(find -P "$bc" -type f -print0)
+    while IFS= read -r -d '' f; do
+        rel=${f#"$root"/}
+        [ -f "$bc/$rel" ] || { DEPLOY_COMPOSE_ERR="$f is not in the merged commit (untracked, or a link), so nothing is built"; return 1; }
+    done < <(find -P "$root/docker" ! -type d -print0 2>/dev/null)
+    while IFS=$'\t' read -r ctx df; do
+        [ -n "$ctx" ] || continue
+        [[ $df == /* ]] || df=$ctx/$df
+        for f in "$df" "$df.dockerignore" "$ctx/.dockerignore"; do
+            [ "$f" = "$df" ] || [ -e "$f" ] || [ -L "$f" ] || continue
+            [ -f "$bc/${f#"$root"/}" ] || { DEPLOY_COMPOSE_ERR="$f is not in the merged commit, so nothing is built"; return 1; }
+        done
+    done < <(printf '%s' "$3" | jq -r '.services // {} | .[] | .build? // empty | select(.dockerfile_inline == null) | "\(.context)\t\(.dockerfile // "Dockerfile")"')
+}
+
+# The one root compose argv: run <root> <docker> <env file> <file>… -- <compose args>.
+deploy_compose_exec() {
+    local root docker env run f sub json files=() argv=()
+    [ "${1:-}" = run ] || { printf 'REFUSED: compose.sh runs only as: compose.sh run <root> <docker> <env file> <file>… -- <args>\n' >&2; return 1; }
+    root=${2:-} docker=${3:-} env=${4:-}
+    shift 4 || return 1
+    while [ $# -gt 0 ] && [ "$1" != -- ]; do files+=("$1"); shift; done
+    [ "${1:-}" = -- ] || { printf 'REFUSED: compose.sh run has no -- before the compose arguments\n' >&2; return 1; }
+    shift
+    run=$(cd -P -- "$(dirname -- "$FLEET_COMPOSE_LIB")/../../.." && pwd -P)
+    deploy_compose_pieces "$root" "$env" "$run" "${files[@]}" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; }
+    [[ $docker =~ $FLEET_COMPOSE_WORD ]] || { printf 'REFUSED: the docker command is not one plain word\n' >&2; return 1; }
+    argv=(compose --project-directory "$root")
+    for f in "${files[@]}"; do argv+=(-f "$run/compose/$f"); done
+    argv+=(--env-file "$env")
+    sub=''
+    for f in "$@"; do
+        case $f in
+            -f|--file|--file=*|--env-file|--env-file=*|--project-directory|--project-directory=*|-p|--project-name|--project-name=*)
+                [ -n "$sub" ] || { printf 'REFUSED: a caller names no compose file, env file, project directory or name: deploy_compose fixes them\n' >&2; return 1; } ;;
+            --profile|--progress|--ansi|--parallel) [ -n "$sub" ] || sub=next ;;
+            -*) ;;
+            *) case $sub in '') sub=$f ;; next) sub='' ;; esac ;;
+        esac
+    done
+    case $sub in
+        build|up|run|create)
+            json=$("$docker" "${argv[@]}" --profile '*' config --no-env-resolution --format json) || { printf 'REFUSED: compose config failed, so the build context was not checked\n' >&2; return 1; }
+            deploy_compose_buildcheck "$root" "$run" "$json" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
+    esac
+    for f in "${!COMPOSE_@}"; do unset "$f"; done
+    "$docker" "${argv[@]}" "$@"
+}
+
+deploy_compose_pieces() { # root, env file, run dir, file… -> 0, or 1 with DEPLOY_COMPOSE_ERR
+    local root=$1 env=$2 run=$3 f d
+    shift 3
+    DEPLOY_COMPOSE_ERR=''
+    [[ $root =~ $FLEET_COMPOSE_WORD && $root == /* && -d $root && ! -L $root ]] || { DEPLOY_COMPOSE_ERR="ROOT '$root' is not a plain absolute directory"; return 1; }
+    [[ $env =~ $FLEET_COMPOSE_WORD ]] || { DEPLOY_COMPOSE_ERR="the env file path '$env' is not one plain word"; return 1; }
+    { [ -d "$run/compose" ] && [ ! -L "$run/compose" ]; } || { DEPLOY_COMPOSE_ERR="$run/compose is missing: this deploy.sh was not exported by a fleet-deploy that carries the compose files (packet 320). Deploy with: fleet-deploy <app> <PR#>"; return 1; }
+    { [ -f "$run/export-sha" ] && [ ! -L "$run/export-sha" ]; } || { DEPLOY_COMPOSE_ERR="$run/export-sha is missing: this deploy.sh was not exported by fleet-deploy (packet 320). Deploy with: fleet-deploy <app> <PR#>"; return 1; }
+    [ $# -gt 0 ] || { DEPLOY_COMPOSE_ERR="no compose file is named"; return 1; }
+    for f in "$@"; do
+        [[ $f =~ ^[A-Za-z0-9][A-Za-z0-9._-]*[.]ya?ml$ ]] || { DEPLOY_COMPOSE_ERR="'$f' is not a compose file name"; return 1; }
+        { [ -f "$run/compose/$f" ] && [ ! -L "$run/compose/$f" ]; } || { DEPLOY_COMPOSE_ERR="$run/compose/$f is missing: fleet-deploy exported no $f at the merge commit"; return 1; }
+    done
+    d=$(dirname -- "$env")
+    [ "$(basename -- "$env")" = "$(basename -- "$root").env" ] || { DEPLOY_COMPOSE_ERR="$env is not named after $root"; return 1; }
+    { [ -d "$d" ] && [ ! -L "$d" ] && [ "$(stat -c %u:%a "$d")" = 0:700 ] && [ -f "$env" ] && [ ! -L "$env" ] && [ "$(stat -c %u:%a "$env")" = 0:600 ]; } \
+        || { DEPLOY_COMPOSE_ERR="$env is not a root 600 file in a root 700 directory: packet 320's app-env seed writes it, then deploy with: fleet-deploy <app> <PR#>"; return 1; }
+}
+
+# deploy_compose_init <merge sha>, before the first compose call; ROOT set, DEPLOY_COMPOSE_FILES optional.
+deploy_compose_init() {
+    local root env run json exported
+    root=$(cd -P -- "${ROOT:-}" 2>/dev/null && pwd -P) || refuse "ROOT '${ROOT:-}' is not a directory."
+    env="${DEPLOY_APP_ENV_DIR:-/etc/fleet/app-env}/$(basename -- "$root").env"
+    run=$(cd -P -- "$(dirname -- "$FLEET_COMPOSE_LIB")/../../.." && pwd -P)
+    read -ra DEPLOY_COMPOSE_FILE_LIST <<<"${DEPLOY_COMPOSE_FILES:-docker-compose.yml}"
+    deploy_compose_pieces "$root" "$env" "$run" "${DEPLOY_COMPOSE_FILE_LIST[@]}" || refuse "$DEPLOY_COMPOSE_ERR"
+    exported=$(head -c 41 "$run/export-sha" | tr -d '\n')
+    [ "$exported" = "${1:-}" ] || refuse "the compose files were exported at ${exported:-nothing}, not the merge ${1:-(none)} this deploy lands."
+    [[ ${DOCKER:-docker} =~ $FLEET_COMPOSE_WORD ]] || refuse "DOCKER '${DOCKER:-}' is not one plain word."
+    DEPLOY_COMPOSE="bash $FLEET_COMPOSE_LIB run $root ${DOCKER:-docker} $env ${DEPLOY_COMPOSE_FILE_LIST[*]} --"
+    json=$($DEPLOY_COMPOSE --profile '*' config --no-env-resolution --format json) || refuse "compose config failed, so the policy could not be checked."
+    deploy_compose_policy "$root" "$json" || refuse "$DEPLOY_COMPOSE_ERR"
+    say "COMPOSE root's files: ${DEPLOY_COMPOSE_FILE_LIST[*]} at ${exported:0:12}, env $env, policy clean"
+}
+
+deploy_compose() { [ -n "${DEPLOY_COMPOSE:-}" ] || refuse "deploy_compose_init has not run."; $DEPLOY_COMPOSE "$@"; }
+
+# A value from the app's .env, read as the app user: root never follows a link the app user made.
+deploy_app_env_value() {
+    [[ ${1:-} =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || refuse "'${1:-}' is not an env key."
+    sudo -n -u "${DEPLOY_APP_USER:-$(basename -- "$ROOT")}" -- grep -m1 "^$1=" "$ROOT/.env" 2>/dev/null | cut -d= -f2-
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then deploy_compose_exec "$@"; exit; fi

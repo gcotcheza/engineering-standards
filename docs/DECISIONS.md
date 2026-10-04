@@ -1128,3 +1128,44 @@ mounted `noexec` (the fakes are executables), and ghiecode's and scribly's gates
 suite reads with a default that is exported, so the suite reads no `TMPDIR` at all.
 The guard cases make their copies for real — app-owned with `chown nobody`, group-writable, a symlink,
 inside `ROOT` — and the old command, the tree's own copy run by root, is one of them.
+
+## Root's compose reads only files root alone wrote (2026-10-04)
+
+**The attack route.** After backlog 317 root runs only scripts exported from its own mirror, but those
+scripts still ran root's `docker compose` with its working directory in `/var/www/<app>`, reading the
+app-owned `docker-compose*.yml`, `.env` (untracked, so the clean-tree check never sees it; compose
+honours `COMPOSE_FILE` and interpolation from it) and the build context. Nothing re-checked a tracked
+compose file after the fast-forward. Either route lets the app user add a host bind and be root at the
+next deploy (backlog 320).
+
+**The route that closes it.** `fleet-deploy` (fleet install packet 320) also exports, at the merge
+commit, every tracked top-level `docker-compose*.yml`/`compose*.yml` into `<run>/compose/` and every
+tracked `docker/**`, `Dockerfile*` and `.dockerignore` into `<run>/buildcheck/`, judged blob by blob as
+`scripts/` is, and refuses a compose file with a top-level `include:` or an `extends:` with `file:`
+(both would read app-tree files back in). Root's interpolation variables live in
+`/etc/fleet/app-env/<app>.env` (root 600, seeded once from today's `.env` by that packet, key names
+only in its preview). `compose.sh` builds the one argv from those and finds `<run>` from its own
+location, so no new variable can point it elsewhere; with `--env-file` given, compose never loads the
+project directory's `.env` (measured with compose 5.5.1). The app's `.env` still reaches the containers
+through `env_file:`, which the policy holds inside `ROOT`.
+
+**The policy is a tripwire, not the boundary.** Main is the boundary: a merged PR is reviewed. The jq
+check catches one that slipped in a host escape. It reads `--profile '*'`, because `config` hides a
+service whose profile is not active, and `--no-env-resolution`, so no `.env` value is ever in its input. Paths are judged by `realpath -m`, so a symlink inside `ROOT` that points out is
+outside. It is not widened to let a project pass: today four projects refuse on
+`security_opt: no-new-privileges:true` and two on audio binds outside `ROOT`, which is a ruling for the
+owner, not for the lib.
+
+**Deviation from the design: the build context is checked against root's mirror, not with `git status`
+as the app user.** The app user controls its own `.git` (index, config, hooks), so its `git status` is
+the app user's answer. Instead every tracked build-context file is compared with `cmp` to the blob
+`fleet-deploy` exported, and `find -P` lists nothing untracked under `docker/` or beside a context's
+Dockerfile. What remains: a race between the check and compose reading the files, since the tree stays
+app-writable; a full fix builds from a root-owned copy of the context, left as follow-up work. Context
+files outside `docker/`, the Dockerfile and `.dockerignore` (scribly's and reflection's `api/` source)
+are not compared: they run inside the build container, never on the host.
+
+**Rejected (card 320).** Hashing compose files against a list: the list needs a root-owned source, which
+is this design again. Running compose as the app user: membership of the docker group is root.
+A per-app allow-list in the mirror as the boundary: main already is, and a list there is one more file
+the same PR can change.
