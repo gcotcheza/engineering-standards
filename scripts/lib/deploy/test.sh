@@ -379,7 +379,7 @@ esac
 
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
-matches 'VERSION is a date' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+matches 'VERSION is a date, with an optional same-day serial' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$'
 EMPTY_SET="$(printf '' | sha256sum | cut -d' ' -f1)"
 for f in summary resolve ledger preflight cleanup; do
     line1="$(head -1 "${LIB_DIR}/${f}.sh")"
@@ -769,6 +769,12 @@ scope_template() {
     scope_commit nodecl refs/scope/bare 'scripts/deploy.sh=d'
     scope_commit e2elive refs/scope/bare ".fleet/test-scope=non-ui scripts/${NL}non-ui e2e/"
     scope_commit e2edecl refs/scope/e2elive 'scripts/x.sh=x'
+    git_at checkout -q --detach refs/scope/live
+    mkdir -p "${ROOT}/docs"
+    ln -s ../resources/x.css "${ROOT}/docs/x.css"
+    git_at add docs/x.css
+    git_at commit -q -m symlink
+    git_at update-ref refs/scope/symlink HEAD
     git_at checkout -q main
 }
 
@@ -874,6 +880,19 @@ scope_gated
 contains 'a change to the declaration is UI, even one that declares app/ non-UI' "${OUT}" \
     "SCOPE ui: UI path: .fleet/test-scope ${RULE}"
 
+scope_fixture scope-symlink live symlink
+scope_rows ci
+scope_gated
+contains 'a symlink in a declared docs directory makes the diff UI' "${OUT}" \
+    "SCOPE ui: symlink or submodule: docs/x.css, so every path is UI ${RULE}"
+
+scope_fixture scope-diff-fails live docs
+rm -f "${LEDGER}"
+run_lib "GATE_SHA=${MISSING_SHA}; GATE_WHAT=head; gated"
+contains 'a diff git cannot produce is UI' "${OUT}" \
+    "SCOPE ui: git could not list what ${MISSING_SHA:0:7} changes on "
+contains 'and is refused, not gated' "${OUT}" "REFUSED: no gate ledger at ${LEDGER}"
+
 scope_fixture scope-by-hand live nonui
 BY_HAND=1
 scope_gated
@@ -898,7 +917,21 @@ contains 'an empty diff is UI' "${OUT}" 'SCOPE=ui WHY=the diff names no path'
 scope_classify '' 'scripts/a.sh'
 contains 'an empty declaration declares nothing non-UI' "${OUT}" 'SCOPE=ui WHY=UI path: scripts/a.sh'
 scope_classify $'non-ui scripts/\ndocs scripts/README.md' $'scripts/README.md'
-contains 'a docs entry wins over a non-UI one for the same path' "${OUT}" 'SCOPE=docs WHY=docs-only diff (scripts/README.md)'
+contains 'an exact docs entry beats the directory it sits in' "${OUT}" 'SCOPE=docs WHY=docs-only diff (scripts/README.md)'
+scope_classify $'docs docs/\nnon-ui docs/tools/' $'docs/tools/x.sh'
+contains 'the longer directory wins: a script under a docs tree is non-UI' "${OUT}" 'SCOPE=non-ui WHY=non-UI diff (docs/tools/)'
+scope_classify $'non-ui docs/tools/\ndocs docs/' $'docs/tools/x.sh'
+contains 'and the order of the lines does not change it' "${OUT}" 'SCOPE=non-ui WHY=non-UI diff (docs/tools/)'
+scope_classify $'docs scripts/\nnon-ui scripts/' $'scripts/a.sh'
+contains 'a tie goes to non-UI, the stricter' "${OUT}" 'SCOPE=non-ui WHY=non-UI diff (scripts/)'
+scope_classify $'non-ui *.json\nnon-ui *.lock' $'composer.json'
+contains 'a root glob does not reach composer.json' "${OUT}" 'SCOPE=ui WHY=UI path: composer.json'
+scope_classify $'non-ui scripts/' $'scripts/package-lock.json'
+contains 'a directory does not reach a lockfile under it' "${OUT}" 'SCOPE=ui WHY=UI path: scripts/package-lock.json'
+scope_classify $'non-ui composer.lock' $'composer.lock'
+contains 'an exact entry does reach a lockfile' "${OUT}" 'SCOPE=non-ui WHY=non-UI diff (composer.lock)'
+scope_classify $'non-ui scripts/\r' $'scripts/a.sh'
+contains 'a CRLF declaration is refused' "${OUT}" "SCOPE=ui WHY=.fleet/test-scope line 1 is not"
 scope_classify 'non-ui scripts/' $'scripts/a.sh\nscriptsx/b.sh\nc.sh\nd.sh'
 contains 'a directory entry matches only under it, and the count of the rest is named' "${OUT}" \
     'SCOPE=ui WHY=UI path: scriptsx/b.sh and 2 more'

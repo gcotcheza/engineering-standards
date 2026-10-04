@@ -574,6 +574,14 @@ it is stated as a property of the deploy ("ships a bundle built out of `node_mod
 rather than as a list of project names, which would go stale the first time a project
 adds or drops a front end.
 
+**Moved out of T1 on 2026-10-04, unchanged in force.** The npm floor is High; `composer audit`
+has no severity floor and fails on any advisory — stricter on purpose, so it is never narrowed with
+`--ignore-severity`. Where the deploy ships a bundle built out of `node_modules`, the npm step
+carries no `--omit=dev`: a bundler ships whatever the entrypoints import, and `devDependencies` is a
+section of a lockfile, not a boundary the build honours. Proved as T5 asks: pin one devDependency
+the bundle imports to a version with a published High advisory, run the gate, quote *the gate's
+own* failure line, not npm's — a step can swallow npm's — then revert.
+
 ## By hand reads the ledger and overrides it out loud, and the refusal names routes that exist (2026-10-01)
 
 **The rescue path used to be a blindfold.** `gated()` returned on `BY_HAND` before it touched the
@@ -1162,6 +1170,26 @@ browser. The library carries no default list for the same reason: what is served
 (one serves `docs/`, another renders Markdown mail from `resources/`), so only the app can say.
 Dependency manifests are never meant to be declared: a bump changes what serves the browser.
 `*.ext` reaches root-level files only, because `*.md` deep in `resources/` can be a template.
+A manifest or lockfile (`composer.json`, `composer.lock`, `package.json`, `package-lock.json`,
+`yarn.lock`, `pnpm-lock.yaml`, at any depth) is matched only by an entry naming its exact path, so
+`non-ui *.json` or `non-ui scripts/` cannot sweep a dependency change into the non-UI class.
+
+**Overlapping entries: the most specific wins, a tie goes to non-UI.** Exact path beats directory
+beats `*.ext`, a longer directory beats a shorter one, and the same entry under both classes is
+non-UI, the stricter. "Docs wins" was the first rule and the wrong one: `docs docs/` with
+`non-ui docs/tools/` made a script under `docs/tools/` deploy with no row at all.
+
+**A symlink or submodule anywhere in the diff makes the whole diff UI.** The path names where the
+link sits, not what it serves, so `docs/x -> ../resources/x` is not documentation; the classifier
+reads `--raw` modes (120000, 160000) for that and `--ignore-submodules=none` so no configured
+`diff.ignoreSubmodules` can hide a gitlink. `fleet-pr-lint` sees no modes in GitHub's compare and
+leaves this to the deploy.
+
+**One classifier, later.** This is meant to become the one path classifier that replaces the
+per-app `scripts/docs-only.sh` copies (fineprint, health-tracker, kidsquest, memento, orbit; C1)
+in a later round; until then a project's docs-only landing keeps its own allowlist. And
+health-tracker defines its own `gated()` (`deploy.sh` over `gate-row.sh`), so none of this
+applies there until its re-vendor.
 
 **Three things no declaration can make non-UI.** `e2e/`: the browser tests are what the browser
 sees, so a declaration naming it is refused whole rather than partly honoured, and the refusal is
@@ -1174,7 +1202,8 @@ running: every vendoring caller on this box runs `gated` before its fast-forward
 with the gated commit, not the merge base with the branch. A merge-base diff sees only this pull
 request, so an earlier merged-but-undeployed UI change riding along would ship behind a `ci`-only
 verdict; the checkout diff sees it. Before a merge there is no deploy to compare, so `fleet-pr-lint`
-reads the branch's diff (`main...<head>`), and the deploy re-judges the wider one.
+reads the branch's diff (`main...<head>`, a rename's old name included, as `--no-renames`
+gives it here), and the deploy re-judges the wider one.
 
 **The declaration is read from the gated commit.** It is the tree the ledger names and the tree that
 deploys; reading the checkout's copy instead would judge a project's first declaration by its

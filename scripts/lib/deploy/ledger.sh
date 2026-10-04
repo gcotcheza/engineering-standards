@@ -1,8 +1,8 @@
-# fleet-deploy-lib 2026-10-04 sha256:594d356ed446e577fac9e95c7acb89b19e83238d7f43dd15dd25420a3dfed7e4
+# fleet-deploy-lib 2026-10-04.2 sha256:4798144ffb2d4eddff44312e21d7d935fb67ea24db058c8651bec494895ba577
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
-# gated reads it, and the commit GATE_SHA names is refused unless it is in there green —
-# by hand reads the same rows and prints the verdict it overrides instead of refusing.
+# gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
+# scope owes green (none, ci, or ci and e2e) — by hand prints the verdict it overrides instead.
 # GATE_LEDGER_GIT is unquoted on purpose.
 # The EXIT trap records; sourcing this file discards any inherited GATE_SUITE_PASSED.
 # The gate script sets it itself, in its own shell, right after its suite returns 0.
@@ -83,18 +83,25 @@ gate_ledger_record() {
 TEST_SCOPE_FILE=.fleet/test-scope
 TEST_SCOPE_RULE='test-scope 2026-10-04'
 
-# A directory `a/b/`, a root-level extension `*.md`, or one exact path.
+TEST_SCOPE_MANIFESTS=' composer.json composer.lock package.json package-lock.json yarn.lock pnpm-lock.yaml '
+
+# Prints how specific entry $1 is for path $2 (exact 3, dir 2, glob 1), or fails: no match.
+# A dependency manifest at any depth is matched only by its exact path.
 test_scope_matches() {
     case $1 in
-        */) [[ $2 == "$1"* ]] ;;
-        '*.'*) [[ $2 != */* && $2 == *"${1#\*}" ]] ;;
-        *) [ "$2" = "$1" ] ;;
+        "$2") printf '3' ;;
+        *) [[ $TEST_SCOPE_MANIFESTS != *" ${2##*/} "* ]] || return 1
+           case $1 in
+               */) [[ $2 == "$1"* ]] && printf '2' ;;
+               '*.'*) [[ $2 != */* && $2 == *"${1#\*}" ]] && printf '1' ;;
+               *) return 1 ;;
+           esac ;;
     esac
 }
 
 # test_scope_classify <declaration text>, changed paths on stdin: sets SCOPE (docs|non-ui|ui) and SCOPE_WHY.
 test_scope_classify() {
-    local decl=$1 line kind entry extra n=0 path i hit matched='' ui_first='' ui_n=0 total=0 nonui=0
+    local decl=$1 line kind entry extra n=0 path i hit rank best matched='' ui_first='' ui_n=0 total=0 nonui=0
     local -a classes=() entries=()
     SCOPE=ui
     while IFS= read -r line; do
@@ -116,12 +123,13 @@ test_scope_classify() {
     while IFS= read -r path; do
         [ -n "$path" ] || continue
         total=$((total + 1))
-        hit=''
+        hit='' best=''
         if [ "$path" != "$TEST_SCOPE_FILE" ]; then
+            # The most specific entry wins (rank, then length); a tie goes to non-ui, the stricter.
             for i in "${!entries[@]}"; do
-                if test_scope_matches "${entries[i]}" "$path"; then
-                    [ -z "$hit" ] || [ "${classes[i]}" = docs ] && hit=$i
-                fi
+                rank=$(test_scope_matches "${entries[i]}" "$path") || continue
+                rank="$rank $(printf '%05d' "${#entries[i]}") $([ "${classes[i]}" = non-ui ] && echo 1 || echo 0)"
+                if [ -z "$best" ] || [[ $rank > $best ]]; then best=$rank; hit=$i; fi
             done
         fi
         if [ -z "$hit" ]; then
@@ -147,12 +155,16 @@ test_scope_classify() {
 
 # What deploying $1 changes on this checkout, classified by the declaration $1 itself carries.
 test_scope_of() {
-    local sha=$1 live paths decl
+    local sha=$1 live raw paths links decl
     SCOPE=ui
     if ! live=$($GIT rev-parse HEAD 2>/dev/null); then
         SCOPE_WHY="git could not name the checkout's HEAD, so every path is UI"
-    elif ! paths=$($GIT diff --no-ext-diff --no-textconv --no-renames --name-only "$live" "$sha" 2>/dev/null); then
+    elif ! raw=$($GIT diff --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --raw --no-abbrev "$live" "$sha" 2>/dev/null); then
         SCOPE_WHY="git could not list what ${sha:0:7} changes on ${live:0:7}, so every path is UI"
+    elif paths=$(printf '%s\n' "$raw" | cut -s -f2-) \
+        && links=$(printf '%s\n' "$raw" | awk -F'\t' '$1 ~ /^:(120000|160000) |^:[0-7]+ (120000|160000) / { print $2; exit }') \
+        && [ -n "$links" ]; then
+        SCOPE_WHY="symlink or submodule: $links, so every path is UI"
     elif ! $GIT cat-file -e "$sha:$TEST_SCOPE_FILE" 2>/dev/null; then
         SCOPE_WHY="${sha:0:7} declares no $TEST_SCOPE_FILE, so every path is UI"
     elif ! decl=$($GIT show "$sha:$TEST_SCOPE_FILE" 2>/dev/null); then
