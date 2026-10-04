@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-10-04 — the deploy owes ledger rows by test scope: docs-only none, non-UI `ci`, anything else `ci` and `e2e` (deploy-lib VERSION 2026-10-04, amended; VERSION 2026-10-04)
+**`gated` now classifies what the deploy changes** — the checkout's HEAD against the gated commit —
+by the project's own `.fleet/test-scope` in that commit, and asks only for the rows that class owes.
+Lines are `docs <entry>` or `non-ui <entry>`, an entry being `dir/`, a root-level `*.ext` or one
+exact path. The library declares nothing itself: a path is docs or non-UI only when the project says
+so. An undeclared path, anything under `e2e/`, and the declaration file itself are UI; no
+declaration, an unreadable one, a malformed line or a line naming `e2e/` makes every path UI.
+- New line before the verdict: `SCOPE <docs|non-ui|ui>: <why> per test-scope 2026-10-04`.
+- New verdicts: `GATED <sha7> ci green in <ledger>; e2e not required: non-UI diff (<entries>) per
+  test-scope 2026-10-04` and `GATED <sha7> no gate row owed: docs-only diff (<entries>) …`; `DONE`
+  records `ledger <what> <sha7> ci (non-UI)` and `no row owed <what> <sha7> (docs-only)`.
+- A UI diff prints exactly what it printed before. A project with no declaration is unchanged.
+- `--gated-by-hand` is unchanged; over a non-UI diff its verdict names the `ci` row alone.
+
+**T1 and T6 name the three scopes** (Ghie, 2026-10-04), and T1 loses "no exceptions for just a
+docs change", which the scope now contradicts. Why an allowlist, why the diff is the deploy's and
+not the branch's, and why the declaration is read from the gated commit: `docs/DECISIONS.md`.
+
 ## 2026-10-04 — two messages the guard-diff lint misread are reworded, and this gate runs the lint (deploy-lib VERSION 2026-10-04; the standard is unchanged and VERSION is not bumped)
 **`fleet-lint-guard-diff` read message text as a `git diff` call**, so it failed every gate that
 runs it over these scripts, the re-vendor of this library included. The lint stays conservative

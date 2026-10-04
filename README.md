@@ -104,6 +104,13 @@ and a genuine re-run's green overrides an earlier red. `--gated-by-hand` never r
 rescue path — but it reads the same rows first, prints the verdict it is overriding (`green`,
 `red` or `absent` per kind) and the deploy records `by hand over [<verdict>]`.
 
+**Test scope.** `gated` classifies what the deploy changes (the checkout's HEAD against the gated
+commit) by the project's `.fleet/test-scope` in that commit: lines `docs <entry>` and
+`non-ui <entry>`, an entry being `dir/`, a root-level `*.ext` or one path. All docs owes no row,
+docs and non-UI owe `ci`, anything else owes `ci` and `e2e`. Undeclared paths, `e2e/` and the
+declaration itself are UI, and a missing or malformed declaration makes every path UI. Its `SCOPE`
+line names the class and the path or entries that decided it.
+
 **Who it is for.** Anyone running several small apps alone, or with AI agents doing the
 typing, who wants one answer to "how do we do things here" that is enforced rather than
 hoped for. It is not a proposal or a wishlist — it is in daily use, and the rules are

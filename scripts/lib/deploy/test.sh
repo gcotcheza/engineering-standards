@@ -734,6 +734,175 @@ contains 'the killed run is recorded as a failure' "${OUT}" \
 contains 'and the head it was green on before is no longer gated' "${OUT}" \
     "$(no_green e2e "${LIVE_SHA}" 'ci green, e2e red')"
 
+# --- 3b. test scope: docs-only owes no row, non-UI owes ci, anything else ci and e2e ------
+# One template: bare (no declaration), live (declaration), and one branch per class off it.
+NL=$'\n'
+scope_template() {
+    local ROOT="${WORK}/.template-scope"
+    [ -d "${ROOT}" ] && return 0
+    mkdir -p "${ROOT}/app"
+    git init -q -b main "${ROOT}"
+    scope_commit() {
+        local name=$1 from=$2 f
+        shift 2
+        [ -z "${from}" ] || git_at checkout -q --detach "${from}"
+        for f in "$@"; do
+            mkdir -p "${ROOT}/$(dirname "${f%%=*}")"
+            printf '%s\n' "${f#*=}" >"${ROOT}/${f%%=*}"
+            git_at add "${f%%=*}"
+        done
+        git_at commit -q -m "${name}"
+        git_at update-ref "refs/scope/${name}" HEAD
+    }
+    scope_commit bare '' 'app/base.txt=base'
+    scope_commit live refs/scope/bare \
+        ".fleet/test-scope=# fixture${NL}docs docs/${NL}docs *.md${NL}non-ui scripts/${NL}non-ui tests/  # gate-only"
+    scope_commit docs refs/scope/live 'docs/guide.md=g' 'README.md=r'
+    scope_commit nonui refs/scope/live 'scripts/deploy.sh=d' 'tests/x.sh=t'
+    scope_commit lib refs/scope/live 'scripts/lib/deploy/ledger.sh=l'
+    scope_commit ui refs/scope/live 'resources/css/x.css=c'
+    scope_commit mixed refs/scope/live 'scripts/a.sh=a' 'app/x.php=x'
+    scope_commit newdir refs/scope/live 'newdir/x.txt=n'
+    scope_commit e2epath refs/scope/live 'e2e/specs/a.spec.js=e'
+    scope_commit deepmd refs/scope/live 'resources/views/mail.md=m'
+    scope_commit decl refs/scope/live ".fleet/test-scope=non-ui scripts/${NL}non-ui app/"
+    scope_commit nodecl refs/scope/bare 'scripts/deploy.sh=d'
+    scope_commit e2elive refs/scope/bare ".fleet/test-scope=non-ui scripts/${NL}non-ui e2e/"
+    scope_commit e2edecl refs/scope/e2elive 'scripts/x.sh=x'
+    git_at checkout -q main
+}
+
+# scope_fixture <case> <checkout-at> <gated-commit>: GATE_SHA is the gated commit, the checkout is live.
+scope_fixture() {
+    CASE="${WORK}/$1"
+    ROOT="${CASE}/root"
+    BIN="${CASE}/bin"
+    LEDGER="${CASE}/ledger"
+    LOGS="${CASE}/logs"
+    mkdir -p "${BIN}" "${LOGS}"
+    : >"${LEDGER}"
+    scope_template
+    cp -a "${WORK}/.template-scope" "${ROOT}"
+    git_at checkout -q --detach "refs/scope/$2"
+    LIVE_SHORT="$(git_at rev-parse --short HEAD)"
+    SCOPE_SHA="$(git_at rev-parse "refs/scope/$3")"
+    write_fakes
+    write_driver
+}
+scope_rows() { : >"${LEDGER}"; for k in "$@"; do printf '%s %s 2026-10-04T10:00:00Z 0 -\n' "${SCOPE_SHA}" "${k}" >>"${LEDGER}"; done; }
+scope_gated() { run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; "'gated; printf "GATED_IS %s\n" "$GATED" >&3'; }
+RULE='per test-scope 2026-10-04'
+
+scope_fixture scope-docs live docs
+rm -f "${LEDGER}"
+scope_gated
+contains 'a docs-only diff is gated with no ledger at all' "${OUT}" \
+    "GATED ${SCOPE_SHA:0:7} no gate row owed: docs-only diff (*.md, docs/) ${RULE}"
+contains 'and DONE records that no row was owed' "${OUT}" "GATED_IS no row owed head ${SCOPE_SHA:0:7} (docs-only)"
+
+scope_fixture scope-nonui live nonui
+scope_rows ci
+scope_gated
+contains 'a non-UI diff with one green ci row is gated, naming the rule' "${OUT}" \
+    "GATED ${SCOPE_SHA:0:7} ci green in ${LEDGER}; e2e not required: non-UI diff (scripts/, tests/) ${RULE}"
+contains 'and the scope line says why' "${OUT}" "SCOPE non-ui: non-UI diff (scripts/, tests/) ${RULE}"
+contains 'and DONE records ci alone' "${OUT}" "GATED_IS ledger head ${SCOPE_SHA:0:7} ci (non-UI)"
+
+scope_fixture scope-nonui-no-ci live nonui
+scope_rows e2e
+scope_gated
+contains 'a non-UI diff with no ci row is refused, whatever e2e says' "${OUT}" \
+    "$(no_green ci "${SCOPE_SHA}" 'ci absent')"
+absent 'and is not gated' "${OUT}" "GATED ${SCOPE_SHA:0:7}"
+
+scope_fixture scope-lib live lib
+scope_rows ci
+scope_gated
+contains 'a vendored lib under a declared scripts/ is non-UI' "${OUT}" "e2e not required: non-UI diff (scripts/)"
+
+scope_fixture scope-ui-ci-only live ui
+scope_rows ci
+scope_gated
+contains 'a UI diff without e2e is refused' "${OUT}" "$(no_green e2e "${SCOPE_SHA}" 'ci green, e2e absent')"
+contains 'and the scope line names the UI path' "${OUT}" "SCOPE ui: UI path: resources/css/x.css ${RULE}"
+
+scope_fixture scope-ui-both live ui
+scope_rows ci e2e
+scope_gated
+contains 'a UI diff with ci and e2e green is gated' "${OUT}" "GATED ${SCOPE_SHA:0:7} ci and e2e both green in ${LEDGER}"
+contains 'and DONE records the ledger as before' "${OUT}" "GATED_IS ledger head ${SCOPE_SHA:0:7}"
+
+scope_fixture scope-no-declaration bare nodecl
+scope_rows ci
+scope_gated
+contains 'with no declaration a scripts-only diff owes e2e' "${OUT}" "$(no_green e2e "${SCOPE_SHA}" 'ci green, e2e absent')"
+contains 'and the scope line says there was no declaration' "${OUT}" \
+    "SCOPE ui: ${SCOPE_SHA:0:7} declares no .fleet/test-scope, so every path is UI ${RULE}"
+
+scope_fixture scope-new-dir live newdir
+scope_rows ci
+scope_gated
+contains 'an undeclared new top-level path is UI' "${OUT}" "SCOPE ui: UI path: newdir/x.txt ${RULE}"
+contains 'and owes e2e' "${OUT}" 'the ledger holds no green e2e for'
+
+scope_fixture scope-mixed live mixed
+scope_rows ci
+scope_gated
+contains 'a mixed diff is UI, naming the UI path' "${OUT}" "SCOPE ui: UI path: app/x.php ${RULE}"
+contains 'and owes e2e' "${OUT}" 'the ledger holds no green e2e for'
+
+scope_fixture scope-e2e-path live e2epath
+scope_rows ci
+scope_gated
+contains 'an e2e/ path is UI' "${OUT}" "SCOPE ui: UI path: e2e/specs/a.spec.js ${RULE}"
+
+scope_fixture scope-e2e-declared e2elive e2edecl
+scope_rows ci
+scope_gated
+contains 'a declaration that lists e2e/ is refused, so a scripts-only diff is UI' "${OUT}" \
+    "SCOPE ui: .fleet/test-scope line 2 declares e2e/, and e2e/ is always UI, so the declaration is refused and every path is UI ${RULE}"
+contains 'and owes e2e' "${OUT}" 'the ledger holds no green e2e for'
+
+scope_fixture scope-deep-md live deepmd
+scope_rows ci
+scope_gated
+contains 'a root-level *.md entry does not reach a nested .md' "${OUT}" "SCOPE ui: UI path: resources/views/mail.md ${RULE}"
+
+scope_fixture scope-declaration-change live decl
+scope_rows ci
+scope_gated
+contains 'a change to the declaration is UI, even one that declares app/ non-UI' "${OUT}" \
+    "SCOPE ui: UI path: .fleet/test-scope ${RULE}"
+
+scope_fixture scope-by-hand live nonui
+BY_HAND=1
+scope_gated
+contains 'by hand over a non-UI diff names only the ci row it owed' "${OUT}" \
+    "GATE NOT GREEN head ${SCOPE_SHA:0:7}: ci absent"
+absent 'and refuses nothing' "${OUT}" 'REFUSED'
+
+# The classifier on its own: declarations the fixtures do not carry.
+scope_fixture scope-pure live docs
+scope_classify() { run_lib "$(printf 'test_scope_classify %q <<<%q; printf "SCOPE=%%s WHY=%%s\\n" "$SCOPE" "$SCOPE_WHY" >&3' "$1" "$2")"; }
+scope_classify 'non-ui .fleet/' '.fleet/test-scope'
+contains 'the declaration file is UI even where its directory is declared' "${OUT}" 'SCOPE=ui WHY=UI path: .fleet/test-scope'
+scope_classify 'docs e2e' 'scripts/a.sh'
+contains 'an exact e2e entry refuses the declaration too' "${OUT}" 'line 1 declares e2e, and e2e/ is always UI'
+for bad in 'non-ui /' 'non-ui ../x/' 'non-ui *' 'non-ui scripts/*' 'ui scripts/' 'non-ui scripts/ tests/' 'non-ui'; do
+    scope_classify "${bad}" 'scripts/a.sh'
+    contains "a malformed entry [${bad}] refuses the declaration" "${OUT}" \
+        "SCOPE=ui WHY=.fleet/test-scope line 1 is not '<docs|non-ui> <dir/ | *.ext | path>'"
+done
+scope_classify 'non-ui scripts/' ''
+contains 'an empty diff is UI' "${OUT}" 'SCOPE=ui WHY=the diff names no path'
+scope_classify '' 'scripts/a.sh'
+contains 'an empty declaration declares nothing non-UI' "${OUT}" 'SCOPE=ui WHY=UI path: scripts/a.sh'
+scope_classify $'non-ui scripts/\ndocs scripts/README.md' $'scripts/README.md'
+contains 'a docs entry wins over a non-UI one for the same path' "${OUT}" 'SCOPE=docs WHY=docs-only diff (scripts/README.md)'
+scope_classify 'non-ui scripts/' $'scripts/a.sh\nscriptsx/b.sh\nc.sh\nd.sh'
+contains 'a directory entry matches only under it, and the count of the rest is named' "${OUT}" \
+    'SCOPE=ui WHY=UI path: scriptsx/b.sh and 2 more'
+
 # --- 4. the ledger writer --------------------------------------------------------
 fixture ledger-writer
 WRITTEN="${CASE}/written"

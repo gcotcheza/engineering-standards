@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-04 sha256:8110d5338fab78f646b6741616a7f5a49c2c912d65e5740a2019f7354c1c337a
+# fleet-deploy-lib 2026-10-04 sha256:594d356ed446e577fac9e95c7acb89b19e83238d7f43dd15dd25420a3dfed7e4
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it is in there green —
@@ -78,32 +78,129 @@ gate_ledger_record() {
     printf 'gate-ledger: %s %s rc=%s -> %s\n' "${sha:0:7}" "$kind" "$rc" "$file"
 }
 
+# Ghie's test scopes: a docs-only diff owes no row, a non-UI diff owes ci, any other owes ci and e2e.
+# The project names its docs and non-UI paths in TEST_SCOPE_FILE; the allowlist's why: docs/DECISIONS.md.
+TEST_SCOPE_FILE=.fleet/test-scope
+TEST_SCOPE_RULE='test-scope 2026-10-04'
+
+# A directory `a/b/`, a root-level extension `*.md`, or one exact path.
+test_scope_matches() {
+    case $1 in
+        */) [[ $2 == "$1"* ]] ;;
+        '*.'*) [[ $2 != */* && $2 == *"${1#\*}" ]] ;;
+        *) [ "$2" = "$1" ] ;;
+    esac
+}
+
+# test_scope_classify <declaration text>, changed paths on stdin: sets SCOPE (docs|non-ui|ui) and SCOPE_WHY.
+test_scope_classify() {
+    local decl=$1 line kind entry extra n=0 path i hit matched='' ui_first='' ui_n=0 total=0 nonui=0
+    local -a classes=() entries=()
+    SCOPE=ui
+    while IFS= read -r line; do
+        n=$((n + 1))
+        read -r kind entry extra <<<"${line%%#*}"
+        [ -n "$kind" ] || continue
+        if [[ $entry =~ ^e2e(/|$) ]]; then
+            SCOPE_WHY="$TEST_SCOPE_FILE line $n declares $entry, and e2e/ is always UI, so the declaration is refused and every path is UI"
+            return 0
+        fi
+        if [ -n "$extra" ] || [[ ! $kind =~ ^(docs|non-ui)$ ]] || [[ $entry =~ (^|/)\.\.?(/|$) ]] \
+            || [[ ! $entry =~ ^(([A-Za-z0-9._-]+/)+|\*\.[A-Za-z0-9]+|([A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+)$ ]]; then
+            SCOPE_WHY="$TEST_SCOPE_FILE line $n is not '<docs|non-ui> <dir/ | *.ext | path>', so the declaration is refused and every path is UI"
+            return 0
+        fi
+        classes+=("$kind")
+        entries+=("$entry")
+    done <<<"$decl"
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        total=$((total + 1))
+        hit=''
+        if [ "$path" != "$TEST_SCOPE_FILE" ]; then
+            for i in "${!entries[@]}"; do
+                if test_scope_matches "${entries[i]}" "$path"; then
+                    [ -z "$hit" ] || [ "${classes[i]}" = docs ] && hit=$i
+                fi
+            done
+        fi
+        if [ -z "$hit" ]; then
+            ui_n=$((ui_n + 1))
+            ui_first=${ui_first:-$path}
+            continue
+        fi
+        [ "${classes[hit]}" = docs ] || nonui=1
+        [[ " $matched " == *" ${entries[hit]} "* ]] || matched="${matched:+$matched }${entries[hit]}"
+    done
+    if [ "$total" -eq 0 ]; then
+        SCOPE_WHY='the diff names no path, so nothing shows it is not UI'
+    elif [ "$ui_n" -gt 0 ]; then
+        SCOPE_WHY="UI path: $ui_first$([ "$ui_n" -eq 1 ] || printf ' and %s more' $((ui_n - 1)))"
+    elif [ "$nonui" -eq 1 ]; then
+        SCOPE=non-ui
+        SCOPE_WHY="non-UI diff (${matched// /, })"
+    else
+        SCOPE=docs
+        SCOPE_WHY="docs-only diff (${matched// /, })"
+    fi
+}
+
+# What deploying $1 changes on this checkout, classified by the declaration $1 itself carries.
+test_scope_of() {
+    local sha=$1 live paths decl
+    SCOPE=ui
+    if ! live=$($GIT rev-parse HEAD 2>/dev/null); then
+        SCOPE_WHY="git could not name the checkout's HEAD, so every path is UI"
+    elif ! paths=$($GIT diff --no-ext-diff --no-textconv --no-renames --name-only "$live" "$sha" 2>/dev/null); then
+        SCOPE_WHY="git could not list what ${sha:0:7} changes on ${live:0:7}, so every path is UI"
+    elif ! $GIT cat-file -e "$sha:$TEST_SCOPE_FILE" 2>/dev/null; then
+        SCOPE_WHY="${sha:0:7} declares no $TEST_SCOPE_FILE, so every path is UI"
+    elif ! decl=$($GIT show "$sha:$TEST_SCOPE_FILE" 2>/dev/null); then
+        SCOPE_WHY="git could not read ${sha:0:7}:$TEST_SCOPE_FILE, so every path is UI"
+    else
+        test_scope_classify "$decl" <<<"$paths"
+    fi
+}
+
 gated() {
-    local kind sha what v kinds='' notgreen='' verdict='' refusal=''
+    local kind sha what v owed kinds='' notgreen='' verdict='' refusal=''
     # Unset is a caller without the matching resolve.sh; set but empty is a resolve that
     # was skipped or did not finish, and that one is refused rather than read as the head.
     sha=${GATE_SHA-$HEAD_SHA}
     what=${GATE_WHAT-head}
+    SCOPE=ui
+    SCOPE_WHY='not classified, so every path is UI'
     if [ -z "$sha" ]; then
         verdict='NOT GREEN no commit resolved, so the ledger could not be read'
         refusal="GATE_SHA is set but empty: resolve did not finish, and gated cannot guess what deploys."
-    elif [ ! -f "$LEDGER" ]; then
-        verdict="NOT GREEN $what ${sha:0:7}: no gate ledger at $LEDGER"
-        refusal="no gate ledger at $LEDGER, so no head was ever gated on this box."
     else
-        for kind in ci e2e; do
-            # Append-only, so the last line for (sha, kind) is the newest and it alone decides.
-            v=$(awk -v sha="$sha" -v kind="$kind" \
-                '$1 == sha && $2 == kind { rc = $4; seen = 1 }
-                 END { printf "%s", (!seen ? "absent" : (rc == "0" ? "green" : "red")) }' "$LEDGER") \
-                || v=unreadable
-            kinds="${kinds:+$kinds, }$kind $v"
-            [ "$v" = green ] || notgreen=${notgreen:-$kind}
-        done
-        verdict="$what ${sha:0:7}: $kinds"
-        if [ -n "$notgreen" ]; then
-            verdict="NOT GREEN $verdict"
-            refusal="the ledger holds no green $notgreen for ${sha:0:7} ($kinds): a commit is gated before it is merged, and once it is in main only a route the gate documents for that (a base override, where it has one) can gate it — or deploy with --gated-by-hand, which records this as ungated."
+        test_scope_of "$sha"
+        say "SCOPE $SCOPE: $SCOPE_WHY per $TEST_SCOPE_RULE"
+        case $SCOPE in
+            docs) owed='' ;;
+            non-ui) owed=ci ;;
+            *) owed='ci e2e' ;;
+        esac
+        if [ -z "$owed" ]; then
+            verdict="$what ${sha:0:7}: no row owed"
+        elif [ ! -f "$LEDGER" ]; then
+            verdict="NOT GREEN $what ${sha:0:7}: no gate ledger at $LEDGER"
+            refusal="no gate ledger at $LEDGER, so no head was ever gated on this box."
+        else
+            for kind in $owed; do
+                # Append-only, so the last line for (sha, kind) is the newest and it alone decides.
+                v=$(awk -v sha="$sha" -v kind="$kind" \
+                    '$1 == sha && $2 == kind { rc = $4; seen = 1 }
+                     END { printf "%s", (!seen ? "absent" : (rc == "0" ? "green" : "red")) }' "$LEDGER") \
+                    || v=unreadable
+                kinds="${kinds:+$kinds, }$kind $v"
+                [ "$v" = green ] || notgreen=${notgreen:-$kind}
+            done
+            verdict="$what ${sha:0:7}: $kinds"
+            if [ -n "$notgreen" ]; then
+                verdict="NOT GREEN $verdict"
+                refusal="the ledger holds no green $notgreen for ${sha:0:7} ($kinds): a commit is gated before it is merged, and once it is in main only a route the gate documents for that (a base override, where it has one) can gate it — or deploy with --gated-by-hand, which records this as ungated."
+            fi
         fi
     fi
     if [ -n "$refusal" ] && [ "$BY_HAND" -eq 1 ]; then
@@ -114,9 +211,23 @@ gated() {
         return 0
     fi
     [ -z "$refusal" ] || refuse "$refusal"
-    # shellcheck disable=SC2034  # the project's finish() prints it
-    GATED="ledger $what ${sha:0:7}"
-    say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
+    case $SCOPE in
+        docs)
+            # shellcheck disable=SC2034  # the project's finish() prints it
+            GATED="no row owed $what ${sha:0:7} (docs-only)"
+            say "GATED ${sha:0:7} no gate row owed: $SCOPE_WHY per $TEST_SCOPE_RULE"
+            ;;
+        non-ui)
+            # shellcheck disable=SC2034  # the project's finish() prints it
+            GATED="ledger $what ${sha:0:7} ci (non-UI)"
+            say "GATED ${sha:0:7} ci green in $LEDGER; e2e not required: $SCOPE_WHY per $TEST_SCOPE_RULE"
+            ;;
+        *)
+            # shellcheck disable=SC2034  # the project's finish() prints it
+            GATED="ledger $what ${sha:0:7}"
+            say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
+            ;;
+    esac
     if [ "$BY_HAND" -eq 1 ]; then
         # shellcheck disable=SC2034  # the project's finish() prints it
         GATED="by hand over [GREEN $verdict]"

@@ -1147,3 +1147,42 @@ still under step 2's 0.59 to 0.66s, so the order stands.
 **Inside step 1, not a step of its own.** A new step 2 would renumber every step after it, and
 PR #38 renumbers the same list to add its own step; two renumberings of one list are a conflict
 for no gain. Both halves of step 1 are static reads of the scripts, so they share a slot.
+
+## The deploy owes ledger rows by test scope, from an allowlist the project declares (2026-10-04)
+
+**Ghie's rule.** Browser tests only when a change touches what a browser sees; docs-only changes
+need no test run. For a deploy that became: a docs-only diff owes no row, a non-UI diff owes one
+green `ci` row on the gated commit, anything else owes `ci` and `e2e` as before. Without it, every
+scripts-only deploy needed `--gated-by-hand`, which records a reviewed, gated change as ungated.
+
+**An allowlist, and the library ships none.** A path is docs or non-UI only when the project's
+`.fleet/test-scope` names it; everything else is UI. A denylist ("these paths are UI") fails open on
+every directory nobody thought of, and the first new top-level directory would have skipped the
+browser. The library carries no default list for the same reason: what is served differs per app
+(one serves `docs/`, another renders Markdown mail from `resources/`), so only the app can say.
+Dependency manifests are never meant to be declared: a bump changes what serves the browser.
+`*.ext` reaches root-level files only, because `*.md` deep in `resources/` can be a template.
+
+**Three things no declaration can make non-UI.** `e2e/`: the browser tests are what the browser
+sees, so a declaration naming it is refused whole rather than partly honoured, and the refusal is
+loud in the `SCOPE` line. The declaration itself: a change that widens it would otherwise skip the
+browser run on the very commit that widened it. And anything the library could not read — no
+declaration, an unreadable one, a malformed line, a git command that failed, an empty diff — is UI.
+
+**The diff is the deploy's, not the branch's.** `gated` compares the checkout's HEAD (what is
+running: every vendoring caller on this box runs `gated` before its fast-forward, read 2026-10-04)
+with the gated commit, not the merge base with the branch. A merge-base diff sees only this pull
+request, so an earlier merged-but-undeployed UI change riding along would ship behind a `ci`-only
+verdict; the checkout diff sees it. Before a merge there is no deploy to compare, so `fleet-pr-lint`
+reads the branch's diff (`main...<head>`), and the deploy re-judges the wider one.
+
+**The declaration is read from the gated commit.** It is the tree the ledger names and the tree that
+deploys; reading the checkout's copy instead would judge a project's first declaration by its
+absence. Since a change to the file is UI, a widened declaration is browser-tested once before it
+can excuse anything.
+
+**The docs class overlaps a project's docs-only landing, deliberately.** Projects that land
+docs-only merges before `gated` keep doing so; for a project whose `gated` runs first, or that has
+no landing, a docs-only diff no longer needs `--gated-by-hand`. Root's `fleet-pr-lint` reads the
+same file in the same grammar (its packet carries a parity test against this classifier).
+
