@@ -831,7 +831,7 @@ that also carries the after-deploy cleanup's cases:
 
 | step | check | run 1 | run 2 |
 |---|---|---|---|
-| 1 | `bash -n` | 0.04 | 0.04 |
+| 1 | `bash -n` (with the guard-diff lint from 2026-10-04: 0.29 and 0.29, see that entry) | 0.04 | 0.04 |
 | 2 | `version-text-pair.sh` and its test | 0.66 | 0.59 |
 | 3 | `fleet-versions-test.sh` | 0.63 | 0.71 |
 | 4 | `fleet-budget-test.sh` | 1.24 | 1.26 |
@@ -1184,8 +1184,27 @@ the same PR can change.
 
 **Red proofs run unprivileged (fleet rule 26).** The compose mutants run `compose-test.sh` as `nobody`.
 `DEPLOY_ROOT_UID` is the uid the env and bind-list files must belong to; it exists for that run alone.
-Two cases still run only as root, against fakes: an env file another user owns, and a `.env` read
-through a real `sudo -u nobody`. The failed-sudo case uses a stub `sudo`, so it runs as `nobody`.
 A deploy never sets it (fleet-deploy's `env -i` passes none, and a `deploy.sh` that set it is main's
 code). `summary.sh`'s self-location walk keeps uid 0 with no switch, so `compose-test.sh` defines its
-own `say`/`refuse` instead of sourcing it.
+own `say`/`refuse` instead of sourcing it. Two cases still run only as root, against fakes: an env
+file another user owns, and a `.env` read through a real `sudo -u nobody`. The failed-sudo case uses
+a stub `sudo`, so it runs as `nobody`.
+
+## Step 1 runs the box's guard-diff lint on the host, folded into step 1 (2026-10-04)
+
+**On the host, not in a container.** `/usr/local/sbin/fleet-lint-guard-diff` is the box's own
+installed guard, not a project dependency with a version a production image could disagree with,
+so there is no image to run it in; Orbit's `scripts/guard-lint.sh` runs it the same way. A missing
+or non-executable binary fails the step, because a skipped lint is a silent pass (C9).
+
+**A canary keeps its green honest.** After `scripts/`, the step lints a one-line file holding a
+bare diff call and fails unless the lint exits 1 naming `--no-ext-diff`: a lint that passes
+everything would otherwise turn the step green on nothing. The pattern is `guard-lint.sh`'s.
+
+**Re-measured.** Step 1 with the lint and the canary, `scripts/check.sh --only 1` timed whole,
+best of three, two runs on 2026-10-04: 0.29s and 0.29s (it was 0.04s as `bash -n` alone). That is
+still under step 2's 0.59 to 0.66s, so the order stands.
+
+**Inside step 1, not a step of its own.** A new step 2 would renumber every step after it, and
+PR #38 renumbers the same list to add its own step; two renumberings of one list are a conflict
+for no gain. Both halves of step 1 are static reads of the scripts, so they share a slot.
