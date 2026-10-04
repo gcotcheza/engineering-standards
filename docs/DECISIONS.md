@@ -1334,12 +1334,14 @@ approach that already failed; there is always one more (`declare`, `read`, `prin
 backslash-split name). So the scan strips quotes and backslashes, joins continued lines, removes
 every `${NAME}` read, and treats any word-bounded mention left over as a write. The one allowed
 write is an exact line at column 0, and a `${NAME}` read before it is refused too, because it
-reads what the environment preset. Full-line comments are skipped. It fails closed: `$NAME`,
-`${NAME:-…}` or a heredoc naming it are refused although some are harmless.
+reads what the environment preset. Comments are scanned like code: skipping `#` lines let a
+`# note \` swallow the next line and let a `#`-led line inside a multi-line string run unseen, and
+a text scan cannot tell a comment from a string, so it fails closed. `$NAME`, `${NAME:-…}`, a
+comment or a heredoc naming it are refused although some are harmless.
 
 **What it cannot see.** A name assembled at run time (`eval`, `declare -n` or `printf -v` over a
-computed name), a write in a file the gate sources, and the literal at column 0 inside a block that
-never runs (`if false; then` on the line above). Those need the runtime test the apps already
+computed name), a write in a file the gate sources, and the literal at column 0 where it never
+runs: inside a block (`if false; then` on the line above), a here-doc or a multi-line string. Those need the runtime test the apps already
 carry: a preset in the environment never reaches the suite root runs.
 
 **Adoption rides each app's next re-vendor**; this change opens no app PR.

@@ -7,7 +7,8 @@ otherwise names it only as `${NAME}` after that line. It replaces each app's cou
 `^GATE_LIB_SUITE=` lines, which missed an indented write, `${NAME:=…}`, `export NAME=` and quoted
 names. Refusals: `LITERAL <NAME> refused: <file> never writes …`, `… names it other than as ${NAME}
 after its one write: <lines>`, `… could not be scanned …`, and `LITERAL refused: [<x>] is not a
-variable name`. The suite carries a case per form. All six headers are re-stamped for
+variable name`. Comments are scanned like code, so a comment naming it is refused. The suite
+carries a case per form. All six headers are re-stamped for
 `2026-10-04.3`; apps adopt it on their next re-vendor. The README now spells out how a project
 declares `.fleet/test-scope`: one entry per line, `#` comments, most specific entry per path,
 strictest class per diff, no file means UI. Why a name scan and not an assignment list:

@@ -1,17 +1,17 @@
-# fleet-deploy-lib 2026-10-04.3 sha256:15f415afd50cc232e1406426f71f154c0d9ee8637b10cd0d708679efc48c05fc
+# fleet-deploy-lib 2026-10-04.3 sha256:ba23f1465d5a28a6e48b993b49c65a5f1477f679552235c82757267abaf94159
 # shellcheck shell=bash
 # A gate names what root runs (GATE_LIB_SUITE, …) by a literal it writes once and only reads after:
 # any other write can aim root at a suite nobody reviewed. docs/DECISIONS.md
 
 # gate_literal_once <file> <NAME> <value>: 0 and silent when <file> writes NAME once, as
-# NAME=<value>, NAME='<value>' or NAME="<value>" at column 0, and otherwise names it only as ${NAME}.
+# NAME=<value>, NAME='<value>' or NAME="<value>" at column 0, and otherwise names it only as ${NAME},
+# comments included: a text scan cannot tell a comment from a string, so it fails closed.
 gate_literal_once() {
     local file=$1 name=$2 value=$3 mentions line own='' others='' scanned=yes
     local -
     set -o pipefail
     [[ $name =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { printf 'LITERAL refused: [%s] is not a variable name\n' "$name"; return 1; }
     mentions=$(sed -e ':a' -e '/\\$/{N;s/\\\n//;ba}' "$file" 2>/dev/null | awk -v name="$name" -v q="'" '
-        /^[[:space:]]*#/ { next }
         { probe = $0; gsub(q, "", probe); gsub(/"/, "", probe); gsub(/\\/, "", probe)
           read = index(probe, "${" name "}") > 0
           while ((i = index(probe, "${" name "}")) > 0) probe = substr(probe, 1, i - 1) substr(probe, i + length(name) + 3)

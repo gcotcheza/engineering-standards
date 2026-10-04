@@ -131,7 +131,7 @@ gate_literal_once scripts/check.sh GATE_LIB_SUITE <canonical path>` is 0 and sil
 gate writes the name once, as `NAME=<value>` (bare, `'…'` or `"…"`) at column 0, and otherwise
 names it only as `${NAME}`, after that line. Anything else prints one `LITERAL … refused:` line and
 returns 1: an indented copy, `${NAME:=…}`, `export`, `declare`, a quoted or backslash-split name,
-`$NAME`, or a read before the write.
+`$NAME`, a read before the write, or any comment naming it.
 
 **Who it is for.** Anyone running several small apps alone, or with AI agents doing the
 typing, who wants one answer to "how do we do things here" that is enforced rather than

@@ -1719,7 +1719,7 @@ literal_check() {
     RC=$?
 }
 for own in "GATE_LIB_SUITE=${LIT_VALUE}" "GATE_LIB_SUITE='${LIT_VALUE}'" "GATE_LIB_SUITE=\"${LIT_VALUE}\""; do
-    literal_check '#!/usr/bin/env bash' '# GATE_LIB_SUITE is named in a comment' "${own}" 'run() {' "    ${LIT_READ}" '}'
+    literal_check '#!/usr/bin/env bash' '# the suite root runs' "${own}" 'run() {' "    ${LIT_READ}" '}'
     equals "the literal written as [${own}] and read as \${GATE_LIB_SUITE} passes" "${RC}:${OUT}" '0:'
 done
 while IFS= read -r form; do
@@ -1738,6 +1738,9 @@ export "GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh"
 declare GATE_"LIB_SUITE"=/srv/worker-scratch/branch/test.sh
 GATE_LIB_\<NL>SUITE=/srv/worker-scratch/branch/test.sh
 bash "$GATE_LIB_SUITE"
+# a comment does not continue \<NL>GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh
+: "<NL>#"; GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh
+# GATE_LIB_SUITE named in a comment
 FORMS
 literal_check "    GATE_LIB_SUITE=${LIT_VALUE}" "${LIT_READ}"
 equals 'an indented literal alone fails the guard' "${RC}" 1
