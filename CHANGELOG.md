@@ -7,12 +7,15 @@ inside quotes on purpose (a `bash -c "git diff …"` is a real call), so the wor
 - `resolve`'s refusal now reads `REFUSED: the tree comparison of head <sha> and merge <sha> exited
   <rc>, …` (rest unchanged). `resolve.sh` is re-stamped; the other lib files are re-stamped for the
   new VERSION only.
-- `version-text-pair.sh` now prints `version-text-pair: the patch-text comparison against <sha>
+- `version-text-pair.sh` now prints `version-text-pair: the changed-file comparison against <sha>
   failed, so nothing was judged.`
 - Their test pins move with them (`lib/deploy/test.sh`, `version-text-pair-test.sh` case 4b).
 
-**Step 1 of `scripts/check.sh` now also runs `fleet-lint-guard-diff scripts`** (about 0.4s), and
-fails the step loudly when `/usr/local/sbin/fleet-lint-guard-diff` is not on the box (C9).
+**Step 1 of `scripts/check.sh` now also runs `fleet-lint-guard-diff scripts`**, then lints a
+one-line canary holding a bare diff call and fails unless the lint flags it (exit 1, naming
+`--no-ext-diff`), so a lint that passes everything cannot turn the step green. It fails loudly when
+`/usr/local/sbin/fleet-lint-guard-diff` is missing or not executable (C9). Why it runs on the host
+and inside step 1, and the re-measured cost: `docs/DECISIONS.md`.
 
 **Callers that pin the old refusal must update.** A read-only grep of `/srv/sessions/orbit/repo`
 and `/var/www/*/scripts` finds it only in vendored copies of this library, which the re-vendor
