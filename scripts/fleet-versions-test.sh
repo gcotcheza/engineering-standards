@@ -213,8 +213,9 @@ equals  'case 13: exit code' "${RC}" 1
 
 # --- 14. vendored copy AHEAD of canonical is not stale ------------------------
 # An unpulled canonical clone, not a project that failed to re-vendor. The date is the
-# canonical one plus a suffix, so the next library bump cannot leave this fixture behind.
-AHEAD_LIB_VERSION="${LIB_VERSION}.9"
+# canonical date plus serial .99, so the next bump cannot leave this fixture behind, and it still
+# parses when canonical already carries a serial (2026-10-04.2 + .9 was no stamp at all).
+AHEAD_LIB_VERSION="${LIB_VERSION%%.*}.99"
 mkdir -p "${ROOT}/p14/scripts/lib/deploy"
 cp "${CANON}/scripts/lib/deploy/"* "${ROOT}/p14/scripts/lib/deploy/"
 f="${ROOT}/p14/scripts/lib/deploy/ledger.sh"
