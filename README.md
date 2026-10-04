@@ -29,7 +29,7 @@ watchdog's line parser already reads.
 
 `scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script
 first, then the one step that judges this repo's own tree — VERSION and
-ENGINEERING-STANDARDS.md moved together, or neither moved — the five fixture-only tests and
+ENGINEERING-STANDARDS.md moved together, or neither moved — the six fixture-only tests and
 shellcheck (the pinned image, style severity — a missing image is a loud failure, never a
 skip) in measured cost order, cheapest first. The
 order is a measurement, not a list to keep in your head; `scripts/check.sh` prints each step
@@ -60,6 +60,12 @@ could not read — an unresolved `-f`, a subcommand it never reached, or a line 
 `docker compose` that yielded no call at all — rather than assuming it away. A call whose file set
 it could not read is a refusal (exit 1), not a note under a green run; a line that merely mentions
 `docker compose` is printed and changes nothing.
+
+`scripts/guard-mutants.sh -r <root> -w <work dir> [-j N] <manifest>` is rule T5's red proof, run by a
+script: for each guard line the manifest names it deletes that line in a fresh copy of the root, runs
+the manifest's test, and counts the guard caught only when the test fails *and* prints the entry's
+`expect` line. The manifest format is in its usage text; `scripts/guard-mutants-self.manifest` is the
+runner proving its own guard lines.
 
 ## Vendored scripts
 

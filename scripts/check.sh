@@ -11,9 +11,10 @@
 #   6) shellcheck, style severity, in the pinned image — a missing image is a
 #      loud failure here, never a silent skip (C9)
 #   7) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
-#   8) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh)
+#   8) scripts/guard-mutants-test.sh, the T5 mutation runner's own test
+#   9) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh)
 #
-#   scripts/check.sh            all eight steps; records a FULL run to the fleet ledger
+#   scripts/check.sh            all nine steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
 #                                so nothing is recorded (the ledger only hears
 #                                about a full gate run)
@@ -48,7 +49,8 @@ step_name() {
         5) printf 'queue-start-test.sh' ;;
         6) printf 'shellcheck' ;;
         7) printf 'gate-image-tags-test.sh' ;;
-        8) printf 'deploy-lib test.sh' ;;
+        8) printf 'guard-mutants-test.sh' ;;
+        9) printf 'deploy-lib test.sh' ;;
     esac
 }
 
@@ -57,8 +59,8 @@ ONLY=0
 case "${1:-}" in
     "") ;;
     --only)
-        case "${2:-}" in 1|2|3|4|5|6|7|8) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 8)" >&2; exit 2 ;; esac ;;
-    *) echo "usage: check.sh [--only N]  (N is 1 to 8)" >&2; exit 2 ;;
+        case "${2:-}" in 1|2|3|4|5|6|7|8|9) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 9)" >&2; exit 2 ;; esac ;;
+    *) echo "usage: check.sh [--only N]  (N is 1 to 9)" >&2; exit 2 ;;
 esac
 
 # Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
@@ -82,7 +84,7 @@ fail_step() {
 run_step() {
     [ "${FULL_RUN}" -eq 1 ] || [ "${ONLY}" -eq "$1" ] || return 0
     printf -- '--- step %s: %s ---\n' "$1" "$(step_name "$1")"
-    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; esac
+    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; esac
 }
 
 step_1() {
@@ -128,10 +130,14 @@ step_7() {
 }
 
 step_8() {
-    "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 8
+    "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 8
 }
 
-for n in 1 2 3 4 5 6 7 8; do run_step "${n}"; done
+step_9() {
+    "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 9
+}
+
+for n in 1 2 3 4 5 6 7 8 9; do run_step "${n}"; done
 
 # shellcheck disable=SC2034  # the EXIT trap's gate_ledger_record reads it
 GATE_SUITE_PASSED=1
