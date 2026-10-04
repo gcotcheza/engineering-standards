@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-04 sha256:1c500171ed8517648646e223369143690e526819ee8ca76a9a10bc290c6682f2
+# fleet-deploy-lib 2026-10-04 sha256:c2fcc5fcf99944e53b10f99d495b0ab09c0e3cb87c063fa74e203bef344023b5
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -43,6 +43,9 @@ def fleet_off($ok): select(IN($ok[]) | not);
 (.volumes // {} | to_entries[] | select(.value.external == true) | "F\tvolume \(.key)\texternal"),
 (.networks // {} | to_entries[] | select(.value.driver == "host") | "F\tnetwork \(.key)\tdriver host"),
 (.networks // {} | to_entries[] | select(.value.external == true and (.value.name // .key) == "host") | "F\tnetwork \(.key)\texternal host"),
+(.volumes // {} | to_entries[] | select(.value.driver != null and .value.driver != "local") | "F\tvolume \(.key)\tdriver"),
+(.networks // {} | to_entries[] | select(.value.driver != null and .value.driver != "bridge") | "F\tnetwork \(.key)\tdriver"),
+(.networks // {} | to_entries[] | select((.value.ipam // {}) | length > 0) | "F\tnetwork \(.key)\tipam"),
 (.secrets // {} | to_entries[] | select(.value.file) | "P\tsecret \(.key)\tfile\t\(.value.file)"),
 (.configs // {} | to_entries[] | select(.value.file) | "P\tconfig \(.key)\tfile\t\(.value.file)"),
 (keys[] | select(startswith("x-") | not) | fleet_off(["name", "networks", "services", "volumes"]) | "A\ttop level\t\(.)"),

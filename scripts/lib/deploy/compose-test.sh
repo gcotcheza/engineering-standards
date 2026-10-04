@@ -266,9 +266,9 @@ policy_case build_network '.services.app.build.network = "host"' 'compose app se
 policy_case volume_external '.volumes.data.external = true' 'compose volume data sets external,'
 policy_case network_driver_host '.networks = {n: {driver: "host"}}' 'compose network n sets driver host,'
 policy_case network_external_host '.networks = {n: {external: true, name: "host"}}' 'compose network n sets external host,'
-cfx policy-listed-forms; cjson '.networks = {n: {external: true, name: "web"}} | ."x-common" = {a: 1}'
+cfx policy-listed-forms; cjson '.networks = {n: {external: true, name: "web"}, m: {driver: "bridge", ipam: {}}} | .volumes.data.driver = "local" | ."x-common" = {a: 1}'
 crun "${INIT}"
-contains 'policy listed forms: a non-host external network and a top-level x- extension pass' "${OUT}" 'policy clean'
+contains 'policy listed forms: a non-host external network, bridge, an empty ipam, a local volume and an x- key pass' "${OUT}" 'policy clean'
 cfx watch
 crun "${INIT}; deploy_compose watch"
 contains 'compose: watch is refused' "${OUT}" 'REFUSED: compose watch copies the app tree into running containers, so root does not run it'
@@ -344,6 +344,9 @@ allow_case volume_key '.services.app.volumes += [{type: "volume", source: "data"
 allow_case volume_type '.services.app.volumes += [{type: "tmpfs", target: "/t"}]' 'app sets volumes.type tmpfs'
 allow_case top_volume '.volumes.data.labels = {a: "b"}' 'volume data sets labels'
 allow_case top_network '.networks = {n: {driver_opts: {"com.docker.network.bridge.name": "docker0"}}}' 'network n sets driver_opts'
+policy_case volume_driver '.volumes.data.driver = "plugin"' 'compose volume data sets driver,'
+policy_case network_driver '.networks = {n: {driver: "macvlan"}}' 'compose network n sets driver,'
+policy_case network_ipam '.networks = {n: {ipam: {config: [{subnet: "10.0.0.0/8"}]}}}' 'compose network n sets ipam,'
 policy_case allow_value '.services.app.security_opt = ["apparmor:unconfined"]' 'compose app sets security_opt,'
 
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"

@@ -1189,9 +1189,14 @@ the seven apps' deploy compose files use today (normalised `config --format json
 A key off a list is refused as "compose <service> sets <key>, which is not on root's compose list". Every
 earlier rule stays and still judges a listed key by value (`security_opt`, binds, build context, a
 `host` network); those lines come first, so a key both refuse is named by its own rule, and each rule's
-mutant stays red. Sub-keys below these levels (`bind.propagation`, `healthcheck`, `ports`, `ipam`) are not
-listed: they reach no host path. Cost check: newly refuses 0 of 7 real app deploys (policy-apps.sh on
-86fb073, 2026-10-04 13:23Z); on this round's candidate, 0 of 7 (same replay over the policy committed here, 2026-10-04 13:31Z).
+mutant stays red. Value pins on listed keys, from the apps' values (a driver plugin is never trusted to be absent):
+- a top-level volume's `driver`, when set, is `local`.
+- a top-level network's `driver`, when set, is `bridge` (the only one the apps set).
+- a top-level network's `ipam` is empty (compose writes `{}`; no app sets one): its `driver` or `config` subnet could claim the host's.
+
+Other sub-keys below these levels (`bind.propagation`, `healthcheck`, `ports`) are not listed: they reach
+no host path. Cost check: newly refuses 0 of 7 real app deploys (policy-apps.sh on
+86fb073, 2026-10-04 13:23Z); on this round's candidate, 0 of 7 (same replay over the policy committed here, 2026-10-04 13:38Z).
 
 **The keys earlier rounds left unjudged, now refused by absence** (no app uses any of them):
 `build.network` (so `container:` too), `cgroup_parent`, `runtime`, `sysctls` and `group_add`; also
