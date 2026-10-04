@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-10-04 — a gate's literal is guarded by one library function that sees every form (deploy-lib VERSION 2026-10-04.3; the standard is unchanged and VERSION is not bumped)
+## 2026-10-04 — a gate's literal is guarded by one library function that sees every form (deploy-lib VERSION 2026-10-04.4; the standard is unchanged and VERSION is not bumped)
 **New `scripts/lib/deploy/literal.sh`: `gate_literal_once <file> <NAME> <value>`** is 0 and silent
 only when the gate writes `NAME` once, as `NAME=<value>` (bare, `'…'` or `"…"`) at column 0, and
 otherwise names it only as `${NAME}` after that line. It replaces each app's count of
@@ -8,8 +8,8 @@ otherwise names it only as `${NAME}` after that line. It replaces each app's cou
 names. Refusals: `LITERAL <NAME> refused: <file> never writes …`, `… names it other than as ${NAME}
 after its one write: <lines>`, `… could not be scanned …`, and `LITERAL refused: [<x>] is not a
 variable name`. Comments are scanned like code, so a comment naming it is refused. The suite
-carries a case per form. All six headers are re-stamped for
-`2026-10-04.3`; apps adopt it on their next re-vendor. The README now spells out how a project
+carries a case per form. All seven headers are re-stamped for
+`2026-10-04.4`; apps adopt it on their next re-vendor. The README now spells out how a project
 declares `.fleet/test-scope`: one entry per line, `#` comments, most specific entry per path,
 strictest class per diff, no file means UI. Why a name scan and not an assignment list:
 `docs/DECISIONS.md`.
