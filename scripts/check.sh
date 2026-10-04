@@ -2,7 +2,8 @@
 # The repo's own gate. Cheapest first (T3), in measured cost order — the measurement,
 # the pairs that sit within noise of each other, and the step that outgrew its old slot
 # are in docs/DECISIONS.md. Re-measure before reordering.
-#   1) bash -n on every tracked .sh file
+#   1) bash -n on every tracked .sh file, then fleet-lint-guard-diff over scripts/ —
+#      a missing lint is a loud failure, never a skip (C9)
 #   2) scripts/version-text-pair.sh and its own test — VERSION and
 #      ENGINEERING-STANDARDS.md move together, or neither moves
 #   3) scripts/fleet-versions-test.sh, the fleet check's own test
@@ -30,6 +31,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd -- "${REPO_ROOT}" || exit 2
 GIT=${CHECK_GIT:-git}
 SHELLCHECK_IMAGE='koalaman/shellcheck:v0.10.0'
+GUARD_DIFF_LINT='/usr/local/sbin/fleet-lint-guard-diff'
 
 # scripts/lib/deploy/ is read read-only here (sourcing the ledger is fine; the
 # gate never writes under it) — see docs/DECISIONS.md.
@@ -41,7 +43,7 @@ gate_ledger_arm
 
 step_name() {
     case "$1" in
-        1) printf 'bash -n' ;;
+        1) printf 'bash -n, guard-diff lint' ;;
         2) printf 'version-text-pair' ;;
         3) printf 'fleet-versions-test.sh' ;;
         4) printf 'fleet-budget-test.sh' ;;
@@ -90,6 +92,11 @@ step_1() {
     while IFS= read -r f; do
         bash -n "$f" || fail_step 1
     done < <("${GIT}" ls-files '*.sh')
+    if [ ! -x "${GUARD_DIFF_LINT}" ]; then
+        printf '%s is not on this box — refusing to treat a missing lint as a pass (C9).\n' "${GUARD_DIFF_LINT}" >&2
+        fail_step 1
+    fi
+    "${GUARD_DIFF_LINT}" scripts || fail_step 1
 }
 
 step_2() {
