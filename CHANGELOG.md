@@ -16,7 +16,11 @@ refuse `privileged`, `pid`/`ipc`/`network_mode`/`uts`/`userns_mode`/`cgroup: hos
 service, build `secrets`/`ssh`/`additional_contexts`/`entitlements`, `build.privileged`,
 `build.network: host`, a volume's `driver_opts`, an external volume, a network with `driver: host` or
 external and named `host`, and any bind source, `env_file`, build context or
-secret/config file that resolves outside `ROOT`. A bind source outside `ROOT` passes only when it equals
+secret/config file that resolves outside `ROOT`. Then it refuses any key not on its allow-lists, which
+hold exactly what the seven apps' deploy compose files use today: 4 top-level keys plus `x-*`, 21
+service keys, 3 `build` keys, 6 volume-entry keys and the types `bind`/`volume`, 2 top-level volume and
+4 top-level network keys (`env_file`, `sysctls`, `runtime`, `cgroup_parent`, `group_add`, `volumes_from`,
+`network_mode` and `build.network` among the refused); the lists are in docs/DECISIONS.md. A bind source outside `ROOT` passes only when it equals
 a path in root's `/etc/fleet/app-binds/<app>` (root-owned, not group/other-writable, exact paths, no
 prefixes; `/`, `/etc*`, `/root*`, `/proc*`, `/sys*`, `/dev*`, `/boot*`, `/usr*`, `/var/run*`, `/run*`,
 `/var/lib/docker*`, `/var/lib/fleet*`, `/home*` and `docker.sock` never). The refusal names the service
@@ -29,7 +33,7 @@ tracked, and the Dockerfile lies inside its context. `compose watch` refuses. A 
 the caller reaches docker. `deploy_app_env_value KEY` reads `.env` through `sudo -n -u <app>`; when sudo fails it prints a
 `REFUSED:` line on stderr and returns 1, so a caller writes `v=$(deploy_app_env_value KEY) || refuse …`. Its suite is
 the new `compose-test.sh` (stub docker), which `test.sh` runs as root; the red proofs, one saved mutant
-per guard line (66 deletions, among them each argv check of the run mode, and 2 edits for the two
+per guard line (75 deletions, among them each argv check of the run mode and each allow-list, and 2 edits for the two
 `--profile '*'`), run it as `nobody` with
 `DEPLOY_ROOT_UID` standing in for root (a test seam; unset, as under fleet-deploy's `env -i`, the owner
 must be uid 0), and live in the lane of backlog 320. Both suites check that `/dev/null` keeps its mode

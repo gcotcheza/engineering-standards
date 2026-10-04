@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-04 sha256:19e800e998b969a76daec8ea8482f201115d73448ecde618e860900e87adc1d3
+# fleet-deploy-lib 2026-10-04 sha256:1c500171ed8517648646e223369143690e526819ee8ca76a9a10bc290c6682f2
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -6,9 +6,11 @@
 FLEET_COMPOSE_LIB="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/compose.sh"
 FLEET_COMPOSE_WORD='^/?[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$'
 
-# One rule a line, F <service> <key> or P <service> <key> <path>; values never leave jq.
+# One rule a line, F|A <service> <key> or P <service> <key> <path>; values never leave jq.
+# A lines come last, so a key both lists refuse is named by its F rule (docs/DECISIONS.md, backlog 320).
 # shellcheck disable=SC2016
 FLEET_COMPOSE_POLICY='
+def fleet_off($ok): select(IN($ok[]) | not);
 (.services // {} | to_entries[] | .key as $s | .value as $v | (
   (select($v.privileged == true) | "F\t\($s)\tprivileged"),
   (select($v.pid == "host") | "F\t\($s)\tpid"),
@@ -43,6 +45,15 @@ FLEET_COMPOSE_POLICY='
 (.networks // {} | to_entries[] | select(.value.external == true and (.value.name // .key) == "host") | "F\tnetwork \(.key)\texternal host"),
 (.secrets // {} | to_entries[] | select(.value.file) | "P\tsecret \(.key)\tfile\t\(.value.file)"),
 (.configs // {} | to_entries[] | select(.value.file) | "P\tconfig \(.key)\tfile\t\(.value.file)"),
+(keys[] | select(startswith("x-") | not) | fleet_off(["name", "networks", "services", "volumes"]) | "A\ttop level\t\(.)"),
+(.services // {} | to_entries[] | .key as $s | .value | (
+  (keys[] | fleet_off(["build", "cap_drop", "command", "depends_on", "entrypoint", "environment", "healthcheck", "image", "mem_limit", "memswap_limit", "networks", "ports", "profiles", "read_only", "restart", "security_opt", "stop_grace_period", "tmpfs", "user", "volumes", "working_dir"]) | "A\t\($s)\t\(.)"),
+  (.build? // empty | keys[] | fleet_off(["args", "context", "dockerfile"]) | "A\t\($s)\tbuild.\(.)"),
+  (.volumes[]? | keys[] | fleet_off(["bind", "read_only", "source", "target", "type", "volume"]) | "A\t\($s)\tvolumes.\(.)"),
+  (.volumes[]? | .type | fleet_off(["bind", "volume"]) | "A\t\($s)\tvolumes.type \(.)"),
+  empty)),
+(.volumes // {} | to_entries[] | .key as $n | .value // {} | keys[] | fleet_off(["driver", "name"]) | "A\tvolume \($n)\t\(.)"),
+(.networks // {} | to_entries[] | .key as $n | .value // {} | keys[] | fleet_off(["driver", "external", "ipam", "name"]) | "A\tnetwork \($n)\t\(.)"),
 empty
 '
 
@@ -75,6 +86,7 @@ deploy_compose_policy() { # root, config json -> 0, or 1 with DEPLOY_COMPOSE_ERR
     rules=$(printf '%s' "$2" | jq -r "$FLEET_COMPOSE_POLICY") || { DEPLOY_COMPOSE_ERR="jq could not read the compose config, so no compose call runs"; return 1; }
     while IFS=$'\t' read -r kind svc key path; do
         [ "$kind" != F ] || { DEPLOY_COMPOSE_ERR="compose $svc sets $key, which root's compose does not run (policy, backlog 320)"; return 1; }
+        [ "$kind" != A ] || { DEPLOY_COMPOSE_ERR="compose $svc sets $key, which is not on root's compose list (policy, backlog 320)"; return 1; }
         [ "$kind" != P ] || [[ $path == /* && "$(realpath -m -- "$path")/" == "$root"/* ]] || { [ "$key" = volumes ] && deploy_compose_bind_listed "$path"; } || { DEPLOY_COMPOSE_ERR="compose $svc: $key reaches outside $root (policy, backlog 320)"; return 1; }
     done <<<"$rules"
 }

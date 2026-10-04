@@ -38,8 +38,8 @@ cfx() {
     printf 'DB_PASSWORD=stub\n' >"${CENV}"
     chmod 600 "${CENV}"
     jq -n --arg r "${CROOT}" '{services: {app: {image: "x", build: {context: "\($r)/docker/app", dockerfile: "Dockerfile"},
-        volumes: [{type: "bind", source: "\($r)/storage", target: "/s"}, {type: "volume", source: "data", target: "/d"}],
-        env_file: [{path: "\($r)/.env"}]}}, volumes: {data: {}}}' >"${CF}/config.json"
+        volumes: [{type: "bind", source: "\($r)/storage", target: "/s"}, {type: "volume", source: "data", target: "/d"}]}},
+        volumes: {data: {}}}' >"${CF}/config.json"
     cat >"${CF}/bin/docker" <<'SH'
 #!/bin/sh
 d=$(dirname "$0")
@@ -140,11 +140,13 @@ contains 'pieces: run mode checks the pieces itself' "${OUT}" "REFUSED: ${CRUN}/
 equals 'pieces: and calls no docker' "$(cat "${CF}/bin/argv" 2>/dev/null)" ''
 
 # B2: one case per refusal; the message names service and key, never a value.
-policy_case() { # key, jq edit, expected sentence
+policy_case() { # key, jq edit, expected sentence; "sets <key>," means its F rule, not the allow-list
+    local want=$3
+    [[ $want != *, ]] || want="$want which root's compose does not run"
     cfx "policy-$1"
     cjson "$2"
     crun "${INIT}; deploy_compose up -d"
-    contains "policy $1: refused" "${OUT}" "REFUSED: $3"
+    contains "policy $1: refused" "${OUT}" "REFUSED: ${want}"
     absent "policy $1: nothing runs" "${ARGV}" ' up -d'
 }
 policy_case privileged '.services.app.privileged = true' 'compose app sets privileged, which root'"'"'s compose does not run (policy, backlog 320)'
@@ -264,9 +266,9 @@ policy_case build_network '.services.app.build.network = "host"' 'compose app se
 policy_case volume_external '.volumes.data.external = true' 'compose volume data sets external,'
 policy_case network_driver_host '.networks = {n: {driver: "host"}}' 'compose network n sets driver host,'
 policy_case network_external_host '.networks = {n: {external: true, name: "host"}}' 'compose network n sets external host,'
-cfx policy-service-forms; cjson '.services.app.volumes_from = ["db"] | .services.app.network_mode = "service:db" | .networks = {n: {external: true, name: "web"}}'
+cfx policy-listed-forms; cjson '.networks = {n: {external: true, name: "web"}} | ."x-common" = {a: 1}'
 crun "${INIT}"
-contains 'policy service forms: another service, service: and a non-host external network pass' "${OUT}" 'policy clean'
+contains 'policy listed forms: a non-host external network and a top-level x- extension pass' "${OUT}" 'policy clean'
 cfx watch
 crun "${INIT}; deploy_compose watch"
 contains 'compose: watch is refused' "${OUT}" 'REFUSED: compose watch copies the app tree into running containers, so root does not run it'
@@ -321,6 +323,28 @@ C_EXTRA="PATH=${CF}/bin:/usr/bin:/bin"
 crun 'v=$(DEPLOY_APP_USER=nobody deploy_app_env_value APP_URL) || printf "RC=%s\n" "$?"; printf "VAL=[%s]\n" "${v:-}"'
 contains 'env value: a failed sudo refuses on stderr' "${OUT}" "REFUSED: ${CROOT}/.env could not be read as nobody (sudo), so no value is guessed"
 contains 'env value: and returns 1 with no value' "${OUT}" $'RC=1\nVAL=[]'
+
+# Last round: an allow-list per level; anything not on it is refused by name, and a listed key is still judged by value.
+allow_case() { # name, jq edit, "<service> sets <key>"
+    cfx "allow-$1"
+    cjson "$2"
+    crun "${INIT}; deploy_compose up -d"
+    contains "allow $1: refused" "${OUT}" "REFUSED: compose $3, which is not on root's compose list (policy, backlog 320)"
+    absent "allow $1: nothing runs" "${ARGV}" ' up -d'
+}
+allow_case top '.secrets = {s: {environment: "S"}}' 'top level sets secrets'
+allow_case service '.services.app.sysctls = {"net.core.somaxconn": "1024"}' 'app sets sysctls'
+allow_case service_runtime '.services.app.runtime = "runsc"' 'app sets runtime'
+allow_case service_cgroup_parent '.services.app.cgroup_parent = "/x"' 'app sets cgroup_parent'
+allow_case service_group_add '.services.app.group_add = ["docker"]' 'app sets group_add'
+allow_case service_env_file '.services.app.env_file = [{path: "\($r)/.env"}]' 'app sets env_file'
+allow_case service_volumes_from '.services.app.volumes_from = ["db"]' 'app sets volumes_from'
+allow_case build '.services.app.build.network = "container:abc"' 'app sets build.network'
+allow_case volume_key '.services.app.volumes += [{type: "volume", source: "data", target: "/e", consistency: "cached"}]' 'app sets volumes.consistency'
+allow_case volume_type '.services.app.volumes += [{type: "tmpfs", target: "/t"}]' 'app sets volumes.type tmpfs'
+allow_case top_volume '.volumes.data.labels = {a: "b"}' 'volume data sets labels'
+allow_case top_network '.networks = {n: {driver_opts: {"com.docker.network.bridge.name": "docker0"}}}' 'network n sets driver_opts'
+policy_case allow_value '.services.app.security_opt = ["apparmor:unconfined"]' 'compose app sets security_opt,'
 
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 if [ "${fails}" -eq 0 ]; then printf '\ncompose-test: all checks passed\n'; exit 0; fi

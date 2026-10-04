@@ -1146,8 +1146,8 @@ tracked `docker/**`, `Dockerfile*` and `.dockerignore` into `<run>/buildcheck/`,
 `/etc/fleet/app-env/<app>.env` (root 600, seeded once from today's `.env` by that packet, key names
 only in its preview). `compose.sh` builds the one argv from those and finds `<run>` from its own
 location, so no new variable can point it elsewhere; with `--env-file` given, compose never loads the
-project directory's `.env` (measured with compose 5.5.1). The app's `.env` still reaches the containers
-through `env_file:`, which the policy holds inside `ROOT`.
+project directory's `.env` (measured with compose 5.5.1). No app's deploy compose file uses `env_file:`,
+so the allow-list below refuses it; its path rule stays as a second line.
 
 **The policy is a tripwire, not the boundary.** Main is the boundary: a merged PR is reviewed. The jq
 check catches one that slipped in a host escape. It reads `--profile '*'`, because `config` hides a
@@ -1174,15 +1174,28 @@ are not compared: they run inside the build container, never on the host.
 before every `build`/`up`/`run`/`create`, so a bind source swapped to an outward symlink after init is
 refused (case `policy swap`). After that last check the tree is still app-writable, and the review of
 fix round 1 proved both routes open in that window: dockerd follows a symlinked bind source to its
-target, and compose inlines a symlinked `env_file`'s content. Closing it needs binds and env files root
-alone can write; the moderator files that structural fix as its own card.
+target, and compose inlines a symlinked `env_file`'s content (now refused outright, so only the bind route
+is left). Closing it needs binds root alone can write; the moderator files that structural fix as its own card.
 
-**Known limits: keys the policy does not judge.**
-- `build.network: container:…` — open: it joins another container's network namespace (not the host's), so a build can reach that container's ports; the service-level `container:` form is refused and this one should follow.
-- `cgroup_parent` — not a host escape: it changes which cgroup limits apply, not what the container can reach; what is left is resource exhaustion, named open as a DoS route.
-- `runtime` — not a host escape here: only runtimes registered in the daemon can be named, and this box registers `runc` and `io.containerd.runc.v2` alone (`docker info`, 2026-10-04); a new runtime in daemon.json reopens it.
-- `sysctls` — not a host escape: docker accepts only namespaced sysctls (`net.*`, IPC, `fs.mqueue.*`), and `net.*` only off the host network, which the policy refuses.
-- `group_add` — not a host escape: groups apply only to what is mounted, which the policy holds to `ROOT` and root's bind list with no `docker.sock` and no devices.
+**Last round: allow-lists, so an unknown key is refused (Ghie via advisor, 2026-10-04).** Deny-lists
+missed a key each round, so the policy now refuses any key not on a list, each list being exactly what
+the seven apps' deploy compose files use today (normalised `config --format json`, every profile):
+- top level (4): `name`, `networks`, `services`, `volumes`; plus any `x-` key, the one extra: compose ignores extension fields.
+- service (21): `build`, `cap_drop`, `command`, `depends_on`, `entrypoint`, `environment`, `healthcheck`, `image`, `mem_limit`, `memswap_limit`, `networks`, `ports`, `profiles`, `read_only`, `restart`, `security_opt`, `stop_grace_period`, `tmpfs`, `user`, `volumes`, `working_dir`.
+- `build` (3): `args`, `context`, `dockerfile`.
+- a service's volume entry (6): `bind`, `read_only`, `source`, `target`, `type`, `volume`; `type` (2): `bind`, `volume`.
+- top-level volume (2): `driver`, `name`; top-level network (4): `driver`, `external`, `ipam`, `name`.
+
+A key off a list is refused as "compose <service> sets <key>, which is not on root's compose list". Every
+earlier rule stays and still judges a listed key by value (`security_opt`, binds, build context, a
+`host` network); those lines come first, so a key both refuse is named by its own rule, and each rule's
+mutant stays red. Sub-keys below these levels (`bind.propagation`, `healthcheck`, `ports`, `ipam`) are not
+listed: they reach no host path. Cost check: newly refuses 0 of 7 real app deploys (policy-apps.sh on
+86fb073, 2026-10-04 13:23Z); on this round's candidate, 0 of 7 (same replay over the policy committed here, 2026-10-04 13:31Z).
+
+**The keys earlier rounds left unjudged, now refused by absence** (no app uses any of them):
+`build.network` (so `container:` too), `cgroup_parent`, `runtime`, `sysctls` and `group_add`; also
+`env_file`, and `volumes_from` and `network_mode` in every form. None remains allowed.
 
 **Rejected (card 320).** Hashing compose files against a list: the list needs a root-owned source, which
 is this design again. Running compose as the app user: membership of the docker group is root.
