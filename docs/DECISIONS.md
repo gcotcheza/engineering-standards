@@ -1171,7 +1171,8 @@ browser. The library carries no default list for the same reason: what is served
 Dependency manifests are never meant to be declared: a bump changes what serves the browser.
 `*.ext` reaches root-level files only, because `*.md` deep in `resources/` can be a template.
 A manifest or lockfile (`composer.json`, `composer.lock`, `package.json`, `package-lock.json`,
-`yarn.lock`, `pnpm-lock.yaml`, at any depth) is matched only by an entry naming its exact path, so
+`npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `Gemfile.lock`, at
+any depth) is matched only by an entry naming its exact path, so
 `non-ui *.json` or `non-ui scripts/` cannot sweep a dependency change into the non-UI class.
 
 **Overlapping entries: the most specific wins, a tie goes to non-UI.** Exact path beats directory
@@ -1182,7 +1183,9 @@ non-UI, the stricter. "Docs wins" was the first rule and the wrong one: `docs do
 **A symlink or submodule anywhere in the diff makes the whole diff UI.** The path names where the
 link sits, not what it serves, so `docs/x -> ../resources/x` is not documentation; the classifier
 reads `--raw` modes (120000, 160000) for that and `--ignore-submodules=none` so no configured
-`diff.ignoreSubmodules` can hide a gitlink. `fleet-pr-lint` sees no modes in GitHub's compare and
+`diff.ignoreSubmodules` can hide a gitlink. The raw diff goes to its readers as here-strings, never
+a pipe: an `awk` that exited at the first symlink SIGPIPEd its `printf` on a diff over 64 KB, and
+under the callers' `pipefail` the symlink was read as absent (review round 2). `fleet-pr-lint` sees no modes in GitHub's compare and
 leaves this to the deploy.
 
 **One classifier, later.** This is meant to become the one path classifier that replaces the

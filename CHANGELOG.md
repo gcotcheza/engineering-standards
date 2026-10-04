@@ -9,6 +9,8 @@ so. An undeclared path, anything under `e2e/`, and the declaration file itself a
 declaration, an unreadable one, a malformed line or a line naming `e2e/` makes every path UI, and
 so does a symlink or submodule anywhere in the diff. Overlapping entries: the most specific wins, a
 tie goes to non-UI. A manifest or lockfile is non-UI only through an exact-path entry.
+That list: composer.json/.lock, package.json, package-lock.json, npm-shrinkwrap.json, yarn.lock,
+pnpm-lock.yaml, bun.lock, bun.lockb and Gemfile.lock, at any depth.
 - New line before the verdict: `SCOPE <docs|non-ui|ui>: <why> per test-scope 2026-10-04`.
 - New verdicts: `GATED <sha7> ci green in <ledger>; e2e not required: non-UI diff (<entries>) per
   test-scope 2026-10-04` and `GATED <sha7> no gate row owed: docs-only diff (<entries>) …`; `DONE`

@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-04.2 sha256:4798144ffb2d4eddff44312e21d7d935fb67ea24db058c8651bec494895ba577
+# fleet-deploy-lib 2026-10-04.2 sha256:7571425b712fb0ec4dd782506b7e95b68c5b1de841830da502b4b3f89c10dad7
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -83,7 +83,7 @@ gate_ledger_record() {
 TEST_SCOPE_FILE=.fleet/test-scope
 TEST_SCOPE_RULE='test-scope 2026-10-04'
 
-TEST_SCOPE_MANIFESTS=' composer.json composer.lock package.json package-lock.json yarn.lock pnpm-lock.yaml '
+TEST_SCOPE_MANIFESTS=' composer.json composer.lock package.json package-lock.json npm-shrinkwrap.json yarn.lock pnpm-lock.yaml bun.lock bun.lockb Gemfile.lock '
 
 # Prints how specific entry $1 is for path $2 (exact 3, dir 2, glob 1), or fails: no match.
 # A dependency manifest at any depth is matched only by its exact path.
@@ -161,8 +161,8 @@ test_scope_of() {
         SCOPE_WHY="git could not name the checkout's HEAD, so every path is UI"
     elif ! raw=$($GIT diff --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --raw --no-abbrev "$live" "$sha" 2>/dev/null); then
         SCOPE_WHY="git could not list what ${sha:0:7} changes on ${live:0:7}, so every path is UI"
-    elif paths=$(printf '%s\n' "$raw" | cut -s -f2-) \
-        && links=$(printf '%s\n' "$raw" | awk -F'\t' '$1 ~ /^:(120000|160000) |^:[0-7]+ (120000|160000) / { print $2; exit }') \
+    elif paths=$(cut -s -f2- <<<"$raw") \
+        && links=$(awk -F'\t' '!f && $1 ~ /^:(120000|160000) |^:[0-7]+ (120000|160000) / { f = $2 } END { printf "%s", f }' <<<"$raw") \
         && [ -n "$links" ]; then
         SCOPE_WHY="symlink or submodule: $links, so every path is UI"
     elif ! $GIT cat-file -e "$sha:$TEST_SCOPE_FILE" 2>/dev/null; then

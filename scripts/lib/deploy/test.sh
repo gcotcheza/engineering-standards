@@ -775,6 +775,15 @@ scope_template() {
     git_at add docs/x.css
     git_at commit -q -m symlink
     git_at update-ref refs/scope/symlink HEAD
+    # Over 64 KB of --raw output with the symlink line first: a reader that exits early
+    # SIGPIPEs its writer, and under pipefail that once read as "no symlink".
+    git_at checkout -q --detach refs/scope/live
+    mkdir -p "${ROOT}/docs/bulk"
+    ln -s ../../resources/x.css "${ROOT}/docs/bulk/0-link.css"
+    for i in $(seq -w 1 900); do printf '%s\n' "${i}" >"${ROOT}/docs/bulk/zz-a-long-enough-name-to-fill-the-pipe-${i}.md"; done
+    git_at add docs/bulk
+    git_at commit -q -m bigsymlink
+    git_at update-ref refs/scope/bigsymlink HEAD
     git_at checkout -q main
 }
 
@@ -886,6 +895,16 @@ scope_gated
 contains 'a symlink in a declared docs directory makes the diff UI' "${OUT}" \
     "SCOPE ui: symlink or submodule: docs/x.css, so every path is UI ${RULE}"
 
+scope_fixture scope-big-symlink live bigsymlink
+scope_rows ci
+RAW_BYTES="$(git_at diff --raw --no-abbrev --no-renames HEAD "${SCOPE_SHA}" | wc -c)"
+if [ "${RAW_BYTES}" -gt 65536 ]; then pass "the raw diff is over a pipe buffer (${RAW_BYTES} bytes)"
+else fail "the raw diff is only ${RAW_BYTES} bytes, so this case proves nothing about SIGPIPE"; fi
+equals 'and its first line is the symlink' "$(git_at diff --raw --no-abbrev --no-renames HEAD "${SCOPE_SHA}" | awk 'NR == 1 { print $2 }')" '120000'
+run_lib "set -o pipefail; GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; "'gated'
+contains 'under pipefail, a symlink first in a 64 KB+ diff still makes it UI' "${OUT}" \
+    "SCOPE ui: symlink or submodule: docs/bulk/0-link.css, so every path is UI ${RULE}"
+
 scope_fixture scope-diff-fails live docs
 rm -f "${LEDGER}"
 run_lib "GATE_SHA=${MISSING_SHA}; GATE_WHAT=head; gated"
@@ -930,6 +949,12 @@ scope_classify $'non-ui scripts/' $'scripts/package-lock.json'
 contains 'a directory does not reach a lockfile under it' "${OUT}" 'SCOPE=ui WHY=UI path: scripts/package-lock.json'
 scope_classify $'non-ui composer.lock' $'composer.lock'
 contains 'an exact entry does reach a lockfile' "${OUT}" 'SCOPE=non-ui WHY=non-UI diff (composer.lock)'
+for m in npm-shrinkwrap.json bun.lock bun.lockb Gemfile.lock; do
+    scope_classify $'non-ui scripts/\nnon-ui *.json\nnon-ui *.lock\nnon-ui *.lockb' "${m}"$'\n'"scripts/${m}"
+    contains "a glob or a directory does not reach ${m}" "${OUT}" "SCOPE=ui WHY=UI path: ${m} and 1 more"
+    scope_classify "non-ui ${m}" "${m}"
+    contains "an exact entry does reach ${m}" "${OUT}" "SCOPE=non-ui WHY=non-UI diff (${m})"
+done
 scope_classify $'non-ui scripts/\r' $'scripts/a.sh'
 contains 'a CRLF declaration is refused' "${OUT}" "SCOPE=ui WHY=.fleet/test-scope line 1 is not"
 scope_classify 'non-ui scripts/' $'scripts/a.sh\nscriptsx/b.sh\nc.sh\nd.sh'
