@@ -1129,6 +1129,64 @@ suite reads with a default that is exported, so the suite reads no `TMPDIR` at a
 The guard cases make their copies for real — app-owned with `chown nobody`, group-writable, a symlink,
 inside `ROOT` — and the old command, the tree's own copy run by root, is one of them.
 
+## The guard-mutant runner matches fixed strings, requires `expect`, and isolates every run (2026-10-04)
+
+T5's deletion proof was done by hand, one script per change, and four guards in five days shipped
+with tests that stayed green without them. `scripts/guard-mutants.sh` does the deletion from a
+manifest. Three choices in it are deliberate.
+
+**Fixed strings, not regexes.** The guard line is code, full of `[`, `$`, `|` and `*`; as a regex it
+would need escaping, and an escaping slip matches a different line or several. A fixed string,
+compared with the file's line once both are trimmed, has to equal exactly one line, and when it
+matches none or several the entry is errored rather than guessed at.
+
+**`expect` is required.** A non-zero exit alone proves nothing: deleting a line that closes a block
+makes a syntax error, every test fails, and a runner counting reds would call that a catch. So
+caught means non-zero *and* the entry's own failure line printed, and a manifest entry without one is
+a usage error. The runner's own suite proves it: a deleted `esac` gives `rc=3 without the expect
+string`, errored, never caught. For the same reason an `expect` the unmutated test already prints is
+errored: it would make that syntax error a catch again.
+
+**Every run in its own directory.** Two by-hand red proofs once ran at the same time from one fixed
+work directory, overwrote each other's mutants, and judged guards on the wrong file (331/323). Here
+each invocation makes a `mktemp -d` beneath the caller's work directory, each entry a `mktemp -d`
+beneath that, and each test gets a `TMPDIR` inside its own entry. The suite runs two invocations at
+once over one manifest and one work directory and requires identical reports; a mutant that gives
+each entry a fixed directory turns that case red.
+
+**The self-proof stays out of the gate.** `scripts/guard-mutants-self.manifest` runs the suite once
+per guard line, 42 times, a minute or two at `-j 4`. The gate runs the suite once (step 8); the
+self-manifest is rerun by hand whenever the runner's guards change, and the PR quotes its summary.
+
+**A test's processes end with the runner.** `timeout` puts each test in a process group of its own,
+so a signal to the runner's group never reaches it: on befb3e7, INT or HUP to the group left the test
+and its `timeout` running after the runner was gone. Each test's group id is written to its entry
+directory before the test starts, with that process's start time from `/proc`; the EXIT trap kills a
+recorded group only while its leader's start time still matches, because a pid read back from a file
+can by then name someone else's process (the stale-pid case, red on 1d1c2ec), and a `stopping` file it
+writes first stops a test that was about to start. No INT/HUP/TERM trap of its own: deleting each one
+left the suite green, because bash runs the EXIT trap on all three, so they were dead code.
+
+**Mutants run as nobody, and `/dev/null` is watched.** A hand-typed root `cp -a` onto `/dev/null`
+once made it mode 755 and broke every non-root gate on the box (m-20261004-2826038d). A mutant runs
+with the runner's rights, so the suite refuses root and gate step 8 runs it as `nobody` in a
+directory it chowns to `nobody`; with that drop removed, a root `check.sh --only 8` fails step 8 on
+the refusal, before any fixture runs. The suite also compares `stat -c '%a %U %G'` of `/dev/null`
+before and after; `GUARD_MUTANTS_DEVNULL_PATH` names a sink file instead, and a runner mutant that
+chmods the sink turns that check red.
+
+**Known limits.** The suite's root refusal has no deletion proof: its mutant would run the fixtures
+as root, which is what the refusal exists to stop. The start-time check stops a reused pid, not a
+test that forges the file with another process's real start time; such a test could signal that
+process itself. The worker ends its test's group after reaping the leader, which is safe while a
+leftover member pins the group id; with none left, only a pid reused in that instant could be hit. The suite's own ownership check before it
+signals a fixture's pid (the pid's environment names the suite's work dir) has no deletion proof.
+
+**Step order.** Timed alone under a load average of 5 to 6, the suite took 6.23s to 6.68s, against
+5.52s to 7.19s for `gate-image-tags-test.sh` and 49.6s for the deploy-lib test in the same window. It
+sits within noise of step 7 and far below the deploy-lib test, so it is step 8 and the deploy-lib
+test moves to 9. Re-measure on a quiet box before reading more into it.
+
 ## Step 1 runs the box's guard-diff lint on the host, folded into step 1 (2026-10-04)
 
 **On the host, not in a container.** `/usr/local/sbin/fleet-lint-guard-diff` is the box's own
