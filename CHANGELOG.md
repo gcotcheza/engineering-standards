@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-10-04 — two messages the guard-diff lint misread are reworded, and this gate runs the lint (deploy-lib VERSION 2026-10-04; the standard is unchanged and VERSION is not bumped)
+**`fleet-lint-guard-diff` read message text as a `git diff` call**, so it failed every gate that
+runs it over these scripts, the re-vendor of this library included. The lint stays conservative
+inside quotes on purpose (a `bash -c "git diff …"` is a real call), so the words change:
+- `resolve`'s refusal now reads `REFUSED: the tree comparison of head <sha> and merge <sha> exited
+  <rc>, …` (rest unchanged). `resolve.sh` is re-stamped; the other lib files are re-stamped for the
+  new VERSION only.
+- `version-text-pair.sh` now prints `version-text-pair: the changed-file comparison against <sha>
+  failed, so nothing was judged.`
+- Their test pins move with them (`lib/deploy/test.sh`, `version-text-pair-test.sh` case 4b).
+
+**Step 1 of `scripts/check.sh` now also runs `fleet-lint-guard-diff scripts`**, then lints a
+one-line canary holding a bare diff call and fails unless the lint flags it (exit 1, naming
+`--no-ext-diff`), so a lint that passes everything cannot turn the step green. It fails loudly when
+`/usr/local/sbin/fleet-lint-guard-diff` is missing or not executable (C9). Why it runs on the host
+and inside step 1, and the re-measured cost: `docs/DECISIONS.md`.
+
+**Callers that pin the old refusal must update.** A read-only grep of `/srv/sessions/orbit/repo`
+and `/var/www/*/scripts` finds it only in vendored copies of this library, which the re-vendor
+replaces: `resolve.sh` and `test.sh` in fineprint, ghie-writes, health-tracker, reflection and
+scribly (at `resolve.sh:63`) and in ghiecode (`resolve.sh:45`). No project's own script pins
+either string, and neither tree pins the `version-text-pair` sentence.
+
 ## 2026-10-03 — root runs a deploy only from `fleet-deploy`'s export: the lib refuses any other copy, and `resolve` takes the repository from root (deploy-lib VERSION 2026-10-03, amended; the standard is unchanged)
 **`summary.sh` refuses to run from anywhere the app user could write** (backlog 317). When it is
 sourced, and again in `deploy_log_open` once `ROOT` is set, it walks the running `deploy.sh`,

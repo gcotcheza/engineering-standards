@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-03 sha256:fb30dd410d5da08cd4a4feb71d05cebd43c77eff6c450cc12b12ec1bdad1c1b1
+# fleet-deploy-lib 2026-10-04 sha256:60295991f8cf7f1ff110a9f534968f8c183b66b57deae210a3b7ecefc609a612
 # shellcheck shell=bash
 # resolve <PR#> proves gh says MERGED and the merge commit IS origin/main, then sets
 # GATE_SHA: the commit whose tree deploys, and so the commit that must be gated.
@@ -42,7 +42,7 @@ resolve() {
         diff_rc=$?
     fi
     [ "$diff_rc" = 0 ] || [ "$diff_rc" = 1 ] \
-        || refuse "git diff of head ${HEAD_SHA} and merge ${MERGE_SHA} exited ${diff_rc}, which says neither same tree nor different: a deploy does not guess which commit it gates."
+        || refuse "the tree comparison of head ${HEAD_SHA} and merge ${MERGE_SHA} exited ${diff_rc}, which says neither same tree nor different: a deploy does not guess which commit it gates."
     if [ "$diff_rc" = 0 ]; then
         GATE_SHA=$HEAD_SHA
         GATE_WHAT='head'

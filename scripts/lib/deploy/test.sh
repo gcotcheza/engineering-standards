@@ -538,7 +538,7 @@ TREE="$(git_at rev-parse "${HEAD_SHA}^{tree}")"
 rm -f "${ROOT}/.git/objects/${TREE:0:2}/${TREE:2}"
 run_lib 'resolve'
 contains 'a diff that exits neither 0 nor 1 is refused, never read as a difference' "${OUT}" \
-    "REFUSED: git diff of head ${HEAD_SHA} and merge ${MERGE_SHA} exited 128, which says neither same tree nor different: a deploy does not guess which commit it gates."
+    "REFUSED: the tree comparison of head ${HEAD_SHA} and merge ${MERGE_SHA} exited 128, which says neither same tree nor different: a deploy does not guess which commit it gates."
 absent 'and no commit is gated on the strength of it' "${OUT}" 'RESOLVED #73'
 
 fixture main-moved
