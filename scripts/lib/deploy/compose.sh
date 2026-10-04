@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-04.3 sha256:03b7df47170c3ffaa5f86603e6ee29589b7d3d1951648046f7fe922bcf3c5aaa
+# fleet-deploy-lib 2026-10-04.3 sha256:4053f9cbf5aac8573e6b5db55bd0a4e25c0c39318aa3d4481d233d9b71821cf1
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -176,8 +176,7 @@ deploy_compose_pieces() { # root, env file, run dir, file… -> 0, or 1 with DEP
     done
     d=$(dirname -- "$env")
     [ "$(basename -- "$env")" = "$(basename -- "$root").env" ] || { DEPLOY_COMPOSE_ERR="$env is not named after $root"; return 1; }
-    { [ -d "$d" ] && [ ! -L "$d" ] && [ "$(stat -c %u:%a "$d")" = "${DEPLOY_ROOT_UID:-0}:700" ] && [ -f "$env" ] && [ ! -L "$env" ] && [ "$(stat -c %u:%a "$env")" = "${DEPLOY_ROOT_UID:-0}:600" ]; } \
-        || { DEPLOY_COMPOSE_ERR="$env is not a root 600 file in a root 700 directory: fleet-app-env-seed writes it, then deploy with: fleet-deploy <app> <PR#>"; return 1; }
+    { [ -d "$d" ] && [ ! -L "$d" ] && [ "$(stat -c %u:%a "$d")" = "${DEPLOY_ROOT_UID:-0}:700" ] && [ -f "$env" ] && [ ! -L "$env" ] && [ "$(stat -c %u:%a "$env")" = "${DEPLOY_ROOT_UID:-0}:600" ]; } || { DEPLOY_COMPOSE_ERR="$env is not a root 600 file in a root 700 directory: fleet-app-env-seed writes it, then deploy with: fleet-deploy <app> <PR#>"; return 1; }
     DEPLOY_COMPOSE_APP=${FLEET_DEPLOY_REPO:-}
     [[ $DEPLOY_COMPOSE_APP =~ ^[A-Za-z0-9-]+/[a-z0-9-]+$ ]] || { DEPLOY_COMPOSE_ERR="FLEET_DEPLOY_REPO '${FLEET_DEPLOY_REPO:-}' names no app: root names it. Deploy with: fleet-deploy <app> <PR#>"; return 1; }
     DEPLOY_COMPOSE_APP=${DEPLOY_COMPOSE_APP#*/}
