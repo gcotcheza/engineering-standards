@@ -65,9 +65,10 @@ it could not read is a refusal (exit 1), not a note under a green run; a line th
 
 `scripts/lib/deploy/` is the half of a project's `scripts/deploy.sh` that is the same
 everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (which commit a pull
-request number means), `ledger.sh` (the gate ledger), `preflight.sh`, `cleanup.sh` and `compose.sh`
-(root's compose, from `fleet-deploy`'s export only). A project copies those files and `VERSION` into
-its own `scripts/lib/deploy/`, byte-identical, and sources them.
+request number means), `ledger.sh` (the gate ledger), `preflight.sh`, `cleanup.sh` (the
+after-deploy worktree reaper), `compose.sh` (root's compose, from `fleet-deploy`'s export only) and
+`literal.sh` (a gate's literal guard, below). A project copies those files and `VERSION` into its
+own `scripts/lib/deploy/`, byte-identical, and sources them.
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
 project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After
@@ -106,12 +107,31 @@ rescue path — but it reads the same rows first, prints the verdict it is overr
 `red` or `absent` per kind) and the deploy records `by hand over [<verdict>]`.
 
 **Test scope.** `gated` classifies what the deploy changes (the checkout's HEAD against the gated
-commit) by the project's `.fleet/test-scope` in that commit: lines `docs <entry>` and
-`non-ui <entry>`, an entry being `dir/`, a root-level `*.ext` or one path. All docs owes no row,
-docs and non-UI owe `ci`, anything else owes `ci` and `e2e`. Undeclared paths, `e2e/` and the
-declaration itself are UI, and a missing or malformed declaration, or a symlink or submodule in
-the diff, makes every path UI. The most specific entry wins (a tie goes to non-UI), and a manifest
-or lockfile is non-UI only by its exact path. Its `SCOPE` line names the class and why.
+commit) by the project's `.fleet/test-scope` in that commit. A project declares it one entry per
+line, `#` starting a comment:
+
+```
+docs docs/
+docs *.md
+non-ui scripts/
+non-ui tests/Unit/
+```
+
+The grammar is `<docs|non-ui> <entry>`, an entry being `dir/`, a root-level `*.ext` or one exact
+path; anything else on a line refuses the whole file. Each changed path takes the class of the most
+specific entry that matches it (exact path, then directory, then `*.ext`; a tie goes to non-UI),
+and the diff takes the strictest class among its paths: all docs owes no row, docs and non-UI owe
+`ci`, anything else owes `ci` and `e2e`. Undeclared paths, `e2e/` and the declaration itself are
+UI, and no file at all, a malformed one, or a symlink or submodule in the diff makes every path
+UI. A manifest or lockfile is non-UI only by its exact path. Its `SCOPE` line names the class and why.
+
+**A gate's literal.** A gate that names what root runs by a variable (`GATE_LIB_SUITE`, the suite
+root runs) proves it with `literal.sh`, from its own test: `. scripts/lib/deploy/literal.sh;
+gate_literal_once scripts/check.sh GATE_LIB_SUITE <canonical path>` is 0 and silent only when the
+gate writes the name once, as `NAME=<value>` (bare, `'…'` or `"…"`) at column 0, and otherwise
+names it only as `${NAME}`, after that line. Anything else prints one `LITERAL … refused:` line and
+returns 1: an indented copy, `${NAME:=…}`, `export`, `declare`, a quoted or backslash-split name,
+`$NAME`, a read before the write, or any comment naming it.
 
 **Who it is for.** Anyone running several small apps alone, or with AI agents doing the
 typing, who wants one answer to "how do we do things here" that is enforced rather than

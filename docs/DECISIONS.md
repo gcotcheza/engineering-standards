@@ -1319,3 +1319,29 @@ docs-only merges before `gated` keep doing so; for a project whose `gated` runs 
 no landing, a docs-only diff no longer needs `--gated-by-hand`. Root's `fleet-pr-lint` reads the
 same file in the same grammar (its packet carries a parity test against this classifier).
 
+
+## A gate's literal is guarded once, in the library, by a scan of every form (2026-10-04)
+
+**The bug (card 318).** A gate names the suite root runs by a literal, `GATE_LIB_SUITE=<canonical
+path>`, so a branch cannot aim root at a suite nobody reviewed. The apps proved it by counting
+`^GATE_LIB_SUITE=` lines, which passes with a second write that is indented (inside an `if`), a
+`: "${GATE_LIB_SUITE:=…}"`, an `export GATE_LIB_SUITE=…`, or a quoted name (`"GATE_LIB_SUITE"=…`,
+`export "GATE_LIB_SUITE=…"`). Two apps count lines that way and a third carries a stronger scan of
+its own; three copies is the point to extract (C1), so `literal.sh` carries one for every app.
+
+**Scan for the name, not for an assignment.** Listing the ways bash can write a variable is the
+approach that already failed; there is always one more (`declare`, `read`, `printf -v`, a
+backslash-split name). So the scan strips quotes and backslashes, joins continued lines, removes
+every `${NAME}` read, and treats any word-bounded mention left over as a write. The one allowed
+write is an exact line at column 0, and a `${NAME}` read before it is refused too, because it
+reads what the environment preset. Comments are scanned like code: skipping `#` lines let a
+`# note \` swallow the next line and let a `#`-led line inside a multi-line string run unseen, and
+a text scan cannot tell a comment from a string, so it fails closed. `$NAME`, `${NAME:-…}`, a
+comment or a heredoc naming it are refused although some are harmless.
+
+**What it cannot see.** A name assembled at run time (`eval`, `declare -n` or `printf -v` over a
+computed name), a write in a file the gate sources, and the literal at column 0 where it never
+runs: inside a block (`if false; then` on the line above), a here-doc or a multi-line string. Those need the runtime test the apps already
+carry: a preset in the environment never reaches the suite root runs.
+
+**Adoption rides each app's next re-vendor**; this change opens no app PR.

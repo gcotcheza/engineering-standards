@@ -382,7 +382,7 @@ esac
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date, with an optional same-day serial' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$'
 EMPTY_SET="$(printf '' | sha256sum | cut -d' ' -f1)"
-for f in summary resolve ledger preflight cleanup compose; do
+for f in summary resolve ledger preflight cleanup compose literal; do
     line1="$(head -1 "${LIB_DIR}/${f}.sh")"
     body="$(tail -n +2 "${LIB_DIR}/${f}.sh" | sha256sum | cut -d' ' -f1)"
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
@@ -1709,6 +1709,58 @@ OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" bash "${SCRIPT_DIR}/compose-test.sh" 2>&1)"
 RC=$?
 contains 'compose-test.sh passes as root' "${OUT}" 'compose-test: all checks passed'
 equals 'compose-test.sh exits' "${RC}" 0
+
+# --- 9. a gate's literal: written once at column 0, read only as ${NAME} after (card 318) ----
+LIT_VALUE=/srv/engineering-standards/scripts/lib/deploy/test.sh
+LIT_READ='out="$(bash "${GATE_LIB_SUITE}" 2>&1)"'
+literal_check() {
+    printf '%s\n' "$@" >"${WORK}/literal-gate.sh"
+    OUT="$(bash -c '. "$1"; gate_literal_once "$2" GATE_LIB_SUITE "$3"' _ "${LIB_DIR}/literal.sh" "${WORK}/literal-gate.sh" "${LIT_VALUE}" 2>&1)"
+    RC=$?
+}
+for own in "GATE_LIB_SUITE=${LIT_VALUE}" "GATE_LIB_SUITE='${LIT_VALUE}'" "GATE_LIB_SUITE=\"${LIT_VALUE}\""; do
+    literal_check '#!/usr/bin/env bash' '# the suite root runs' "${own}" 'run() {' "    ${LIT_READ}" '}'
+    equals "the literal written as [${own}] and read as \${GATE_LIB_SUITE} passes" "${RC}:${OUT}" '0:'
+done
+while IFS= read -r form; do
+    literal_check "GATE_LIB_SUITE=${LIT_VALUE}" "${form//<NL>/$'\n'}" "${LIT_READ}"
+    equals "a second write [${form}] fails the guard" "${RC}" 1
+    contains "and the refusal names it" "${OUT}" 'LITERAL GATE_LIB_SUITE refused: '"${WORK}"'/literal-gate.sh names it other than as ${GATE_LIB_SUITE} after its one write: '
+done <<'FORMS'
+GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh
+    GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh
+	[ -z "${GATE_LIB_SUITE_OVERRIDE:-}" ] || GATE_LIB_SUITE="${GATE_LIB_SUITE_OVERRIDE}"
+: "${GATE_LIB_SUITE:=/srv/worker-scratch/branch/test.sh}"
+export GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh
+export "GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh"
+"GATE_LIB_SUITE"=/srv/worker-scratch/branch/test.sh
+'GATE_LIB_SUITE'=/srv/worker-scratch/branch/test.sh
+declare GATE_"LIB_SUITE"=/srv/worker-scratch/branch/test.sh
+GATE_LIB_\<NL>SUITE=/srv/worker-scratch/branch/test.sh
+bash "$GATE_LIB_SUITE"
+# a comment does not continue \<NL>GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh
+: "<NL>#"; GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh
+# GATE_LIB_SUITE named in a comment
+FORMS
+literal_check "    GATE_LIB_SUITE=${LIT_VALUE}" "${LIT_READ}"
+equals 'an indented literal alone fails the guard' "${RC}" 1
+contains 'and the refusal says the literal is owed at column 0' "${OUT}" "never writes GATE_LIB_SUITE=${LIT_VALUE} on a line of its own at column 0"
+literal_check "${LIT_READ}" "GATE_LIB_SUITE=${LIT_VALUE}"
+contains 'a read before the write is refused: it runs what the environment preset' "${OUT}" "after its one write: ${LIT_READ}"
+literal_check 'GATE_LIB_SUITE=/srv/worker-scratch/branch/test.sh'
+equals 'a gate that writes another value fails the guard' "${RC}" 1
+contains 'and the refusal names the value it owes' "${OUT}" "never writes GATE_LIB_SUITE=${LIT_VALUE} on a line of its own at column 0"
+literal_check
+equals 'an empty gate fails the guard' "${RC}" 1
+contains 'and the refusal names the value it owes' "${OUT}" "never writes GATE_LIB_SUITE=${LIT_VALUE}"
+OUT="$(bash -c '. "$1"; gate_literal_once "$2" GATE_LIB_SUITE "$3"' _ "${LIB_DIR}/literal.sh" "${WORK}/no-such-gate.sh" "${LIT_VALUE}" 2>&1)"
+equals 'a missing gate fails the guard' "$?" 1
+contains 'and says it could not be scanned' "${OUT}" "LITERAL GATE_LIB_SUITE refused: ${WORK}/no-such-gate.sh could not be scanned"
+OUT="$(bash -c '. "$1"; gate_literal_once "$2" GATE_LIB_SUITE "$3"' _ "${LIB_DIR}/literal.sh" "${WORK}" "${LIT_VALUE}" 2>&1)"
+contains 'a directory in place of the gate is refused' "${OUT}" "${WORK} could not be scanned"
+printf 'GATE.LIB=x\n' >"${WORK}/literal-gate.sh"
+OUT="$(bash -c '. "$1"; gate_literal_once "$2" GATE.LIB x' _ "${LIB_DIR}/literal.sh" "${WORK}/literal-gate.sh" 2>&1)"
+equals 'a name that is not a variable name fails the guard' "$?:${OUT}" '1:LITERAL refused: [GATE.LIB] is not a variable name'
 
 grew 'the fixture commits added caller=root result=clean lines' \
     "${SUITE_CLEAN_BEFORE}" "$(clean_lines)"
