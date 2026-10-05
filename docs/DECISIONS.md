@@ -1370,7 +1370,8 @@ child `bash` that turns tracing off and execs gh, so a caller's `set -x` never p
 reads with `-n input` so an empty answer is an error, a page that holds fewer runs than it counts
 and a check suite with other than one workflow run are errors, and every error is `unreadable`.
 
-**What it does not cover.** When the head and merge trees match, `GATE_SHA` is the head, and a
-`push` run on `main` is filed under the merge commit, so it does not count; such a deploy needs a
-`push` or `workflow_dispatch` run on the head itself. ghie-writes' PR #45 run 37240193529 is a
-`pull_request` run, and its `push` runs on `main` carried no `e2e` job on 2026-10-05.
+**The merge stands in for an identical head.** When the head and merge trees match, `GATE_SHA` is
+the head, but the `push` run on `main` is filed under the merge commit. Identical trees run the same
+code, so that run counts for the head, under every rule above, `W`'s pin checked at the merge, and
+the newest across both commits decides. The merge is the one `resolve` read, never computed here; a
+head whose tree differs never borrows it. The report says which commit the run was on.

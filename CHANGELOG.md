@@ -8,14 +8,15 @@ fine-grained, checks:read and actions:read). `gh api repos/<R>/commits/<sha>/che
 page, `filter=all`) and `repos/<R>/actions/runs?check_suite_id=` per candidate; a run counts only as
 the newest `N` check run by app 15368 on `<sha>` whose workflow run is `W` in `R`, head repository
 `R`, event `push` or `workflow_dispatch`, completed `success`, with `W`'s blob at `<sha>` hashing to
-`W_SHA256`. Every gh or jq failure, a partial page, or a suite with other than one workflow run is
-`unreadable`. New verdict items: `e2e github:green run <id>`, `e2e github: none for <sha7>`,
+`W_SHA256`. When the head and merge trees are identical (gated reads the head), a run on the merge
+commit `resolve` read counts too, under the same rules, and the newest across both decides. Every gh or jq failure, a partial page, or a suite with other than one workflow run is
+`unreadable`. New verdict items: `e2e github:green run <id> on <head|merge> <sha7>`, `e2e github: none for <sha7>`,
 `e2e github: unreadable`, `e2e github: off (no config)` / `(no token)`; a `GITHUB E2E <why>` line
 when a config or token is unsafe or a run is not green; GATED `ledger ci + github e2e <R> run <id>
-(<W>, <N>) on <sha7>` and a `GATED` line with the run's URL and completed_at. With the route off,
+(<W>, <N>) on <head|merge> <sha7>` and a `GATED` line with the run's URL and completed_at. With the route off,
 a not-green `e2e` now reads `e2e absent, e2e github: off (no config)`; nothing else changes.
 `--gated-by-hand`, docs and non-UI scopes are unchanged. The token reaches gh only as `GH_TOKEN` in
-a child that never traces. Suite: 39 new cases on a fake gh serving JSON in the shape of a real
+a child that never traces. Suite: 42 new cases on a fake gh serving JSON in the shape of a real
 run; red proofs, one saved mutant per guard line, in the lane of card 352. All seven headers are
 re-stamped for `2026-10-05.1`; apps adopt it on their next re-vendor. Why: `docs/DECISIONS.md`.
 

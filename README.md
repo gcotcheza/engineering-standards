@@ -115,10 +115,11 @@ file>`. `/etc/fleet/github-e2e/token` is root 600: a fine-grained read-only toke
 actions:read on the repositories named. A run counts only when it is the newest `N` check run by
 GitHub Actions (app 15368) on the gated sha whose workflow run is `W` in `R` itself, from `push` or
 `workflow_dispatch` (never `pull_request`, which tests a merge ref, and never a fork), and it
-finished `success`, and `W` at that sha hashes to `W_SHA256`. Any gh or jq failure is
-`unreadable`, which is not green. The verdict adds `e2e github:green run <id>`, `e2e github: none
+finished `success`, and `W` at that sha hashes to `W_SHA256`. When `gated` reads a head whose tree is
+the merge's, a run on the merge commit `resolve` read counts too, under the same rules. Any gh or jq failure is
+`unreadable`, which is not green. The verdict adds `e2e github:green run <id> on <head|merge> <sha7>`, `e2e github: none
 for <sha7>`, `e2e github: unreadable` or `e2e github: off (no config|no token)`; GATED reads
-`ledger ci + github e2e <R> run <id> (<W>, <N>) on <sha7>`. Nothing is written to the ledger.
+`ledger ci + github e2e <R> run <id> (<W>, <N>) on <head|merge> <sha7>`. Nothing is written to the ledger.
 `DEPLOY_GITHUB_E2E_DIR` and `DEPLOY_GITHUB_E2E_TOKEN` move both files, for tests.
 
 **Test scope.** `gated` classifies what the deploy changes (the checkout's HEAD against the gated

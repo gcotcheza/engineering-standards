@@ -121,9 +121,11 @@ write_fakes() {
 # The GitHub e2e route: check runs and one workflow run per check suite, from saved JSON.
 if [ "$1" = api ]; then
     [ "${GH_TOKEN:-}" = "$(cat "${FAKE_GHE_DIR}/token.expected" 2>/dev/null)" ] && echo token-matches >>"${FAKE_GHE_DIR}/token.seen"
-    for a; do case $a in check_suite_id=*) suite=${a#check_suite_id=} ;; esac; done
+    for a; do case $a in check_suite_id=*) suite=${a#check_suite_id=} ;; */commits/*/check-runs) sha=${a%/check-runs}; sha=${sha##*/} ;; esac; done
+    checks="${FAKE_GHE_DIR}/checks-${sha:-none}.json"
+    [ -f "${checks}" ] || checks="${FAKE_GHE_DIR}/checks.json"
     case " $* " in
-        *'/check-runs '*) cat "${FAKE_GHE_DIR}/checks.json"; exit "${FAKE_GHE_RC:-0}" ;;
+        *'/check-runs '*) cat "${checks}"; exit "${FAKE_GHE_RC:-0}" ;;
         *'/actions/runs '*) cat "${FAKE_GHE_DIR}/runs-${suite:-none}.json"; exit "${FAKE_GHE_RUNS_RC:-0}" ;;
     esac
     exit 1
@@ -765,10 +767,11 @@ ghe_check() { # id suite sha app-id status conclusion|null completed_at|null nam
     printf '{"id":%s,"name":"%s","head_sha":"%s","status":"%s","conclusion":%s,"started_at":"2026-10-04T22:29:18Z","completed_at":%s,"html_url":"https://github.com/%s/actions/runs/1/job/%s","app":{"id":%s,"slug":"github-actions","name":"GitHub Actions"},"check_suite":{"id":%s}}' \
         "$1" "$8" "$3" "$5" "${concl}" "${at}" "${GHE_REPO}" "$1" "$4" "$2"
 }
-ghe_checks() { # check run objects; GHE_TOTAL overrides the count the page claims
+ghe_checks() { # check run objects; GHE_TOTAL overrides the count, GHE_CHECKS_SHA serves them for one sha
     local IFS=,
-    printf '{"total_count":%s,"check_runs":[%s]}\n' "${GHE_TOTAL:-$#}" "$*" >"${CASE}/ghe-fake/checks.json"
-    GHE_TOTAL=''
+    printf '{"total_count":%s,"check_runs":[%s]}\n' "${GHE_TOTAL:-$#}" "$*" \
+        >"${CASE}/ghe-fake/checks${GHE_CHECKS_SHA:+-${GHE_CHECKS_SHA}}.json"
+    GHE_TOTAL='' GHE_CHECKS_SHA=''
 }
 ghe_run_json() { # run event path repo head-repo suite
     printf '{"id":%s,"name":"ci","event":"%s","status":"completed","conclusion":"success","head_sha":"%s","path":"%s","check_suite_id":%s,"html_url":"https://github.com/%s/actions/runs/%s","repository":{"full_name":"%s"},"head_repository":{"full_name":"%s"}}' \
@@ -805,15 +808,15 @@ fixture ghe-green
 ghe_fixture "${HEAD_SHA}"
 ghe_gated
 contains 'a green push run of the pinned workflow on the gated sha turns e2e green' "${OUT}" \
-    "GATED ${HEAD_SHA:0:7} ci green in ${LEDGER}, e2e github:green run 800: https://github.com/${GHE_REPO}/actions/runs/800 completed 2026-10-04T22:33:11Z"
+    "GATED ${HEAD_SHA:0:7} ci green in ${LEDGER}, e2e github:green run 800 on head ${HEAD_SHA:0:7}: https://github.com/${GHE_REPO}/actions/runs/800 completed 2026-10-04T22:33:11Z"
 contains 'and GATED names the source, the run, the workflow, the check and the sha' "${OUT}" \
-    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on ${HEAD_SHA:0:7}"
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on head ${HEAD_SHA:0:7}"
 absent 'and nothing is refused' "${OUT}" 'REFUSED'
 contains 'the check runs are asked for by sha and check name, every page entry' "$(cat "${ARGVFILE}")" \
     "api -X GET repos/${GHE_REPO}/commits/${HEAD_SHA}/check-runs -f check_name=e2e -f filter=all -f per_page=100"
 contains 'and the workflow run by its check suite' "$(cat "${ARGVFILE}")" \
     "api -X GET repos/${GHE_REPO}/actions/runs -f check_suite_id=700"
-equals 'gh got root'"'"'s token through GH_TOKEN on both calls' "$(grep -c token-matches "${CASE}/ghe-fake/token.seen" 2>/dev/null)" 2
+equals 'gh got root'"'"'s token through GH_TOKEN on both calls' "$(grep -c token-matches "${CASE}/ghe-fake/token.seen" 2>/dev/null)" 3
 absent 'and the token is in no output (S2)' "${OUT}" "${GHE_TOKEN}"
 absent 'nor in the deploy log' "$(cat "${LOGFILE}")" "${GHE_TOKEN}"
 absent 'nor on any gh argv' "$(cat "${ARGVFILE}")" "${GHE_TOKEN}"
@@ -824,7 +827,7 @@ ghe_fixture "${HEAD_SHA}"
 printf '%s e2e 2026-10-04T21:00:00Z 1 -\n' "${HEAD_SHA}" >>"${LEDGER}"
 ghe_gated
 contains 'a red e2e row is also answered by a green run on GitHub' "${OUT}" \
-    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on ${HEAD_SHA:0:7}"
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on head ${HEAD_SHA:0:7}"
 
 fixture ghe-ledger-green
 ghe_fixture "${HEAD_SHA}"
@@ -847,14 +850,41 @@ ghe_gated
 contains 'when the trees differ the merge is asked for, the sha gated reads' "$(cat "${ARGVFILE}")" \
     "repos/${GHE_REPO}/commits/${MERGE_SHA}/check-runs"
 contains 'and GATED names the merge' "${OUT}" \
-    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on ${MERGE_SHA:0:7}"
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on merge ${MERGE_SHA:0:7}"
+equals 'and only the merge is asked for, once' "$(ghe_api_calls)" 2
+
+fixture ghe-merge-only
+ghe_fixture "${HEAD_SHA}"
+GHE_CHECKS_SHA="${HEAD_SHA}" ghe_checks
+GHE_CHECKS_SHA="${MERGE_SHA}" ghe_checks "$(ghe_check 900 700 "${MERGE_SHA}" 15368 completed success 2026-10-04T22:33:11Z e2e)"
+ghe_gated
+contains 'trees identical: a push run on the merge alone turns the head'"'"'s e2e green' "${OUT}" \
+    "GATED ${HEAD_SHA:0:7} ci green in ${LEDGER}, e2e github:green run 800 on merge ${MERGE_SHA:0:7}: https://github.com/${GHE_REPO}/actions/runs/800"
+contains 'and GATED says the run was on the merge' "${OUT}" \
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on merge ${MERGE_SHA:0:7}"
+
+fixture ghe-merge-tree-differs trees-differ
+ghe_fixture "${HEAD_SHA}"
+GHE_CHECKS_SHA="${HEAD_SHA}" ghe_checks
+GHE_CHECKS_SHA="${MERGE_SHA}" ghe_checks "$(ghe_check 900 700 "${MERGE_SHA}" 15368 completed success 2026-10-04T22:33:11Z e2e)"
+run_lib 'resolve; GATE_SHA=$HEAD_SHA; GATE_WHAT=head; gated; printf "GATED_IS %s\n" "$GATED" >&3'
+ghe_none 'a head whose tree is not the merge'"'"'s never borrows the merge'"'"'s run'
+absent 'and the merge is not asked for' "$(cat "${ARGVFILE}")" "commits/${MERGE_SHA}/check-runs"
+
+fixture ghe-newest-across-shas
+ghe_fixture "${HEAD_SHA}"
+GHE_CHECKS_SHA="${MERGE_SHA}" ghe_checks "$(ghe_check 901 701 "${MERGE_SHA}" 15368 completed failure 2026-10-04T23:10:00Z e2e)"
+ghe_run 701 801 push .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}"
+ghe_gated
+ghe_none 'a newer failure on the merge beats an older success on the head'
+contains 'and says which' "${OUT}" "GITHUB E2E the newest e2e run, 801 on merge ${MERGE_SHA:0:7}, is completed failure"
 
 fixture ghe-by-hand
 ghe_fixture "${HEAD_SHA}"
 BY_HAND=1
 ghe_gated
 contains '--gated-by-hand over a GitHub green still records by hand' "${OUT}" \
-    "GATED_IS by hand over [GREEN head ${HEAD_SHA:0:7}: ci green, e2e absent, e2e github:green run 800]"
+    "GATED_IS by hand over [GREEN head ${HEAD_SHA:0:7}: ci green, e2e absent, e2e github:green run 800 on head ${HEAD_SHA:0:7}]"
 
 fixture ghe-token-path
 ghe_fixture "${HEAD_SHA}"
@@ -989,7 +1019,7 @@ for ghe_c in neutral skipped; do
     ghe_checks "$(ghe_check 900 700 "${HEAD_SHA}" 15368 completed "${ghe_c}" 2026-10-04T22:33:11Z e2e)"
     ghe_gated
     ghe_none "a ${ghe_c} run is not green"
-    contains 'and says why' "${OUT}" "GITHUB E2E the newest e2e run on ${HEAD_SHA:0:7}, 800, is completed ${ghe_c}"
+    contains 'and says why' "${OUT}" "GITHUB E2E the newest e2e run, 800 on head ${HEAD_SHA:0:7}, is completed ${ghe_c}"
 done
 
 fixture ghe-in-progress
@@ -1007,7 +1037,7 @@ ghe_checks "$(ghe_check 901 701 "${HEAD_SHA}" 15368 completed failure 2026-10-04
 ghe_run 701 801 push .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}"
 ghe_gated
 ghe_none 'an older success under a newer failure is not green'
-contains 'and says why' "${OUT}" "GITHUB E2E the newest e2e run on ${HEAD_SHA:0:7}, 801, is completed failure"
+contains 'and says why' "${OUT}" "GITHUB E2E the newest e2e run, 801 on head ${HEAD_SHA:0:7}, is completed failure"
 
 fixture ghe-newer-pull-request
 ghe_fixture "${HEAD_SHA}"
