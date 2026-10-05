@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.1 sha256:ba23f1465d5a28a6e48b993b49c65a5f1477f679552235c82757267abaf94159
+# fleet-deploy-lib 2026-10-05.3 sha256:ba23f1465d5a28a6e48b993b49c65a5f1477f679552235c82757267abaf94159
 # shellcheck shell=bash
 # A gate names what root runs (GATE_LIB_SUITE, …) by a literal it writes once and only reads after:
 # any other write can aim root at a suite nobody reviewed. docs/DECISIONS.md
