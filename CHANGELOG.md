@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-05 — a hand deploy may count a GitHub Actions e2e run on the exact commit (deploy-lib VERSION 2026-10-05.1; the standard is unchanged and VERSION is not bumped)
+**`gated` asks GitHub for `e2e` when the ledger's row is absent or red** (card 352), and never for
+`ci`. Off unless root holds `/etc/fleet/github-e2e/<app>` (`R=`, `N=`, `W=`, `W_SHA256=`; root-owned,
+in a root-only directory; `<app>` is `ROOT`'s basename) and `/etc/fleet/github-e2e/token` (root 600,
+fine-grained, checks:read and actions:read). `gh api repos/<R>/commits/<sha>/check-runs` (one whole
+page, `filter=all`) and `repos/<R>/actions/runs?check_suite_id=` per candidate; a run counts only as
+the newest `N` check run by app 15368 on `<sha>` whose workflow run is `W` in `R`, head repository
+`R`, event `push` or `workflow_dispatch`, completed `success`, with `W`'s blob at `<sha>` hashing to
+`W_SHA256`. Every gh or jq failure, a partial page, or a suite with other than one workflow run is
+`unreadable`. New verdict items: `e2e github:green run <id>`, `e2e github: none for <sha7>`,
+`e2e github: unreadable`, `e2e github: off (no config)` / `(no token)`; a `GITHUB E2E <why>` line
+when a config or token is unsafe or a run is not green; GATED `ledger ci + github e2e <R> run <id>
+(<W>, <N>) on <sha7>` and a `GATED` line with the run's URL and completed_at. With the route off,
+a not-green `e2e` now reads `e2e absent, e2e github: off (no config)`; nothing else changes.
+`--gated-by-hand`, docs and non-UI scopes are unchanged. The token reaches gh only as `GH_TOKEN` in
+a child that never traces. Suite: 39 new cases on a fake gh serving JSON in the shape of a real
+run; red proofs, one saved mutant per guard line, in the lane of card 352. All seven headers are
+re-stamped for `2026-10-05.1`; apps adopt it on their next re-vendor. Why: `docs/DECISIONS.md`.
+
 ## 2026-10-04 — a gate's literal is guarded by one library function that sees every form (deploy-lib VERSION 2026-10-04.4; the standard is unchanged and VERSION is not bumped)
 **New `scripts/lib/deploy/literal.sh`: `gate_literal_once <file> <NAME> <value>`** is 0 and silent
 only when the gate writes `NAME` once, as `NAME=<value>` (bare, `'…'` or `"…"`) at column 0, and

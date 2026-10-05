@@ -1345,3 +1345,32 @@ runs: inside a block (`if false; then` on the line above), a here-doc or a multi
 carry: a preset in the environment never reaches the suite root runs.
 
 **Adoption rides each app's next re-vendor**; this change opens no app PR.
+
+## A hand deploy may count a GitHub Actions e2e run, on the exact commit and nothing looser (2026-10-05)
+
+**The gap (card 352).** `gated` read only the box ledger, so a deploy whose e2e ran green on GitHub
+for the very commit being deployed still needed `--gated-by-hand`, which records it as ungated.
+
+**e2e only.** `ci` stays ledger-only (T2: the gate runs in the production image's containers); the
+route is asked only when the ledger's `e2e` for `GATE_SHA` is absent or red, and never writes a row.
+
+**What makes a run the commit's.** A check run's name is chosen by whoever writes the workflow, so
+the name is matched together with the app (GitHub Actions, 15368), the sha, and the workflow run
+behind it: `W` in `R`, head repository `R`. A `pull_request` run is refused because it tests
+`refs/pull/N/merge`, not the head sha it is filed under. `W`'s blob at the sha must hash to the
+`W_SHA256` root pinned, so a branch that edits the workflow into a no-op is not green. The newest
+such run by `completed_at` decides (a run still in progress counts as newest), so a rerun's failure
+beats an older success; a newer `pull_request` run is not such a run, so it neither counts nor blocks.
+
+**Root's files, never the checkout's.** The config sits under `/etc/fleet`, root-owned in a
+root-only directory, and `<app>` is `ROOT`'s basename as for `app-env`. The token is read inside a
+child `bash` that turns tracing off and execs gh, so a caller's `set -x` never prints it (S2).
+
+**Fail closed.** gh's exit status is read before its output (gh prints a JSON body on a 404), jq
+reads with `-n input` so an empty answer is an error, a page that holds fewer runs than it counts
+and a check suite with other than one workflow run are errors, and every error is `unreadable`.
+
+**What it does not cover.** When the head and merge trees match, `GATE_SHA` is the head, and a
+`push` run on `main` is filed under the merge commit, so it does not count; such a deploy needs a
+`push` or `workflow_dispatch` run on the head itself. ghie-writes' PR #45 run 37240193529 is a
+`pull_request` run, and its `push` runs on `main` carried no `e2e` job on 2026-10-05.

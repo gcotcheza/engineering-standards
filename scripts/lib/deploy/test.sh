@@ -48,6 +48,8 @@ matches() {
 
 WORK="$(mktemp -d -p /srv/worker-scratch deploy-lib-test.XXXXXXXX)" || { printf 'cannot make a work directory under /srv/worker-scratch\n' >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
+GHE_WORKFLOW='name: ci'$'\n''on: [push, workflow_dispatch]'
+GHE_WSUM="$(printf '%s\n' "${GHE_WORKFLOW}" | sha256sum | cut -d' ' -f1)"
 DEVNULL_BEFORE="$(stat -c '%a %u %g %F' /dev/null)"
 
 git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
@@ -116,6 +118,16 @@ write_fakes() {
     cat >"${BIN}/gh" <<'SH'
 #!/bin/sh
 [ -n "${FAKE_GH_ARGV_LOG:-}" ] && printf '%s\n' "$*" >>"${FAKE_GH_ARGV_LOG}"
+# The GitHub e2e route: check runs and one workflow run per check suite, from saved JSON.
+if [ "$1" = api ]; then
+    [ "${GH_TOKEN:-}" = "$(cat "${FAKE_GHE_DIR}/token.expected" 2>/dev/null)" ] && echo token-matches >>"${FAKE_GHE_DIR}/token.seen"
+    for a; do case $a in check_suite_id=*) suite=${a#check_suite_id=} ;; esac; done
+    case " $* " in
+        *'/check-runs '*) cat "${FAKE_GHE_DIR}/checks.json"; exit "${FAKE_GHE_RC:-0}" ;;
+        *'/actions/runs '*) cat "${FAKE_GHE_DIR}/runs-${suite:-none}.json"; exit "${FAKE_GHE_RUNS_RC:-0}" ;;
+    esac
+    exit 1
+fi
 case " $* " in
     *' -R '*) : ;;
     *) echo 'gh: no repository resolved (use -R owner/repo)' >&2; exit 1 ;;
@@ -165,7 +177,9 @@ fixture_template() {
     mkdir -p "${ROOT}/app"
     git init -q -b main "${ROOT}"
     printf 'base\n' >"${ROOT}/app/base.txt"
-    git_at add app/base.txt
+    mkdir -p "${ROOT}/.github/workflows"
+    printf '%s\n' "${GHE_WORKFLOW}" >"${ROOT}/.github/workflows/ci.yml"
+    git_at add app/base.txt .github/workflows/ci.yml
     git_at commit -q -m base
 
     git_at checkout -q -b pr
@@ -253,6 +267,11 @@ run_lib() {
         FAKE_GH_JSON="${CASE}/gh.json" \
         FAKE_GH_FAIL="${GH_FAIL:-}" \
         FAKE_GH_ARGV_LOG="${ARGVFILE}" \
+        FAKE_GHE_DIR="${CASE}/ghe-fake" \
+        FAKE_GHE_RC="${GHE_RC-0}" \
+        FAKE_GHE_RUNS_RC="${GHE_RUNS_RC-0}" \
+        DEPLOY_GITHUB_E2E_DIR="${CASE}/ghe" \
+        ${GHE_TOKEN_PATH:+DEPLOY_GITHUB_E2E_TOKEN=${GHE_TOKEN_PATH}} \
         FAKE_HEAVY_STATUS="${HEAVY_STATUS:-free}" \
         FAKE_PR="${PR_NUMBER}" \
         FAKE_BY_HAND="${BY_HAND:-0}" \
@@ -305,6 +324,7 @@ run_lib() {
     unset WT_GIT_SEAM REAP_SEAM DOCKER_SEAM PROC_ROOT_SEAM ROOT_UID_SEAM
     unset REAP_DRY_OUT REAP_DRY_RC REAP_APPLY_OUT REAP_APPLY_RC
     unset DOCKER_IDS DOCKER_MOUNTS DOCKER_RC DOCKER_DIRTY
+    unset GHE_RC GHE_RUNS_RC GHE_TOKEN_PATH
 }
 
 # The one not-green refusal, written out once: it names the kind that is missing, what
@@ -569,7 +589,7 @@ contains 'and it says so in GATED' "${OUT}" "GATED_IS ledger head ${HEAD_SHA:0:7
 fixture trees-differ-ungated trees-differ
 run_lib 'resolve; gated'
 contains 'a green head does not gate a merge the ledger never saw' "${OUT}" \
-    "$(no_green ci "${MERGE_SHA}" 'ci absent, e2e absent')"
+    "$(no_green ci "${MERGE_SHA}" 'ci absent, e2e absent, e2e github: off (no config)')"
 
 fixture trees-differ-gated trees-differ
 printf '%s ci 2026-09-19T07:00:00Z 0 -\n%s e2e 2026-09-19T07:30:00Z 0 -\n' \
@@ -607,7 +627,7 @@ fixture head-absent
 : >"${LEDGER}"
 run_lib 'resolve; gated'
 contains 'a head absent from the ledger is refused' "${OUT}" \
-    "$(no_green ci "${HEAD_SHA}" 'ci absent, e2e absent')"
+    "$(no_green ci "${HEAD_SHA}" 'ci absent, e2e absent, e2e github: off (no config)')"
 
 fixture ledger-red
 printf '%s ci 2026-09-18T20:00:00Z 1 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' \
@@ -619,7 +639,7 @@ fixture ci-only
 printf '%s ci 2026-09-18T20:00:00Z 0 -\n' "${HEAD_SHA}" >"${LEDGER}"
 run_lib 'resolve; gated'
 contains 'ci without e2e is refused' "${OUT}" \
-    "$(no_green e2e "${HEAD_SHA}" 'ci green, e2e absent')"
+    "$(no_green e2e "${HEAD_SHA}" 'ci green, e2e absent, e2e github: off (no config)')"
 
 fixture dirty-sha
 printf '%s-dirty ci 2026-09-18T20:00:00Z 0 -\n%s-dirty e2e 2026-09-18T20:30:00Z 0 -\n' \
@@ -684,7 +704,7 @@ run_lib "set -e; resolve; PATH=${CASE}/shim:\$PATH; "'gated; printf "GATED_IS %s
 contains 'a row the reader cannot read is unreadable, never green' "${OUT}" \
     "GATE NOT GREEN head ${HEAD_SHA:0:7}: ci unreadable, e2e unreadable"
 contains 'and the line after gated still runs' "${OUT}" \
-    "GATED_IS by hand over [NOT GREEN head ${HEAD_SHA:0:7}: ci unreadable, e2e unreadable]"
+    "GATED_IS by hand over [NOT GREEN head ${HEAD_SHA:0:7}: ci unreadable, e2e unreadable, e2e github: off (no config)]"
 
 # The refusal has to be followable by every caller: a commit already in main cannot be
 # gated where it stands by a gate that scans origin/main..HEAD.
@@ -692,7 +712,7 @@ fixture refusal-names-the-routes
 : >"${LEDGER}"
 run_lib 'resolve; gated'
 contains 'the refusal names the kind that is missing and what both rows say' "${OUT}" \
-    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7} (ci absent, e2e absent):"
+    "REFUSED: the ledger holds no green ci for ${HEAD_SHA:0:7} (ci absent, e2e absent, e2e github: off (no config)):"
 contains 'and gating the commit before the merge' "${OUT}" 'a commit is gated before it is merged'
 contains 'and the gate-documented route for a commit already in main' "${OUT}" \
     'once it is in main only a route the gate documents for that (a base override, where it has one) can gate it'
@@ -733,7 +753,332 @@ run_lib "$(armed "GATE_LEDGER=${LEDGER} gate_ledger_record e2e 0 - >&3 2>&3; HEA
 contains 'the killed run is recorded as a failure' "${OUT}" \
     'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
 contains 'and the head it was green on before is no longer gated' "${OUT}" \
-    "$(no_green e2e "${LIVE_SHA}" 'ci green, e2e red')"
+    "$(no_green e2e "${LIVE_SHA}" 'ci green, e2e red, e2e github: off (no config)')"
+
+# --- 3a. GitHub e2e: root's config and token, and a fake gh serving saved check-run and run JSON ---
+# The shapes are ghie-writes run 37240193529's (read-only gh api, 2026-10-05), trimmed to what is read.
+GHE_REPO=gcotcheza/fixture
+ghe_check() { # id suite sha app-id status conclusion|null completed_at|null name
+    local concl=null at=null
+    [ "$6" = null ] || concl="\"$6\""
+    [ "$7" = null ] || at="\"$7\""
+    printf '{"id":%s,"name":"%s","head_sha":"%s","status":"%s","conclusion":%s,"started_at":"2026-10-04T22:29:18Z","completed_at":%s,"html_url":"https://github.com/%s/actions/runs/1/job/%s","app":{"id":%s,"slug":"github-actions","name":"GitHub Actions"},"check_suite":{"id":%s}}' \
+        "$1" "$8" "$3" "$5" "${concl}" "${at}" "${GHE_REPO}" "$1" "$4" "$2"
+}
+ghe_checks() { # check run objects; GHE_TOTAL overrides the count the page claims
+    local IFS=,
+    printf '{"total_count":%s,"check_runs":[%s]}\n' "${GHE_TOTAL:-$#}" "$*" >"${CASE}/ghe-fake/checks.json"
+    GHE_TOTAL=''
+}
+ghe_run_json() { # run event path repo head-repo suite
+    printf '{"id":%s,"name":"ci","event":"%s","status":"completed","conclusion":"success","head_sha":"%s","path":"%s","check_suite_id":%s,"html_url":"https://github.com/%s/actions/runs/%s","repository":{"full_name":"%s"},"head_repository":{"full_name":"%s"}}' \
+        "$1" "$2" "${HEAD_SHA}" "$3" "$6" "$4" "$1" "$4" "$5"
+}
+ghe_run() { # suite run event path repo head-repo [check_suite_id in the body]
+    printf '{"total_count":1,"workflow_runs":[%s]}\n' "$(ghe_run_json "$2" "$3" "$4" "$5" "$6" "${7:-$1}")" >"${CASE}/ghe-fake/runs-$1.json"
+}
+# Root's config and token for the fixture's app (ROOT's basename, "root"), owned by the seam's root
+# uid, the ledger's ci green on $1 and e2e absent, and one green push run of the pinned workflow.
+ghe_fixture() {
+    mkdir -p "${CASE}/ghe" "${CASE}/ghe-fake"
+    printf '%s ci 2026-10-04T20:00:00Z 0 -\n' "$1" >"${LEDGER}"
+    GHE_TOKEN="ghp_$(tr -dc A-Za-z0-9 </dev/urandom | head -c36)"
+    printf '%s\n' "${GHE_TOKEN}" >"${CASE}/ghe/token"
+    printf '%s\n' "${GHE_TOKEN}" >"${CASE}/ghe-fake/token.expected"
+    printf 'R=%s\nN=e2e\nW=.github/workflows/ci.yml\nW_SHA256=%s\n' "${GHE_REPO}" "${GHE_WSUM}" >"${CASE}/ghe/root"
+    chown 61234 "${CASE}/ghe" "${CASE}/ghe/root" "${CASE}/ghe/token"
+    chmod 0755 "${CASE}/ghe"
+    chmod 0644 "${CASE}/ghe/root"
+    chmod 0600 "${CASE}/ghe/token"
+    ghe_checks "$(ghe_check 900 700 "$1" 15368 completed success 2026-10-04T22:33:11Z e2e)"
+    ghe_run 700 800 push .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}"
+}
+ghe_gated() { run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'; }
+ghe_refused() { # test name, the e2e github item gated must print
+    contains "$1" "${OUT}" "$(no_green e2e "${HEAD_SHA}" "ci green, e2e absent, $2")"
+    absent 'and nothing is gated on GitHub' "${OUT}" 'GATED_IS ledger ci + github'
+}
+ghe_none() { ghe_refused "$1" "e2e github: none for ${HEAD_SHA:0:7}"; }
+ghe_api_calls() { grep -c '^api ' "${ARGVFILE}" 2>/dev/null; }
+
+fixture ghe-green
+ghe_fixture "${HEAD_SHA}"
+ghe_gated
+contains 'a green push run of the pinned workflow on the gated sha turns e2e green' "${OUT}" \
+    "GATED ${HEAD_SHA:0:7} ci green in ${LEDGER}, e2e github:green run 800: https://github.com/${GHE_REPO}/actions/runs/800 completed 2026-10-04T22:33:11Z"
+contains 'and GATED names the source, the run, the workflow, the check and the sha' "${OUT}" \
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on ${HEAD_SHA:0:7}"
+absent 'and nothing is refused' "${OUT}" 'REFUSED'
+contains 'the check runs are asked for by sha and check name, every page entry' "$(cat "${ARGVFILE}")" \
+    "api -X GET repos/${GHE_REPO}/commits/${HEAD_SHA}/check-runs -f check_name=e2e -f filter=all -f per_page=100"
+contains 'and the workflow run by its check suite' "$(cat "${ARGVFILE}")" \
+    "api -X GET repos/${GHE_REPO}/actions/runs -f check_suite_id=700"
+equals 'gh got root'"'"'s token through GH_TOKEN on both calls' "$(grep -c token-matches "${CASE}/ghe-fake/token.seen" 2>/dev/null)" 2
+absent 'and the token is in no output (S2)' "${OUT}" "${GHE_TOKEN}"
+absent 'nor in the deploy log' "$(cat "${LOGFILE}")" "${GHE_TOKEN}"
+absent 'nor on any gh argv' "$(cat "${ARGVFILE}")" "${GHE_TOKEN}"
+equals 'and the route never writes the box ledger' "$(rows "${LEDGER}")" 1
+
+fixture ghe-ledger-red
+ghe_fixture "${HEAD_SHA}"
+printf '%s e2e 2026-10-04T21:00:00Z 1 -\n' "${HEAD_SHA}" >>"${LEDGER}"
+ghe_gated
+contains 'a red e2e row is also answered by a green run on GitHub' "${OUT}" \
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on ${HEAD_SHA:0:7}"
+
+fixture ghe-ledger-green
+ghe_fixture "${HEAD_SHA}"
+printf '%s e2e 2026-10-04T21:00:00Z 0 -\n' "${HEAD_SHA}" >>"${LEDGER}"
+ghe_gated
+contains 'a green e2e row never asks GitHub' "${OUT}" "GATED_IS ledger head ${HEAD_SHA:0:7}"
+equals 'and gh api is not called' "$(ghe_api_calls)" 0
+
+fixture ghe-ci-never
+ghe_fixture "${HEAD_SHA}"
+printf '%s e2e 2026-10-04T21:00:00Z 0 -\n' "${HEAD_SHA}" >"${LEDGER}"
+ghe_gated
+contains 'ci never comes from GitHub, even with a green run there' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" 'ci absent, e2e green')"
+equals 'and gh api is not called for it' "$(ghe_api_calls)" 0
+
+fixture ghe-merge trees-differ
+ghe_fixture "${MERGE_SHA}"
+ghe_gated
+contains 'when the trees differ the merge is asked for, the sha gated reads' "$(cat "${ARGVFILE}")" \
+    "repos/${GHE_REPO}/commits/${MERGE_SHA}/check-runs"
+contains 'and GATED names the merge' "${OUT}" \
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on ${MERGE_SHA:0:7}"
+
+fixture ghe-by-hand
+ghe_fixture "${HEAD_SHA}"
+BY_HAND=1
+ghe_gated
+contains '--gated-by-hand over a GitHub green still records by hand' "${OUT}" \
+    "GATED_IS by hand over [GREEN head ${HEAD_SHA:0:7}: ci green, e2e absent, e2e github:green run 800]"
+
+fixture ghe-token-path
+ghe_fixture "${HEAD_SHA}"
+mkdir -p "${CASE}/elsewhere"
+mv "${CASE}/ghe/token" "${CASE}/elsewhere/token"
+GHE_TOKEN_PATH="${CASE}/elsewhere/token"
+ghe_gated
+contains 'DEPLOY_GITHUB_E2E_TOKEN moves the token file' "${OUT}" 'GATED_IS ledger ci + github e2e'
+
+fixture ghe-no-config
+ghe_fixture "${HEAD_SHA}"
+rm -f "${CASE}/ghe/root"
+ghe_gated
+ghe_refused 'no config for the app is the route off' 'e2e github: off (no config)'
+absent 'and says nothing more' "${OUT}" 'GITHUB E2E'
+equals 'and gh api is not called' "$(ghe_api_calls)" 0
+
+fixture ghe-no-token
+ghe_fixture "${HEAD_SHA}"
+rm -f "${CASE}/ghe/token"
+ghe_gated
+ghe_refused 'no token is the route off: ledger only, never green' 'e2e github: off (no token)'
+absent 'and says nothing more' "${OUT}" 'GITHUB E2E'
+equals 'and gh api is not called' "$(ghe_api_calls)" 0
+
+fixture ghe-token-mode
+ghe_fixture "${HEAD_SHA}"
+chmod 0644 "${CASE}/ghe/token"
+ghe_gated
+ghe_refused 'a token others can read is the route off' 'e2e github: off (no token)'
+contains 'and says why' "${OUT}" "GITHUB E2E ${CASE}/ghe/token is not a non-empty root 600 file"
+
+fixture ghe-config-owner
+ghe_fixture "${HEAD_SHA}"
+chown 0 "${CASE}/ghe/root"
+ghe_gated
+ghe_refused 'a config root does not own is the route off' 'e2e github: off (no config)'
+contains 'and says why' "${OUT}" "GITHUB E2E ${CASE}/ghe/root is not a root-owned file in a directory only root can write"
+
+fixture ghe-config-dir
+ghe_fixture "${HEAD_SHA}"
+chmod 0777 "${CASE}/ghe"
+ghe_gated
+ghe_refused 'a config in a directory others can write is the route off' 'e2e github: off (no config)'
+
+fixture ghe-config-line
+ghe_fixture "${HEAD_SHA}"
+printf 'X=1\n' >>"${CASE}/ghe/root"
+ghe_gated
+ghe_refused 'a config line that is not R, N, W or W_SHA256 is the route off' 'e2e github: off (no config)'
+contains 'and says why' "${OUT}" "GITHUB E2E ${CASE}/ghe/root has a line that is not R=, N=, W= or W_SHA256="
+
+fixture ghe-config-value
+ghe_fixture "${HEAD_SHA}"
+sed -i 's/^W_SHA256=.*/W_SHA256=abc/' "${CASE}/ghe/root"
+ghe_gated
+ghe_refused 'a W_SHA256 that is not 64 hex is the route off' 'e2e github: off (no config)'
+contains 'and says why' "${OUT}" "GITHUB E2E ${CASE}/ghe/root does not name R=<owner/repo>"
+
+fixture ghe-no-workflow
+ghe_fixture "${HEAD_SHA}"
+sed -i 's|^W=.*|W=.github/workflows/missing.yml|' "${CASE}/ghe/root"
+ghe_gated
+ghe_none 'a workflow the gated sha does not carry is not green'
+contains 'and says why' "${OUT}" "GITHUB E2E ${HEAD_SHA:0:7} has no .github/workflows/missing.yml"
+
+fixture ghe-workflow-edited
+ghe_fixture "${HEAD_SHA}"
+sed -i "s/^W_SHA256=.*/W_SHA256=$(printf 'edited\n' | sha256sum | cut -d' ' -f1)/" "${CASE}/ghe/root"
+ghe_gated
+ghe_none 'a workflow whose content at the sha is not the pinned one is not green'
+contains 'and says why' "${OUT}" "is not the workflow root pinned in W_SHA256"
+equals 'and gh api is not called' "$(ghe_api_calls)" 0
+
+fixture ghe-other-sha
+ghe_fixture "${HEAD_SHA}"
+ghe_checks "$(ghe_check 900 700 "${LIVE_SHA}" 15368 completed success 2026-10-04T22:33:11Z e2e)"
+ghe_gated
+ghe_none 'a green check run on another sha is not green'
+
+fixture ghe-other-app
+ghe_fixture "${HEAD_SHA}"
+ghe_checks "$(ghe_check 900 700 "${HEAD_SHA}" 99999 completed success 2026-10-04T22:33:11Z e2e)"
+ghe_gated
+ghe_none 'a check run of the same name from another app is not green'
+
+fixture ghe-other-name
+ghe_fixture "${HEAD_SHA}"
+ghe_checks "$(ghe_check 900 700 "${HEAD_SHA}" 15368 completed success 2026-10-04T22:33:11Z lint)"
+ghe_gated
+ghe_none 'a check run of another name is not green'
+
+fixture ghe-other-workflow
+ghe_fixture "${HEAD_SHA}"
+ghe_run 700 800 push .github/workflows/other.yml "${GHE_REPO}" "${GHE_REPO}"
+ghe_gated
+ghe_none 'a run of the same check name from another workflow is not green'
+
+fixture ghe-fork
+ghe_fixture "${HEAD_SHA}"
+ghe_run 700 800 push .github/workflows/ci.yml "${GHE_REPO}" someone/fixture
+ghe_gated
+ghe_none 'a run whose head repository is a fork is not green'
+
+fixture ghe-other-repo
+ghe_fixture "${HEAD_SHA}"
+ghe_run 700 800 push .github/workflows/ci.yml someone/fixture "${GHE_REPO}"
+ghe_gated
+ghe_none 'a run of another repository is not green'
+
+fixture ghe-pull-request
+ghe_fixture "${HEAD_SHA}"
+ghe_run 700 800 pull_request .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}"
+ghe_gated
+ghe_none 'a green pull_request run is not green: it tested the merge ref, not the sha'
+
+fixture ghe-dispatch
+ghe_fixture "${HEAD_SHA}"
+ghe_run 700 800 workflow_dispatch .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}"
+ghe_gated
+contains 'a green workflow_dispatch run on the sha is green' "${OUT}" 'GATED_IS ledger ci + github e2e'
+
+fixture ghe-suite-mismatch
+ghe_fixture "${HEAD_SHA}"
+ghe_run 700 800 push .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}" 999
+ghe_gated
+ghe_none 'a workflow run of another check suite is not green'
+
+for ghe_c in neutral skipped; do
+    fixture "ghe-${ghe_c}"
+    ghe_fixture "${HEAD_SHA}"
+    ghe_checks "$(ghe_check 900 700 "${HEAD_SHA}" 15368 completed "${ghe_c}" 2026-10-04T22:33:11Z e2e)"
+    ghe_gated
+    ghe_none "a ${ghe_c} run is not green"
+    contains 'and says why' "${OUT}" "GITHUB E2E the newest e2e run on ${HEAD_SHA:0:7}, 800, is completed ${ghe_c}"
+done
+
+fixture ghe-in-progress
+ghe_fixture "${HEAD_SHA}"
+ghe_checks "$(ghe_check 901 701 "${HEAD_SHA}" 15368 in_progress null null e2e)" \
+    "$(ghe_check 900 700 "${HEAD_SHA}" 15368 completed success 2026-10-04T22:33:11Z e2e)"
+ghe_run 701 801 push .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}"
+ghe_gated
+ghe_none 'a run still in progress is newer than any finished one, and not green'
+
+fixture ghe-newest-wins
+ghe_fixture "${HEAD_SHA}"
+ghe_checks "$(ghe_check 901 701 "${HEAD_SHA}" 15368 completed failure 2026-10-04T23:10:00Z e2e)" \
+    "$(ghe_check 900 700 "${HEAD_SHA}" 15368 completed success 2026-10-04T22:33:11Z e2e)"
+ghe_run 701 801 push .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}"
+ghe_gated
+ghe_none 'an older success under a newer failure is not green'
+contains 'and says why' "${OUT}" "GITHUB E2E the newest e2e run on ${HEAD_SHA:0:7}, 801, is completed failure"
+
+fixture ghe-newer-pull-request
+ghe_fixture "${HEAD_SHA}"
+ghe_checks "$(ghe_check 901 701 "${HEAD_SHA}" 15368 completed failure 2026-10-04T23:10:00Z e2e)" \
+    "$(ghe_check 900 700 "${HEAD_SHA}" 15368 completed success 2026-10-04T22:33:11Z e2e)"
+ghe_run 701 801 pull_request .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}"
+ghe_gated
+contains 'a newer pull_request run is not the sha'"'"'s run, so the push run decides' "${OUT}" \
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800"
+
+fixture ghe-none
+ghe_fixture "${HEAD_SHA}"
+ghe_checks
+ghe_gated
+ghe_none 'no check run at all is not green'
+absent 'and says nothing more' "${OUT}" 'GITHUB E2E'
+
+fixture ghe-blank-token
+ghe_fixture "${HEAD_SHA}"
+printf '\n' >"${CASE}/ghe/token"
+ghe_gated
+ghe_refused 'a token file holding only a newline never reaches gh, which would fall back to its own login' 'e2e github: unreadable'
+equals 'and gh api is not called' "$(ghe_api_calls)" 0
+
+fixture ghe-gh-fails
+ghe_fixture "${HEAD_SHA}"
+GHE_RC=1
+ghe_gated
+ghe_refused 'gh exiting 1 is unreadable even when it printed a green page' 'e2e github: unreadable'
+contains 'and says why' "${OUT}" "GITHUB E2E gh or jq failed on the check runs of ${HEAD_SHA:0:7}, so it counts as not green"
+
+fixture ghe-run-gh-fails
+ghe_fixture "${HEAD_SHA}"
+GHE_RUNS_RC=1
+ghe_gated
+ghe_refused 'gh exiting 1 on the workflow run is unreadable' 'e2e github: unreadable'
+contains 'and says why' "${OUT}" 'GITHUB E2E gh or jq failed on the workflow run of check run 900'
+
+fixture ghe-bad-json
+ghe_fixture "${HEAD_SHA}"
+printf 'rate limited\n' >"${CASE}/ghe-fake/checks.json"
+ghe_gated
+ghe_refused 'a page that is not JSON is unreadable' 'e2e github: unreadable'
+
+fixture ghe-empty-body
+ghe_fixture "${HEAD_SHA}"
+: >"${CASE}/ghe-fake/checks.json"
+ghe_gated
+ghe_refused 'an empty answer is unreadable, not none' 'e2e github: unreadable'
+
+fixture ghe-run-bad-json
+ghe_fixture "${HEAD_SHA}"
+printf '{"workflow_runs":' >"${CASE}/ghe-fake/runs-700.json"
+ghe_gated
+ghe_refused 'a workflow run that is not JSON is unreadable' 'e2e github: unreadable'
+
+fixture ghe-partial-page
+ghe_fixture "${HEAD_SHA}"
+GHE_TOTAL=2
+ghe_checks "$(ghe_check 900 700 "${HEAD_SHA}" 15368 completed success 2026-10-04T22:33:11Z e2e)"
+ghe_gated
+ghe_refused 'a page that holds fewer check runs than it counts is unreadable' 'e2e github: unreadable'
+
+fixture ghe-two-runs
+ghe_fixture "${HEAD_SHA}"
+printf '{"total_count":2,"workflow_runs":[%s,%s]}\n' \
+    "$(ghe_run_json 800 push .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}" 700)" \
+    "$(ghe_run_json 802 push .github/workflows/ci.yml "${GHE_REPO}" "${GHE_REPO}" 702)" \
+    >"${CASE}/ghe-fake/runs-700.json"
+ghe_gated
+ghe_refused 'a check suite answered by two workflow runs is unreadable' 'e2e github: unreadable'
 
 # --- 3b. test scope: docs-only owes no row, non-UI owes ci, anything else ci and e2e ------
 # One template: bare (no declaration), live (declaration), and one branch per class off it.
@@ -839,7 +1184,7 @@ contains 'a vendored lib under a declared scripts/ is non-UI' "${OUT}" "e2e not 
 scope_fixture scope-ui-ci-only live ui
 scope_rows ci
 scope_gated
-contains 'a UI diff without e2e is refused' "${OUT}" "$(no_green e2e "${SCOPE_SHA}" 'ci green, e2e absent')"
+contains 'a UI diff without e2e is refused' "${OUT}" "$(no_green e2e "${SCOPE_SHA}" 'ci green, e2e absent, e2e github: off (no config)')"
 contains 'and the scope line names the UI path' "${OUT}" "SCOPE ui: UI path: resources/css/x.css ${RULE}"
 
 scope_fixture scope-ui-both live ui
@@ -851,7 +1196,7 @@ contains 'and DONE records the ledger as before' "${OUT}" "GATED_IS ledger head 
 scope_fixture scope-no-declaration bare nodecl
 scope_rows ci
 scope_gated
-contains 'with no declaration a scripts-only diff owes e2e' "${OUT}" "$(no_green e2e "${SCOPE_SHA}" 'ci green, e2e absent')"
+contains 'with no declaration a scripts-only diff owes e2e' "${OUT}" "$(no_green e2e "${SCOPE_SHA}" 'ci green, e2e absent, e2e github: off (no config)')"
 contains 'and the scope line says there was no declaration' "${OUT}" \
     "SCOPE ui: ${SCOPE_SHA:0:7} declares no .fleet/test-scope, so every path is UI ${RULE}"
 

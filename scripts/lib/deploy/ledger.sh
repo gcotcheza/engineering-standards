@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-04.4 sha256:7571425b712fb0ec4dd782506b7e95b68c5b1de841830da502b4b3f89c10dad7
+# fleet-deploy-lib 2026-10-05.1 sha256:41cc79e41a034b2ee27e6f90aa1ae106ac00c5a5031be846d639113ca401e5e2
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -174,8 +174,101 @@ test_scope_of() {
     fi
 }
 
+# GitHub Actions may stand in for a missing or red e2e row, never for ci, on root's config and
+# root's read-only token (docs/DECISIONS.md, card 352). Each jq select is one deletable guard.
+GITHUB_E2E_ACTIONS_APP=15368
+GITHUB_E2E_RE_R='^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$'
+GITHUB_E2E_RE_N='^[A-Za-z0-9 ._/()-]+$'
+GITHUB_E2E_RE_W='^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$'
+# shellcheck disable=SC2016
+GITHUB_E2E_CHECKS_JQ='input
+| if .total_count != (.check_runs | length) then error("not one whole page") else . end
+| .check_runs
+| sort_by(.completed_at // "9999")
+| .[]
+| select(.name == $n)
+| select(.head_sha == $sha)
+| select(.app.id == ($app | tonumber))
+| "\(.id) \(.check_suite.id) \(.status) \(.conclusion) \(.completed_at)"'
+# shellcheck disable=SC2016
+GITHUB_E2E_RUN_JQ='input
+| if (.workflow_runs | length) != 1 then error("not one workflow run") else . end
+| .workflow_runs[0]
+| select((.check_suite_id | tostring) == $suite)
+| select(.path == $w)
+| select(.repository.full_name == $r and .head_repository.full_name == $r)
+| select(.event == "push" or .event == "workflow_dispatch")
+| "\(.id) \(.html_url)"'
+
+github_e2e_root_file() { [ ! -L "$1" ] && [ "$(stat -c %u "$1" 2>/dev/null)" = "${DEPLOY_ROOT_UID:-0}" ] && (( (8#$(stat -c %a "$1" 2>/dev/null || echo 777) & $2) == 0 )); }
+
+# github_e2e_api <token file> <jq program> <suite> <api path> [-f k=v]…: the program's lines, or 1.
+github_e2e_api() {
+    local tok=$1 prog=$2 suite=$3 json rc=0
+    shift 3
+    # The token reaches gh only through the environment of a child that never traces (S2).
+    # shellcheck disable=SC2086,SC2016
+    json=$(bash -c 'set +x; GH_TOKEN=$(head -c 4096 -- "$1") || exit 1; [ -n "$GH_TOKEN" ] || exit 1; export GH_TOKEN; shift; exec "$@"' \
+        _ "$tok" timeout 30 $GH api -X GET "$@" </dev/null) || rc=$?
+    [ "$rc" = 0 ] || return 1
+    jq -n -r --arg sha "$GITHUB_E2E_SHA" --arg n "$GITHUB_E2E_N" --arg app "$GITHUB_E2E_ACTIONS_APP" \
+        --arg suite "$suite" --arg w "$GITHUB_E2E_W" --arg r "$GITHUB_E2E_R" "$prog" <<<"$json"
+}
+
+github_e2e_unreadable() { GH_E2E='e2e github: unreadable'; GH_E2E_WHY="gh or jq failed on $1, so it counts as not green"; }
+
+# github_e2e <kind> <ledger verdict> <sha>: 0 only for a green Actions run on sha. GH_E2E is the
+# verdict item, empty when the route was not consulted; GH_E2E_WHY says why it is off or not green.
+github_e2e() {
+    local dir=${DEPLOY_GITHUB_E2E_DIR:-/etc/fleet/github-e2e} cfg='' tok='' line='' blob='' sum='' lines='' rc=0
+    local id='' suite='' status='' conclusion='' at='' run='' url='' newest_state='' newest_at=''
+    local GITHUB_E2E_R='' GITHUB_E2E_N='' GITHUB_E2E_W='' GITHUB_E2E_WSUM='' GITHUB_E2E_SHA=$3
+    GH_E2E='' GH_E2E_WHY='' GH_E2E_RUN='' GH_E2E_URL='' GH_E2E_AT='' GH_E2E_SRC=''
+    [ "$1" = e2e ] || return 1
+    [ "$2" != green ] || return 1
+    cfg="$dir/$(basename -- "${ROOT:-}")"
+    tok=${DEPLOY_GITHUB_E2E_TOKEN:-$dir/token}
+    GH_E2E='e2e github: off (no config)'
+    [ -e "$cfg" ] || [ -L "$cfg" ] || return 1
+    { [ -f "$cfg" ] && github_e2e_root_file "$cfg" 8#022 && github_e2e_root_file "$dir" 8#022; } || { GH_E2E_WHY="$cfg is not a root-owned file in a directory only root can write"; return 1; }
+    while IFS= read -r line || [ -n "$line" ]; do
+        case $line in
+            ''|'#'*) ;;
+            R=*) GITHUB_E2E_R=${line#R=} ;;
+            N=*) GITHUB_E2E_N=${line#N=} ;;
+            W=*) GITHUB_E2E_W=${line#W=} ;;
+            W_SHA256=*) GITHUB_E2E_WSUM=${line#W_SHA256=} ;;
+            *) GH_E2E_WHY="$cfg has a line that is not R=, N=, W= or W_SHA256="; return 1 ;;
+        esac
+    done <"$cfg"
+    [[ $GITHUB_E2E_R =~ $GITHUB_E2E_RE_R && $GITHUB_E2E_N =~ $GITHUB_E2E_RE_N && $GITHUB_E2E_W =~ $GITHUB_E2E_RE_W && $GITHUB_E2E_WSUM =~ ^[0-9a-f]{64}$ ]] || { GH_E2E_WHY="$cfg does not name R=<owner/repo>, N=<check name>, W=<workflow path> and W_SHA256=<64 hex>"; return 1; }
+    GH_E2E='e2e github: off (no token)'
+    { [ -f "$tok" ] && [ -s "$tok" ] && github_e2e_root_file "$tok" 8#077; } || { [ ! -e "$tok" ] || GH_E2E_WHY="$tok is not a non-empty root 600 file"; return 1; }
+    GH_E2E="e2e github: none for ${GITHUB_E2E_SHA:0:7}"
+    blob=$($GIT rev-parse --verify -q "$GITHUB_E2E_SHA:$GITHUB_E2E_W" 2>/dev/null) || { GH_E2E_WHY="${GITHUB_E2E_SHA:0:7} has no $GITHUB_E2E_W"; return 1; }
+    sum=$($GIT cat-file blob "$blob" 2>/dev/null | sha256sum)
+    [ "${sum%% *}" = "$GITHUB_E2E_WSUM" ] || { GH_E2E_WHY="$GITHUB_E2E_W at ${GITHUB_E2E_SHA:0:7} is not the workflow root pinned in W_SHA256"; return 1; }
+    lines=$(github_e2e_api "$tok" "$GITHUB_E2E_CHECKS_JQ" '' "repos/$GITHUB_E2E_R/commits/$GITHUB_E2E_SHA/check-runs" -f check_name="$GITHUB_E2E_N" -f filter=all -f per_page=100) || rc=$?
+    [ "$rc" = 0 ] || { github_e2e_unreadable "the check runs of ${GITHUB_E2E_SHA:0:7}"; return 1; }
+    # Oldest first, so the newest check run whose workflow run is root's workflow decides.
+    while read -r id suite status conclusion at; do
+        [ -n "$id" ] || continue
+        line=$(github_e2e_api "$tok" "$GITHUB_E2E_RUN_JQ" "$suite" "repos/$GITHUB_E2E_R/actions/runs" -f check_suite_id="$suite") || rc=$?
+        [ "$rc" = 0 ] || { github_e2e_unreadable "the workflow run of check run $id"; return 1; }
+        [ -n "$line" ] || continue
+        read -r run url <<<"$line"
+        newest_state="$status $conclusion"
+        newest_at=$at
+    done <<<"$lines"
+    [ -n "$run" ] || return 1
+    [ "$newest_state" = 'completed success' ] || { GH_E2E_WHY="the newest $GITHUB_E2E_N run on ${GITHUB_E2E_SHA:0:7}, $run, is $newest_state"; return 1; }
+    GH_E2E_RUN=$run GH_E2E_URL=$url GH_E2E_AT=$newest_at
+    GH_E2E="e2e github:green run $run"
+    GH_E2E_SRC="github e2e $GITHUB_E2E_R run $run ($GITHUB_E2E_W, $GITHUB_E2E_N)"
+}
+
 gated() {
-    local kind sha what v owed kinds='' notgreen='' verdict='' refusal=''
+    local kind sha what v owed kinds='' notgreen='' verdict='' refusal='' gh_e2e=''
     # Unset is a caller without the matching resolve.sh; set but empty is a resolve that
     # was skipped or did not finish, and that one is refused rather than read as the head.
     sha=${GATE_SHA-$HEAD_SHA}
@@ -206,6 +299,9 @@ gated() {
                      END { printf "%s", (!seen ? "absent" : (rc == "0" ? "green" : "red")) }' "$LEDGER") \
                     || v=unreadable
                 kinds="${kinds:+$kinds, }$kind $v"
+                if github_e2e "$kind" "$v" "$sha"; then v=green; gh_e2e=$GH_E2E_RUN; fi
+                kinds="$kinds${GH_E2E:+, $GH_E2E}"
+                [ -z "$GH_E2E_WHY" ] || say "GITHUB E2E $GH_E2E_WHY"
                 [ "$v" = green ] || notgreen=${notgreen:-$kind}
             done
             verdict="$what ${sha:0:7}: $kinds"
@@ -235,9 +331,15 @@ gated() {
             say "GATED ${sha:0:7} ci green in $LEDGER; e2e not required: $SCOPE_WHY per $TEST_SCOPE_RULE"
             ;;
         *)
-            # shellcheck disable=SC2034  # the project's finish() prints it
-            GATED="ledger $what ${sha:0:7}"
-            say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
+            if [ -n "$gh_e2e" ]; then
+                # shellcheck disable=SC2034  # the project's finish() prints it
+                GATED="ledger ci + $GH_E2E_SRC on ${sha:0:7}"
+                say "GATED ${sha:0:7} ci green in $LEDGER, e2e github:green run $gh_e2e: $GH_E2E_URL completed $GH_E2E_AT"
+            else
+                # shellcheck disable=SC2034  # the project's finish() prints it
+                GATED="ledger $what ${sha:0:7}"
+                say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
+            fi
             ;;
     esac
     if [ "$BY_HAND" -eq 1 ]; then

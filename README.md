@@ -106,6 +106,21 @@ and a genuine re-run's green overrides an earlier red. `--gated-by-hand` never r
 rescue path — but it reads the same rows first, prints the verdict it is overriding (`green`,
 `red` or `absent` per kind) and the deploy records `by hand over [<verdict>]`.
 
+**An e2e run on GitHub.** When the ledger's `e2e` for the gated commit is absent or red, `gated` may
+take it from GitHub Actions instead; `ci` comes from the ledger alone. The route is off unless root
+holds two files. `/etc/fleet/github-e2e/<app>` (`<app>` is `ROOT`'s directory name, as for
+`/etc/fleet/app-env`) is root-owned, in a directory only root can write, with four lines:
+`R=<owner/repo>`, `N=<check-run name>`, `W=<workflow path>` and `W_SHA256=<sha256 of that workflow
+file>`. `/etc/fleet/github-e2e/token` is root 600: a fine-grained read-only token, checks:read and
+actions:read on the repositories named. A run counts only when it is the newest `N` check run by
+GitHub Actions (app 15368) on the gated sha whose workflow run is `W` in `R` itself, from `push` or
+`workflow_dispatch` (never `pull_request`, which tests a merge ref, and never a fork), and it
+finished `success`, and `W` at that sha hashes to `W_SHA256`. Any gh or jq failure is
+`unreadable`, which is not green. The verdict adds `e2e github:green run <id>`, `e2e github: none
+for <sha7>`, `e2e github: unreadable` or `e2e github: off (no config|no token)`; GATED reads
+`ledger ci + github e2e <R> run <id> (<W>, <N>) on <sha7>`. Nothing is written to the ledger.
+`DEPLOY_GITHUB_E2E_DIR` and `DEPLOY_GITHUB_E2E_TOKEN` move both files, for tests.
+
 **Test scope.** `gated` classifies what the deploy changes (the checkout's HEAD against the gated
 commit) by the project's `.fleet/test-scope` in that commit. A project declares it one entry per
 line, `#` starting a comment:
