@@ -765,6 +765,13 @@ TREE_ONE=1111111111111111111111111111111111111111
 TREE_TWO=2222222222222222222222222222222222222222
 tree_fixture() { fixture "$1"; HEAD_TREE="$(git_at rev-parse "${HEAD_SHA}^{tree}")"; }
 tree_gated() { run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'; }
+# tree_shim <mode>: git, but status prints nothing and then a change (late) or fails (fail), or ^{tree} fails (treefail).
+tree_shim() {
+    mkdir -p "${CASE}/shim"
+    printf '#!/bin/sh\ncase " $* " in *"^{tree}"*) [ "%s" = treefail ] && exit 128 ;; *" status "*)\n  n=$(cat "%s" 2>/dev/null || echo 0); echo $((n + 1)) >"%s"\n  [ "%s" = fail ] && exit 128\n  [ "%s" = late ] && [ "$n" -ge 1 ] && echo " M app/base.txt"; exit 0 ;;\nesac\nexec /usr/bin/git "$@"\n' \
+        "$1" "${CASE}/status-calls" "${CASE}/status-calls" "$1" "$1" >"${CASE}/shim/git"
+    chmod 0755 "${CASE}/shim/git"
+}
 
 tree_fixture tree-match
 tree_rows "${MERGE_SHA}" ci 0 "${HEAD_TREE}" "${MERGE_SHA}" e2e 0 "${HEAD_TREE}"
@@ -844,6 +851,15 @@ tree_rows "${HEAD_SHA}" ci 1 - "${MERGE_SHA}" ci 0 "${HEAD_TREE}" "${HEAD_SHA}" 
 tree_gated
 contains 'a red row on the exact sha is not overruled by a newer green on an identical tree' "${OUT}" \
     "$(no_green ci "${HEAD_SHA}" 'ci red, e2e green')"
+
+# A tree the deploy cannot read is -, and - never matches, even rows written as -; set -e survives it.
+tree_fixture tree-unreadable
+tree_rows "${MERGE_SHA}" ci 0 - "${MERGE_SHA}" e2e 0 -
+tree_shim treefail
+BY_HAND=1
+run_lib "set -e; GIT='${CASE}/shim/git -C ${ROOT}'; GATE_SHA=${HEAD_SHA}; GATE_WHAT=head; "'gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'a deploy tree git cannot read accepts nothing by tree, and a set -e caller carries on' "${OUT}" \
+    "GATED_IS by hand over [NOT GREEN head ${HEAD_SHA:0:7}: ci absent, e2e absent, e2e github: off (no config)]"
 
 tree_fixture tree-by-hand
 tree_rows "${MERGE_SHA}" ci 0 "${HEAD_TREE}"
@@ -1462,13 +1478,6 @@ fixture ledger-tree-clean
 run_lib "GATE_LEDGER_GIT='git -C ${ROOT}'; printf 'TREE=%s\\n' \"\$(gate_ledger_tree ${LIVE_SHA})\" >&3"
 contains 'and a clean one names its commit'"'"'s tree' "${OUT}" "TREE=$(git_at rev-parse "${LIVE_SHA}^{tree}")"
 
-# tree_shim <mode>: git, but status prints nothing first and then a change (late), or fails (fail).
-tree_shim() {
-    mkdir -p "${CASE}/shim"
-    printf '#!/bin/sh\ncase " $* " in *" status "*)\n  n=$(cat "%s" 2>/dev/null || echo 0); echo $((n + 1)) >"%s"\n  [ "%s" = fail ] && exit 128\n  [ "$n" -ge 1 ] && echo " M app/base.txt"; exit 0 ;;\nesac\nexec /usr/bin/git "$@"\n' \
-        "${CASE}/status-calls" "${CASE}/status-calls" "$1" >"${CASE}/shim/git"
-    chmod 0755 "${CASE}/shim/git"
-}
 fixture ledger-writer-late-dirty
 WRITTEN="${CASE}/written"
 tree_shim late
@@ -1530,6 +1539,14 @@ contains 'an operator export inherited before sourcing is discarded, not honoure
     'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
 matches 'and it is written as a failure' "$(tail -1 "${WRITTEN}")" \
     "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 1 /tmp/ci\.log [0-9a-f]{40}$"
+
+fixture ledger-writer-tree-unreadable
+WRITTEN="${CASE}/written"
+tree_shim treefail
+run_lib "set -e; GATE_LEDGER_GIT='${CASE}/shim/git -C ${ROOT}'; gate_ledger_arm; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 - >&3 2>&3; printf 'TEARDOWN RAN\n' >&3"
+matches 'a tree git cannot read is written as -' "$(tail -1 "${WRITTEN}" 2>/dev/null)" \
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 0 - -$"
+contains 'and a set -e caller still reaches its teardown' "${OUT}" 'TEARDOWN RAN'
 
 # --- 4b. the armed sha: a row names the commit the run began on, or there is no row ---
 # A commit landing between gate_ledger_arm and the EXIT trap. The row would otherwise

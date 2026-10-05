@@ -1392,7 +1392,7 @@ or a tree that changed between the two reads. Ignored files (`vendor/`, `node_mo
 **Exact first, and nothing looser.** A kind with any row on the gated sha is decided by its newest
 such row, as before, so a red exact row is never overruled by a tree. Only a kind with none takes the
 newest row of that kind whose sixth field is the gated commit's tree, newest-wins in append order like
-the exact rows; rc 0 is green, anything else is red. ci and e2e are each matched on their own, by sha
+the exact rows; rc 0 is green, anything else is red. A gated commit whose tree git cannot read is `-`, and a `-` on the deploy side skips every tree match, so `-` never meets `-`. Fields compare as strings, so no hex reads as a number. ci and e2e are each matched on their own, by sha
 or by tree, and both are still owed. A row of other than six fields is never read for a tree: a
 5-field row predates the field and a 7-field one has a log path with a space in it, whose sixth field
 is not a tree. Old rows are not backfilled; a tree written after the fact would be a claim no gate made.

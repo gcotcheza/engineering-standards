@@ -11,7 +11,7 @@ both still owed; a red exact row is never overruled by a tree; a 5-field row mat
 and nothing is backfilled. A tree acceptance prints `<kind> accepted by identical tree <tree12> from
 <sha7>`, the verdict item reads `<kind> green|red by identical tree from <sha7>`, and GATED gains
 `, by identical tree: <kind> <sha7>[, …]`. `--gated-by-hand` is unchanged. Readers of fields 1 to 5
-keep working. Suite: 27 new checks; red proofs, one saved mutant per new guard, in the lane of card 329.
+keep working. A deploy commit whose tree git cannot read is `-` too, and `gated` skips every tree match for it. Fields are compared as strings. Suite: 30 new checks; red proofs, one saved mutant per new guard, in the lane of card 329.
 All seven headers are re-stamped for `2026-10-05.3`; `.2` is reserved by the compose env-keys branch,
 which lands first. Why: `docs/DECISIONS.md`.
 

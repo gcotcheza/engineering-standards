@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.3 sha256:f15d05d258a4e70fbee9e1fe88980ee225680ececcc6e46e8d7b706a7c981ed9
+# fleet-deploy-lib 2026-10-05.3 sha256:ac62efaf26d9ea29e15a21b150830486b8b264570f80a68f93e6c9590392ccaa
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -82,7 +82,7 @@ gate_ledger_record() {
         return 0
     }
     tree=$(gate_ledger_tree "$sha")
-    printf '%s %s %s %s %s %s\n' "$sha" "$kind" "$(date -u +%FT%TZ)" "$rc" "$log" "${tree:--}" >>"$file" || {
+    printf '%s %s %s %s %s %s\n' "$sha" "$kind" "$(date -u +%FT%TZ)" "$rc" "$log" "$tree" >>"$file" || {
         printf 'gate-ledger: cannot append to %s, so the %s run (rc=%s) is NOT recorded\n' "$file" "$kind" "$rc" >&2
         return 0
     }
@@ -310,14 +310,15 @@ gated() {
             verdict="NOT GREEN $what ${sha:0:7}: no gate ledger at $LEDGER"
             refusal="no gate ledger at $LEDGER, so no head was ever gated on this box."
         else
-            tree=$($GIT rev-parse --verify -q "$sha^{tree}" 2>/dev/null) || tree=''
+            tree=$($GIT rev-parse --verify -q "$sha^{tree}" 2>/dev/null) || tree=-
             for kind in $owed; do
                 # Newest wins: the last row for (sha, kind); with none, the last 6-field row for (tree, kind).
                 v=$(awk -v sha="$sha" -v kind="$kind" -v tree="$tree" \
-                    '$2 != kind { next }
-                     $1 == sha { rc = $4; seen = 1; next }
+                    '$2 "" != kind { next }
+                     $1 "" == sha { rc = $4; seen = 1; next }
                      NF != 6 { next }
-                     $6 == tree { trc = $4; from = $1; tseen = 1 }
+                     tree == "" || tree == "-" { next }
+                     $6 "" == tree { trc = $4; from = $1; tseen = 1 }
                      END {
                          v = "absent"
                          if (tseen) v = "red " from
