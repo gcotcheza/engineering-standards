@@ -27,7 +27,7 @@ cfx() {
     CRUN="${CF}/${C_RUNDIR:-run}" CROOT="${CF}/www/demo" CENV="${CF}/app-env/demo.env" CBINDS="${CF}/app-binds/demo"
     mkdir -p "${CRUN}/scripts/lib/deploy" "${CRUN}/compose" "${CRUN}/buildcheck/docker/app" "${CROOT}/docker/app" "${CF}/app-env" "${CF}/app-binds" "${CF}/bin"
     chmod 755 "${CF}/app-binds"
-    cp "${LIB_DIR}/compose.sh" "${CRUN}/scripts/lib/deploy/"
+    cp "${LIB_DIR}/compose.sh" "${LIB_DIR}/preflight.sh" "${CRUN}/scripts/lib/deploy/"
     printf 'services: {}\n' >"${CRUN}/compose/docker-compose.yml"
     printf 'FROM scratch\n' >"${CRUN}/buildcheck/docker/app/Dockerfile"
     cp "${CRUN}/buildcheck/docker/app/Dockerfile" "${CROOT}/docker/app/Dockerfile"
@@ -49,13 +49,25 @@ case " $* " in *' config '*) cat "$d/../config.json" ;; esac
 exit 0
 SH
     chmod 0755 "${CF}/bin/docker"
+    # A git whose status lists what the case wrote to bin/tracked, and every call in bin/argv.
+    cat >"${CF}/bin/git" <<'SH'
+#!/bin/sh
+d=$(dirname "$0")
+printf 'git %s\n' "$*" >>"$d/argv"
+cat "$d/tracked" 2>/dev/null
+exit 0
+SH
+    chmod 0755 "${CF}/bin/git"
     cat >"${CRUN}/scripts/deploy.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
 D="$(cd -- "$(dirname -- "$0")" && pwd)"
 say() { printf '%s\n' "$*"; }
+detail() { printf '%s\n' "$*"; }
 refuse() { say "REFUSED: $*"; exit 1; }
 . "${D}/lib/deploy/compose.sh"
+[ -n "${C_NO_PREFLIGHT:-}" ] || . "${D}/lib/deploy/preflight.sh"
+GIT="$(dirname -- "$C_DOCKER")/git"
 [ -z "${C_UID}" ] || export DEPLOY_ROOT_UID="${C_UID}"
 ROOT=$C_ROOT DOCKER=$C_DOCKER DEPLOY_APP_ENV_DIR=$C_ENV_DIR
 export DEPLOY_APP_BINDS_DIR=$C_BINDS_DIR
@@ -65,11 +77,11 @@ SH
 cjson() { local t; t=$(jq --arg r "${CROOT}" "$1" "${CF}/config.json") && printf '%s\n' "$t" >"${CF}/config.json"; }
 crun() {
     # shellcheck disable=SC2086
-    OUT="$(env -i PATH=/usr/bin:/bin C_ROOT="${CROOT}" C_DOCKER="${CF}/bin/docker" C_ENV_DIR="${CF}/app-env" C_BINDS_DIR="${CF}/app-binds" C_UID="${C_UID}" \
+    OUT="$(env -i PATH=/usr/bin:/bin C_NO_PREFLIGHT="${C_NO_PREFLIGHT:-}" C_ROOT="${CROOT}" C_DOCKER="${CF}/bin/docker" C_ENV_DIR="${CF}/app-env" C_BINDS_DIR="${CF}/app-binds" C_UID="${C_UID}" \
         FLEET_DEPLOY_REPO=gcotcheza/demo ${C_EXTRA:-} C_CALLS="$1" bash "${CRUN}/scripts/deploy.sh" 2>&1)"
     RC=$?
     ARGV="$(cat "${CF}/bin/argv" 2>/dev/null)"
-    C_EXTRA=''
+    C_EXTRA='' C_NO_PREFLIGHT=''
 }
 INIT="deploy_compose_init ${COMPOSE_SHA}"
 
@@ -198,6 +210,24 @@ build_case no_buildcheck 'rm -rf "${CRUN}/buildcheck"' "@RUN@/buildcheck is miss
 cfx build-up-dirty; printf 'RUN id\n' >>"${CROOT}/docker/app/Dockerfile"
 crun "${INIT}; deploy_compose --profile build up -d"
 contains 'build up: up (after a --profile) checks the context too' "${OUT}" "REFUSED: ${CROOT}/docker/app/Dockerfile differs"
+
+# Card 363: a build or an up re-reads the tracked files after the fast-forward; nothing else does.
+cfx tracked-clean
+crun "${INIT}; deploy_compose build app; deploy_compose up -d; deploy_compose create; deploy_compose ps; deploy_compose exec -T app true"
+equals 'tracked: build, up and create each re-read the tracked files, ps and exec do not' \
+    "$(grep -c '^git --no-optional-locks status --porcelain --untracked-files=no$' <<<"${ARGV}")" 3
+equals 'tracked: and say so each time' "$(grep -c '^TREE tracked files clean$' <<<"${OUT}")" 3
+contains 'tracked: the check comes before the build' "${ARGV}" $'git --no-optional-locks status --porcelain --untracked-files=no\ncompose --project-directory '"${CROOT}"
+cfx tracked-edited
+crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose --profile web up -d"
+contains 'tracked: a tracked file edited between the merge and the up is refused' "${OUT}" \
+    "REFUSED: tracked files in ${CROOT} are modified, so the tree is not the merged commit and neither a fast-forward nor a build runs over it."
+absent 'tracked: and compose never runs up' "${ARGV}" ' up -d'
+cfx tracked-unsourced; C_NO_PREFLIGHT=1
+crun "${INIT}; deploy_compose up -d"
+contains 'tracked: without preflight.sh sourced, nothing is built' "${OUT}" \
+    'REFUSED: refuse_if_tracked_dirty did not run (preflight.sh is not sourced), so nothing is built.'
+absent 'tracked: and compose never runs up (unsourced)' "${ARGV}" ' up -d'
 
 # B4: a value from the app's .env is read as the app user, never through root's eyes.
 if root_only_case 'env value: read as the app user (sudo)'; then

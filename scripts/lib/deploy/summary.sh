@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.1 sha256:fe581a66d61affabe7914af47d7eb3ca64fcca9f1ff23b36f4ff9b5556d37b1c
+# fleet-deploy-lib 2026-10-05.4 sha256:deb05203558e1b336d3228f18533205cbfb9675ccf1bd820988dc44b501146de
 # shellcheck shell=bash
 # Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
 # this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)
@@ -46,20 +46,28 @@ fail_tail() {
     tail -20 "$LOG" >&3
 }
 
-# The live commit, read as files and never through the checkout's own config.
+# The app user: DEPLOY_APP_USER, else ROOT's last part, which every app's account is named after.
+deploy_app_user() { printf '%s' "${DEPLOY_APP_USER:-$(basename -- "$ROOT")}"; }
+
+# The live commit, read by git as the app user through git-as: root opens nothing under ROOT/.git.
 deploy_head_file() {
-    local g="$ROOT/.git" head sha
-    [ -f "$g/HEAD" ] && [ ! -L "$g/HEAD" ] && head=$(head -c 200 "$g/HEAD") || return 1
-    [ "$head" = 'ref: refs/heads/main' ] || return 1
-    if [ -f "$g/refs/heads/main" ] && [ ! -L "$g/refs/heads/main" ]; then
-        sha=$(head -c 200 "$g/refs/heads/main")
-    elif [ -f "$g/packed-refs" ] && [ ! -L "$g/packed-refs" ]; then
-        sha=$(awk '$2 == "refs/heads/main" { print $1; exit }' "$g/packed-refs") || return 1
-    else
-        return 1
-    fi
-    [[ $sha =~ ^[0-9a-f]{40}$ ]] || return 1
+    local as=${DEPLOY_GIT_AS:-git-as} user ref sha
+    user=$(deploy_app_user)
+    ref=$("$as" "$user" -C "$ROOT" symbolic-ref -q HEAD) || return 1
+    [ "$ref" = refs/heads/main ] || return 1
+    sha=$("$as" "$user" -C "$ROOT" rev-parse --verify -q 'refs/heads/main^{commit}') || return 1
     printf '%s' "$sha"
+}
+
+# deploy_build_hash <dir>: one sha256 over every regular file under <dir> and its path, read as the
+# app user; find -P lists no link, so none is followed or hashed. Unreadable is a refusal.
+deploy_build_hash() {
+    local user out
+    user=$(deploy_app_user)
+    # shellcheck disable=SC2016  # $1 is the inner bash's, by design
+    out=$(sudo -n -u "$user" -- bash -c 'set -o pipefail; cd -- "$1" && find -P . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum --' _ "${1:-}") \
+        || { printf 'REFUSED: %s could not be hashed as %s, so no build is named\n' "${1:-}" "$user" >&2; return 1; }
+    printf '%s\n' "$out" | sha256sum | cut -d' ' -f1
 }
 
 deploy_owned_by_me() { [ "$(stat -c %u:%a "$1" 2>/dev/null)" = "$(id -u):$2" ]; }

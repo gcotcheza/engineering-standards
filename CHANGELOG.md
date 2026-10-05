@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-05 — root opens nothing in the app tree except as the app user (deploy-lib VERSION 2026-10-05.4, version set at rebase; the standard is unchanged and VERSION is not bumped)
+**New `scripts/lib/deploy/ownership.sh`: `chown_root_owned <dir> <user>:<group> [<skip pattern>…]`**
+(card 363) runs `/usr/bin/find -P <dir> -xdev -user 0 … -execdir chown -h <owner> {} +` under its own
+absolute `PATH`, and replaces the five per-app `find … -exec chown` copies at their next re-vendor.
+Refusals (stderr, return 1): `chown_root_owned: <dir> is not a plain absolute directory`, `'<owner>'
+is not user:group`, `find or chown failed under <dir>, so root-owned paths may remain`.
+**`summary.sh`:** `deploy_head_file` reads `symbolic-ref HEAD` and `refs/heads/main` through `git-as
+<app> -C "$ROOT"` (`DEPLOY_GIT_AS` is a test seam), never as files; new `deploy_app_user`; new
+`deploy_build_hash <dir>`, a sha256 of `find -P . -type f` read as the app user, refusing `<dir> could
+not be hashed as <user>`. **`preflight.sh`:** new `refuse_if_tracked_dirty` (from ghiecode), which
+also refuses a git status that fails. **`compose.sh`:** `deploy_compose` calls it before `build`, `up`
+and `create`, and refuses when preflight.sh is not sourced; the subcommand parse is one function,
+`deploy_compose_sub`. Callers: source `ownership.sh` where the repair runs, and `preflight.sh` before
+any `deploy_compose`; a project test that fakes `.git` for `deploy_head_file` (ghie-writes) needs a
+`DEPLOY_GIT_AS` stub. Suite: the new `ownership-test.sh` (run by `test.sh` as root, and as nobody for
+the red proofs), the record cases moved to an app-owned tree read through a `git-as` stub, and cases
+for each new refusal. All eight headers are re-stamped; apps adopt it on their next re-vendor. Why:
+`docs/DECISIONS.md`.
+
 ## 2026-10-05 — a hand deploy may count a GitHub Actions e2e run on the exact commit (deploy-lib VERSION 2026-10-05.1; the standard is unchanged and VERSION is not bumped)
 **`gated` asks GitHub for `e2e` when the ledger's row is absent or red** (card 352), and never for
 `ci`. Off unless root holds `/etc/fleet/github-e2e/<app>` (`R=`, `N=`, `W=`, `W_SHA256=`; root-owned,

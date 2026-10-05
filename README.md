@@ -66,9 +66,11 @@ it could not read is a refusal (exit 1), not a note under a green run; a line th
 `scripts/lib/deploy/` is the half of a project's `scripts/deploy.sh` that is the same
 everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (which commit a pull
 request number means), `ledger.sh` (the gate ledger), `preflight.sh`, `cleanup.sh` (the
-after-deploy worktree reaper), `compose.sh` (root's compose, from `fleet-deploy`'s export only) and
-`literal.sh` (a gate's literal guard, below). A project copies those files and `VERSION` into its
-own `scripts/lib/deploy/`, byte-identical, and sources them.
+after-deploy worktree reaper), `compose.sh` (root's compose, from `fleet-deploy`'s export only),
+`literal.sh` (a gate's literal guard, below) and `ownership.sh` (root's ownership repair, which follows
+no link). A project copies those files and `VERSION` into its own `scripts/lib/deploy/`,
+byte-identical, and sources them. Root reads the app tree only as the app user: `deploy_head_file`
+through `git-as`, `deploy_app_env_value` and `deploy_build_hash` through `sudo -u`.
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
 project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After

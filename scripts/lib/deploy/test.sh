@@ -166,6 +166,13 @@ case "$1" in
 esac
 exit "${FAKE_DOCKER_RC:-0}"
 SH
+    # git-as: git as the named user, the way the real one runs it; root's git never reads the tree.
+    cat >"${BIN}/git-as" <<'SH'
+#!/bin/sh
+u=$1
+shift
+exec runuser -u "$u" -- env -u HOME git "$@"
+SH
     chmod 0755 "${BIN}"/*
 }
 
@@ -283,6 +290,8 @@ run_lib() {
         DEPLOY_ROOT="${ROOT}" \
         DEPLOY_RECORD_ROOT="${CASE}/records" \
         DEPLOY_GIT="git -C ${ROOT}" \
+        DEPLOY_GIT_AS="${BIN}/git-as" \
+        DEPLOY_APP_USER="${APP_USER_SEAM-root}" \
         DEPLOY_GH="${BIN}/gh" \
         DEPLOY_HEAVY="${BIN}/heavy-work" \
         DEPLOY_LEDGER="${LEDGER}" \
@@ -323,7 +332,7 @@ run_lib() {
     HEAVY_STATUS=''
     # Unset, not emptied: a case that assigns an empty seam means "the deploy assigned
     # none", which is a different thing from a case that never mentioned it.
-    unset WT_GIT_SEAM REAP_SEAM DOCKER_SEAM PROC_ROOT_SEAM ROOT_UID_SEAM
+    unset WT_GIT_SEAM REAP_SEAM DOCKER_SEAM PROC_ROOT_SEAM ROOT_UID_SEAM APP_USER_SEAM
     unset REAP_DRY_OUT REAP_DRY_RC REAP_APPLY_OUT REAP_APPLY_RC
     unset DOCKER_IDS DOCKER_MOUNTS DOCKER_RC DOCKER_DIRTY
     unset GHE_RC GHE_RUNS_RC GHE_TOKEN_PATH
@@ -404,7 +413,7 @@ esac
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date, with an optional same-day serial' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$'
 EMPTY_SET="$(printf '' | sha256sum | cut -d' ' -f1)"
-for f in summary resolve ledger preflight cleanup compose literal; do
+for f in summary resolve ledger preflight cleanup compose literal ownership; do
     line1="$(head -1 "${LIB_DIR}/${f}.sh")"
     body="$(tail -n +2 "${LIB_DIR}/${f}.sh" | sha256sum | cut -d' ' -f1)"
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
@@ -1512,6 +1521,25 @@ run_lib "${LAND}"'GATED="by hand"; finish "$MERGE_SHA"'
 contains 'a project adds its own facts to DONE' "${OUT}" \
     "DONE #73 live ${MERGE_SHA} was ${LIVE_SHORT} gated by hand root-owned 0 drift none log "
 
+# --- 6a. the pre-build recheck (card 363): tracked files only, after the fast-forward ----
+fixture tracked-clean
+printf 'the app'\''s own\n' >"${ROOT}/untracked.txt"
+run_lib "${LAND}"'refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
+contains 'tracked: a landed tree with only an untracked file passes' "${OUT}" $'TREE tracked files clean\nPAST THE TRACKED CHECK'
+
+fixture tracked-edited
+run_lib "${LAND}"'printf "edited after the merge\n" >>"$ROOT/app/feature.txt"; refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
+contains 'tracked: a tracked file edited between the merge and the build is refused' "${OUT}" \
+    "REFUSED: tracked files in ${ROOT} are modified, so the tree is not the merged commit and neither a fast-forward nor a build runs over it."
+absent 'tracked: and nothing after it runs' "${OUT}" 'PAST THE TRACKED CHECK'
+contains 'tracked: the log names the file' "$(cat "${LOGFILE}")" ' M app/feature.txt'
+
+fixture tracked-git-fails
+run_lib 'GIT=false; refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
+contains 'tracked: a git status that fails is refused, never read as clean' "${OUT}" \
+    "REFUSED: git status could not read the tracked files in ${ROOT}, so nothing builds over them unchecked."
+absent 'tracked: and nothing after it runs (git failed)' "${OUT}" 'PAST THE TRACKED CHECK'
+
 # --- 6b. root's record ------------------------------------------------------------
 # Each case's record is ${CASE}/records/root.record; the live tripwire's own awk reads it.
 RECORD_UTC='[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z'
@@ -1622,21 +1650,43 @@ run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
 contains 'a packed main naming another commit is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads ${LIVE_SHA}, not ${MERGE_SHA}"
 unrecorded 'packed main elsewhere'
 
+# The tree handed to the app user, as on the box: git-as reads it as nobody, and root opens nothing in it.
+app_owned() { chmod 711 "${WORK}" "${CASE}"; chown -hR nobody:nogroup "${ROOT}"; APP_USER_SEAM=nobody; }
+root_only_file() { mv "$1" "$2"; chown root:root "$2"; chmod 600 "$2"; }
+
+fixture record-app-user
+landed_at
+app_owned
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+equals 'a tree the app user owns is read through git-as' "$(awk '{ print $1, $2 }' "${CASE}/records/root.record")" "DONE ${MERGE_SHA}"
+
 fixture record-ref-symlink
 landed_at
-mv "${ROOT}/.git/refs/heads/main" "${CASE}/main-ref"
+root_only_file "${ROOT}/.git/refs/heads/main" "${CASE}/main-ref"
 ln -s "${CASE}/main-ref" "${ROOT}/.git/refs/heads/main"
+app_owned
 run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
-contains 'a refs/heads/main that is a symlink is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+contains 'a refs/heads/main linked to a file only root can read is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
 unrecorded 'main ref symlink'
 
 fixture record-head-symlink
 landed_at
-mv "${ROOT}/.git/HEAD" "${CASE}/HEAD-file"
+root_only_file "${ROOT}/.git/HEAD" "${CASE}/HEAD-file"
 ln -s "${CASE}/HEAD-file" "${ROOT}/.git/HEAD"
+app_owned
 run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
-contains 'a HEAD that is a symlink is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+contains 'a HEAD linked to a file only root can read is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
 unrecorded 'HEAD symlink'
+
+fixture record-gitdir-link
+landed_at
+mv "${ROOT}/.git" "${CASE}/hidden.git"
+chmod 700 "${CASE}/hidden.git"
+ln -s "${CASE}/hidden.git" "${ROOT}/.git"
+app_owned
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a .git linked to a repository only root can read is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded '.git symlink'
 
 fixture record-other-owner
 mkdir -m 700 "${CASE}/records"
@@ -1680,6 +1730,46 @@ contains 'a rollback whose source is not one word is refused' "${OUT}" 'REFUSED:
 contains 'a rollback whose source is RED is refused' "${OUT}" 'REFUSED: RED is not a source: the live tripwire reads it as a RED verdict.'
 equals 'and each refusal returns 1' "$(printf '%s\n' "${OUT}" | grep -c '^rc=1$')" '3'
 equals 'refused rollbacks: no record row' "$(rows "${CASE}/records/root.record")" '0'
+
+# --- 6c. the build hash: read as the app user, and never through a link (card 363) -----
+fixture build-hash
+BUILD="${CASE}/build"
+mkdir -p "${BUILD}/assets"
+printf '{}\n' >"${BUILD}/manifest.json"
+printf 'app\n' >"${BUILD}/assets/app.js"
+chmod 711 "${WORK}" "${CASE}"
+chown -R nobody:nogroup "${BUILD}"
+build_hash() { APP_USER_SEAM=nobody; run_lib 'h=$(deploy_build_hash "'"${BUILD}"'"); printf "RC=%s HASH=%s\n" "$?" "$h" >&3'; }
+build_hash
+HASH_BEFORE="${OUT}"
+matches 'build hash: a build the app user can read hashes to one sha256' "${OUT}" '^RC=0 HASH=[0-9a-f]{64}$'
+build_hash
+equals 'build hash: the same build hashes the same' "${OUT}" "${HASH_BEFORE}"
+printf 'root only\n' >"${CASE}/root-only"
+chmod 600 "${CASE}/root-only"
+ln -s "${CASE}/root-only" "${BUILD}/assets/planted.js"
+build_hash
+equals 'build hash: a link to a root-only file is neither followed nor hashed' "${OUT}" "${HASH_BEFORE}"
+rm -f "${BUILD}/assets/planted.js"
+printf 'changed\n' >>"${BUILD}/assets/app.js"
+build_hash
+matches 'build hash: a changed file changes the hash' "${OUT}" '^RC=0 HASH=[0-9a-f]{64}$'
+absent 'build hash: and it is not the old one' "${OUT}" "${HASH_BEFORE#RC=0 HASH=}"
+cp "${CASE}/root-only" "${BUILD}/assets/root.js"
+build_hash
+matches 'build hash: a file the app user cannot read refuses' "${OUT}" '^RC=1 HASH=$'
+contains 'build hash: and says so' "$(cat "${LOGFILE}")" "REFUSED: ${BUILD} could not be hashed as nobody, so no build is named"
+rm -f "${BUILD}/assets/root.js"
+mkdir -m 700 "${BUILD}/private"
+printf 'x\n' >"${BUILD}/private/x.js"
+build_hash
+matches 'build hash: a directory the app user cannot list refuses' "${OUT}" '^RC=1 HASH=$'
+rm -rf -- "${BUILD:?}/private"
+build_hash
+matches 'build hash: back to readable, it hashes again' "${OUT}" '^RC=0 HASH=[0-9a-f]{64}$'
+APP_USER_SEAM=nobody
+run_lib 'h=$(deploy_build_hash "'"${CASE}/no-build"'"); printf "RC=%s HASH=%s\n" "$?" "$h" >&3'
+matches 'build hash: no build directory refuses' "${OUT}" '^RC=1 HASH=$'
 
 # --- 7. the after-deploy cleanup ----------------------------------------------------
 on_disk() { if [ -d "$1" ]; then printf 'there'; else printf 'gone'; fi; }
@@ -2084,6 +2174,12 @@ OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" bash "${SCRIPT_DIR}/compose-test.sh" 2>&1)"
 RC=$?
 contains 'compose-test.sh passes as root' "${OUT}" 'compose-test: all checks passed'
 equals 'compose-test.sh exits' "${RC}" 0
+
+# --- 8b. root's ownership repair (card 363): its own suite, which the red proofs also run as nobody ---
+OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash "${SCRIPT_DIR}/ownership-test.sh" 2>&1)"
+RC=$?
+contains 'ownership-test.sh passes as root' "${OUT}" 'ownership-test: all checks passed'
+equals 'ownership-test.sh exits' "${RC}" 0
 
 # --- 9. a gate's literal: written once at column 0, read only as ${NAME} after (card 318) ----
 LIT_VALUE=/srv/engineering-standards/scripts/lib/deploy/test.sh
