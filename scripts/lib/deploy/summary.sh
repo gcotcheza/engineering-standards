@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.4 sha256:deb05203558e1b336d3228f18533205cbfb9675ccf1bd820988dc44b501146de
+# fleet-deploy-lib 2026-10-05.4 sha256:2c8a3673f19611414b7286ba079e27e2c3f6016f846211310315c777ad4ab7fc
 # shellcheck shell=bash
 # Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
 # this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)
@@ -64,6 +64,7 @@ deploy_head_file() {
 deploy_build_hash() {
     local user out
     user=$(deploy_app_user)
+    [[ ${1:-} == /* ]] || { printf "REFUSED: deploy_build_hash: '%s' is not an absolute directory\n" "${1:-}" >&2; return 1; }
     # shellcheck disable=SC2016  # $1 is the inner bash's, by design
     out=$(sudo -n -u "$user" -- bash -c 'set -o pipefail; cd -- "$1" && find -P . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum --' _ "${1:-}") \
         || { printf 'REFUSED: %s could not be hashed as %s, so no build is named\n' "${1:-}" "$user" >&2; return 1; }

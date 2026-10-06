@@ -1,22 +1,33 @@
 # Changelog
 
-## 2026-10-05 — root opens nothing in the app tree except as the app user (deploy-lib VERSION 2026-10-05.4, version set at rebase; the standard is unchanged and VERSION is not bumped)
+## 2026-10-05 — root's ownership repair, head read and build hash follow no app-user link, and a build re-reads the tracked files (deploy-lib VERSION 2026-10-05.4, version set at rebase; the standard is unchanged and VERSION is not bumped)
 **New `scripts/lib/deploy/ownership.sh`: `chown_root_owned <dir> <user>:<group> [<skip pattern>…]`**
 (card 363) runs `/usr/bin/find -P <dir> -xdev -user 0 … -execdir chown -h <owner> {} +` under its own
-absolute `PATH`, and replaces the five per-app `find … -exec chown` copies at their next re-vendor.
-Refusals (stderr, return 1): `chown_root_owned: <dir> is not a plain absolute directory`, `'<owner>'
-is not user:group`, `find or chown failed under <dir>, so root-owned paths may remain`.
+absolute `PATH`, and replaces the five per-app `find … -exec chown` copies at their next re-vendor; pass
+it `$ROOT` itself, whose parent only root can write, never a directory inside it. Refusals (stderr,
+return 1): `chown_root_owned: <dir> is not a plain absolute directory`, `'<owner>' is not user:group`,
+`find or chown failed under <dir>, so root-owned paths may remain`.
 **`summary.sh`:** `deploy_head_file` reads `symbolic-ref HEAD` and `refs/heads/main` through `git-as
 <app> -C "$ROOT"` (`DEPLOY_GIT_AS` is a test seam), never as files; new `deploy_app_user`; new
 `deploy_build_hash <dir>`, a sha256 of `find -P . -type f` read as the app user, refusing `<dir> could
-not be hashed as <user>`. **`preflight.sh`:** new `refuse_if_tracked_dirty` (from ghiecode), which
-also refuses a git status that fails. **`compose.sh`:** `deploy_compose` calls it before `build`, `up`
-and `create`, and refuses when preflight.sh is not sourced; the subcommand parse is one function,
-`deploy_compose_sub`. Callers: source `ownership.sh` where the repair runs, and `preflight.sh` before
-any `deploy_compose`; a project test that fakes `.git` for `deploy_head_file` (ghie-writes) needs a
-`DEPLOY_GIT_AS` stub. Suite: the new `ownership-test.sh` (run by `test.sh` as root, and as nobody for
-the red proofs), the record cases moved to an app-owned tree read through a `git-as` stub, and cases
-for each new refusal. All eight headers are re-stamped; apps adopt it on their next re-vendor. Why:
+not be hashed as <user>` and a `<dir>` that is not absolute. It replaces memento's
+`built_output`/`build_files` at its re-vendor; its paths read `./x`, not `x`, and a link is no longer
+followed, so a hash stored by the old code never matches a new one.
+**`preflight.sh`:** `refuse_if_dirty` and the new `deploy_refuse_if_tracked_dirty` (ghiecode's
+`refuse_if_tracked_dirty`, given the `deploy_` prefix so an app's own copy cannot shadow it) refuse a git
+status that fails, naming its exit code, rather than reading it as clean. ghiecode's own copy reads a
+failing git as clean: at re-vendor it deletes it and calls the lib's.
+**`compose.sh`:** `compose.sh run`, the one route every compose call takes (`deploy_compose`, and
+`$DEPLOY_COMPOSE` in a job's own `bash -c`), re-reads the tracked files through `git-as <app>` before
+`build`, `up` and `create`, and refuses an edit or a failing git. An app whose own deploy steps rewrite a
+tracked file before an `up` is refused from its re-vendor on.
+**Every app's deploy-test needs two stubs at re-vendor:** `finish` now reaches `git-as` through
+`deploy_head_file`, which the real one refuses on a test checkout, so fineprint, ghiecode, ghie-writes,
+kidsquest, memento, orbit, reflection and scribly each set `DEPLOY_GIT_AS` (a stub) and
+`DEPLOY_APP_USER` in their deploy-test env; a deploy-test that drives a compose `build`, `up` or
+`create` exports the same `DEPLOY_GIT_AS` to it. Suite: the new `ownership-test.sh` (run by `test.sh`
+as root, and as nobody for the red proofs), the record cases moved to an app-owned tree read through a
+`git-as` stub, and a case for each new refusal. All eight headers are re-stamped. Why:
 `docs/DECISIONS.md`.
 
 ## 2026-10-05 — a hand deploy may count a GitHub Actions e2e run on the exact commit (deploy-lib VERSION 2026-10-05.1; the standard is unchanged and VERSION is not bumped)

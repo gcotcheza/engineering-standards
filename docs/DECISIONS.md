@@ -1376,7 +1376,7 @@ code, so that run counts for the head, under every rule above, `W`'s pin checked
 the newest across both commits decides. The merge is the one `resolve` read, never computed here; a
 head whose tree differs never borrows it. The report says which commit the run was on.
 
-## Root opens nothing in the app tree except as the app user, and follows no link there (2026-10-05)
+## Root's ownership repair, head read and build hash follow no app-user link; a build re-reads the tracked files (2026-10-05)
 
 **The route (card 363).** Root's deploy still touched app-writable paths itself: five copies of
 `find "$ROOT" -user root -exec chown app:app {} +` (three without `-h`, so a root-owned file a planted
@@ -1394,29 +1394,41 @@ chown swaps `a/sub` for a link to the outside on the call that names `./sub`, af
 it, and the files are still chowned in the real directory; under `-exec` they reach the outside.
 `find` refuses `-execdir` when `PATH` holds a relative entry, so the helper sets its own absolute
 `PATH` (`DEPLOY_EXEC_PATH`, a test seam); a caller's `.` in `PATH` changes nothing. The limit: no case
-covers `-xdev`, because a mount cannot be made without root on the host; and the helper decides nothing
-about policy — a caller that treats the repair as loud but not fatal keeps doing so on its return 1.
+covers `-xdev`, because a mount cannot be made without root on the host; `-h` does nothing for a hard
+link, which `fs.protected_hardlinks = 1` keeps the app user from making to a file it does not own;
+`! -L` guards only `<dir>`'s last part, so a caller passes `$ROOT`, whose parent only root can write,
+never a directory inside it; and the helper decides nothing about policy — a caller that treats the
+repair as loud but not fatal keeps doing so on its return 1.
 
 `deploy_head_file` asks `git-as <app> -C "$ROOT"` for `symbolic-ref HEAD` and `refs/heads/main`, the
 route the runbooks' rollback blocks already use. A link in `.git` is now read with the app user's
 rights, so a link to a file the app user could read anyway is not refused; one to a file only root can
 read is, and so is a `.git` that is itself a link to a root-only repository, which the file reads
 followed. `deploy_app_user` (`DEPLOY_APP_USER`, else `ROOT`'s last part) names the user;
-`compose.sh`'s `deploy_app_env_value`, the `.env` read as the app user, keeps its own default because
-compose.sh also runs on its own, without summary.sh.
+`compose.sh` keeps its own `deploy_compose_user` for the `.env` read and the tracked-file check,
+because `compose.sh run` is its own process, without summary.sh.
 
 `deploy_build_hash <dir>` hashes as the app user (`sudo -n -u`), `find -P . -type f`, under
 `pipefail`, so a link is never hashed and an unreadable file or directory is a refusal rather than a
-shorter list.
+shorter list; a `<dir>` that is not absolute is refused, since an empty one would hash the caller's
+working directory.
 
 **The recheck before a build.** Nothing re-read the tracked files between the fast-forward and the
-build, so an edit in that window was built and run as if merged. `refuse_if_tracked_dirty` (lifted
-from ghiecode's `deploy.sh`) is in `preflight.sh`, refuses a git status that fails, and
-`deploy_compose` calls it before every `build`, `up` and `create` — the subcommand read by the parse
-`deploy_compose_exec` already used, now one function. `run` and `exec` are not rechecked: they run
-code in containers the app user's tree already feeds. A deploy whose own steps rewrite a tracked file
-before `up` is refused, which is the point. A `deploy_compose` without preflight.sh sourced refuses
-rather than building.
+build, so an edit in that window was built and run as if merged. `compose.sh run`
+(`deploy_compose_exec`) re-reads them through `git-as <app> status --untracked-files=no` before every
+`build`, `up` and `create`, ahead of `compose config`. It sits there, not in `deploy_compose`, because
+that is where every compose call lands: an app that sets `COMPOSE=$DEPLOY_COMPOSE` and runs its build
+inside a job's own `bash -c` never calls the shell function. A git status that fails is a refusal
+naming its exit code, never a clean tree. The window is narrowed, not closed: an edit after the check
+is still built; an untracked file added in it is not seen; and `run` (orbit's assets build) and `exec`
+are not rechecked. A deploy whose own steps rewrite a tracked file before `up` is refused, which is the
+point. `preflight.sh`'s `deploy_refuse_if_tracked_dirty` (lifted from ghiecode, `deploy_`-prefixed so
+an app's own copy cannot shadow it) is the same judgement for a caller's own `$GIT`; `refuse_if_dirty`
+now fails closed the same way.
+
+**Follow-up (card 320).** `deploy_compose_buildcheck` still `cmp`s the app's `docker/` files as root
+after a `realpath -e` check; a link or a FIFO swapped in between leaks one equality bit or hangs the
+deploy. That read moves to the app user in its own change.
 
 **Version.** `VERSION` is `2026-10-05.4` on the assumption that lib .2 and ES #44 (.3) land first; it
 is set at the rebase, the way card 329's was.

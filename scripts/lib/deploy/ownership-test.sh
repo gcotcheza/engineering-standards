@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Guards scripts/lib/deploy/ownership.sh with a chown that logs what it is handed, then runs. test.sh runs it as
-# root; the red proofs run it as nobody, where the runner's uid stands in for root and ownership checks skip.
-#   DEPLOY_LIB_DIR=<copy> TMPDIR=<dir> ownership-test.sh
+# Guards ownership.sh with a chown that logs what it is handed. test.sh runs it as root; red proofs run it as
+# nobody, whose uid stands in for root: DEPLOY_LIB_DIR=<copy> TMPDIR=<dir> ownership-test.sh
 # shellcheck disable=SC2016
 set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

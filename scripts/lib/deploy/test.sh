@@ -166,11 +166,12 @@ case "$1" in
 esac
 exit "${FAKE_DOCKER_RC:-0}"
 SH
-    # git-as: git as the named user, the way the real one runs it; root's git never reads the tree.
+    # git-as: git as the named user, refusing a tree another user owns (exit 3), as the real one does.
     cat >"${BIN}/git-as" <<'SH'
 #!/bin/sh
 u=$1
 shift
+[ "$1" != -C ] || [ "$(stat -c %U "$2")" = "$u" ] || exit 3
 exec runuser -u "$u" -- env -u HOME git "$@"
 SH
     chmod 0755 "${BIN}"/*
@@ -1479,6 +1480,12 @@ contains 'a dirty checkout is refused' "${OUT}" \
     'REFUSED: the checkout is dirty; a deploy never fast-forwards over uncommitted work.'
 absent 'and nothing after it runs' "${OUT}" 'PAST THE DIRTY CHECK'
 
+fixture preflight-git-fails
+run_lib 'GIT=false; refuse_if_dirty; printf "PAST THE DIRTY CHECK\n" >&3'
+contains 'a git status that fails is refused, never read as a clean checkout' "${OUT}" \
+    "REFUSED: git status exited 1 in ${ROOT}, so the checkout is not known to be clean; a deploy never fast-forwards over it."
+absent 'and nothing after it runs (git failed)' "${OUT}" 'PAST THE DIRTY CHECK'
+
 # --- 6. the summary ----------------------------------------------------------------
 fixture summary
 run_lib 'say "A SUMMARY LINE"; detail "a detail line"; printf "LOG %s\n" "$LOG" >&3'
@@ -1521,23 +1528,23 @@ run_lib "${LAND}"'GATED="by hand"; finish "$MERGE_SHA"'
 contains 'a project adds its own facts to DONE' "${OUT}" \
     "DONE #73 live ${MERGE_SHA} was ${LIVE_SHORT} gated by hand root-owned 0 drift none log "
 
-# --- 6a. the pre-build recheck (card 363): tracked files only, after the fast-forward ----
+# --- 6a. deploy_refuse_if_tracked_dirty (card 363): tracked files only, and a failing git refuses ---
 fixture tracked-clean
 printf 'the app'\''s own\n' >"${ROOT}/untracked.txt"
-run_lib "${LAND}"'refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
+run_lib "${LAND}"'deploy_refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
 contains 'tracked: a landed tree with only an untracked file passes' "${OUT}" $'TREE tracked files clean\nPAST THE TRACKED CHECK'
 
 fixture tracked-edited
-run_lib "${LAND}"'printf "edited after the merge\n" >>"$ROOT/app/feature.txt"; refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
+run_lib "${LAND}"'printf "edited after the merge\n" >>"$ROOT/app/feature.txt"; deploy_refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
 contains 'tracked: a tracked file edited between the merge and the build is refused' "${OUT}" \
     "REFUSED: tracked files in ${ROOT} are modified, so the tree is not the merged commit and neither a fast-forward nor a build runs over it."
 absent 'tracked: and nothing after it runs' "${OUT}" 'PAST THE TRACKED CHECK'
 contains 'tracked: the log names the file' "$(cat "${LOGFILE}")" ' M app/feature.txt'
 
 fixture tracked-git-fails
-run_lib 'GIT=false; refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
+run_lib 'GIT=false; deploy_refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
 contains 'tracked: a git status that fails is refused, never read as clean' "${OUT}" \
-    "REFUSED: git status could not read the tracked files in ${ROOT}, so nothing builds over them unchecked."
+    "REFUSED: git status exited 1 in ${ROOT}, so the tracked files are not known to be the merge and nothing runs over them."
 absent 'tracked: and nothing after it runs (git failed)' "${OUT}" 'PAST THE TRACKED CHECK'
 
 # --- 6b. root's record ------------------------------------------------------------
@@ -1770,6 +1777,10 @@ matches 'build hash: back to readable, it hashes again' "${OUT}" '^RC=0 HASH=[0-
 APP_USER_SEAM=nobody
 run_lib 'h=$(deploy_build_hash "'"${CASE}/no-build"'"); printf "RC=%s HASH=%s\n" "$?" "$h" >&3'
 matches 'build hash: no build directory refuses' "${OUT}" '^RC=1 HASH=$'
+APP_USER_SEAM=nobody
+run_lib 'h=$(deploy_build_hash ""); printf "RC=%s HASH=%s\n" "$?" "$h" >&3'
+matches 'build hash: an empty directory refuses, never hashing the working directory' "${OUT}" '^RC=1 HASH=$'
+contains 'build hash: and names it' "$(cat "${LOGFILE}")" "REFUSED: deploy_build_hash: '' is not an absolute directory"
 
 # --- 7. the after-deploy cleanup ----------------------------------------------------
 on_disk() { if [ -d "$1" ]; then printf 'there'; else printf 'gone'; fi; }
