@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.3 sha256:ac62efaf26d9ea29e15a21b150830486b8b264570f80a68f93e6c9590392ccaa
+# fleet-deploy-lib 2026-10-05.4 sha256:ac62efaf26d9ea29e15a21b150830486b8b264570f80a68f93e6c9590392ccaa
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test

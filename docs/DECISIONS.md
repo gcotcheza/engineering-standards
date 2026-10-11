@@ -1076,8 +1076,8 @@ the mode check alone also turns a symlink away; the explicit `-L` tests are kept
 
 **The sha comes from GitHub, and must have landed.** A sha from `$GIT rev-parse` is an app-uid
 answer about a tree the app uid owns. `finish` takes only the `MERGE_SHA` resolve read, and only
-when `.git/HEAD`, read as files rather than through the checkout's config, names it — so a HEAD
-moved under the deploy shows as a refusal, not a recorded row.
+when main, read by git as the app user through `git-as` (card 363; it was read as files by root
+before), is checked out at it — so a HEAD moved under the deploy shows as a refusal, not a recorded row.
 
 **A short sha is refused, not tolerated — option (a): the advisor's ruling, 2026-10-03 16:28Z (message
 to the orbit moderator).** A "DONE, but no record" fallback would let
@@ -1405,3 +1405,69 @@ the run was on another commit.
 `fleet-dependabot-merge`) or take everything after the rc as a note (`fleet-mistake-mine`), so a
 sixth field breaks none of them. They match the exact sha only, so they do not credit a tree row.
 
+## Root's ownership repair, head read and build hash follow no app-user link; a build re-reads the tracked files (2026-10-05)
+
+**The route (card 363).** Root's deploy still touched app-writable paths itself: five copies of
+`find "$ROOT" -user root -exec chown app:app {} +` (three without `-h`, so a root-owned file a planted
+link names was handed to the app user), `deploy_head_file` opening `$ROOT/.git` as root, `.env` greps,
+and memento's `public/build` hash, which `sha256sum`'d whatever a link named. The app user owns every
+one of those paths, so each is a read or a write root makes on the app user's say-so.
+
+**What replaces them.** `ownership.sh`'s `chown_root_owned <dir> <user>:<group> [<skip pattern>…]` is
+the one ownership repair: `/usr/bin/find -P <dir> -xdev -user 0 … -execdir chown -h <owner> {} +`.
+`-P` lists a link as a link, `-h` changes the link and never its target, `-xdev` stays off other
+mounts. `-exec chown -h` would still resolve every parent of a full path at chown time, so a directory
+swapped for a link between the walk and the batch would redirect it; `-execdir` runs each batch inside
+the directory find already holds open, by `./name`. The suite makes that swap deterministic: its stub
+chown swaps `a/sub` for a link to the outside on the call that names `./sub`, after find has listed
+it, and the files are still chowned in the real directory; under `-exec` they reach the outside.
+`find` refuses `-execdir` when `PATH` holds a relative entry, so the helper sets its own absolute
+`PATH` (`DEPLOY_EXEC_PATH`, a test seam); a caller's `.` in `PATH` changes nothing. The limit: no case
+covers `-xdev`, because a mount cannot be made without root on the host; `-h` does nothing for a hard
+link, which `fs.protected_hardlinks = 1` keeps the app user from making to a file it does not own;
+`! -L` guards only `<dir>`'s last part, so a caller passes `$ROOT`, whose parent only root can write,
+never a directory inside it; and the helper decides nothing about policy — a caller that treats the
+repair as loud but not fatal keeps doing so on its return 1.
+
+`deploy_head_file` asks `git-as <app> -C "$ROOT"` for `symbolic-ref HEAD` and `refs/heads/main`, the
+route the runbooks' rollback blocks already use. A link in `.git` is now read with the app user's
+rights, so a link to a file the app user could read anyway is not refused; one to a file only root can
+read is, and so is a `.git` that is itself a link to a root-only repository, which the file reads
+followed. `deploy_app_user` (`DEPLOY_APP_USER`, else `ROOT`'s last part) names the user;
+`compose.sh` keeps its own `deploy_compose_user` for the `.env` read and the tracked-file check,
+because `compose.sh run` is its own process, without summary.sh.
+
+`deploy_build_hash <dir>` hashes as the app user (`sudo -n -u`), `find -P . -type f`, under
+`pipefail`, so a link is never hashed and an unreadable file or directory is a refusal rather than a
+shorter list; a `<dir>` that is not absolute is refused, since an empty one would hash the caller's
+working directory.
+
+**The recheck before a build.** Nothing re-read the tracked files between the fast-forward and the
+build, so an edit in that window was built and run as if merged. `compose.sh run`
+(`deploy_compose_exec`) re-reads them through `git-as <app> status --untracked-files=no` before every
+`build`, `up` and `create`, ahead of `compose config`. It sits there, not in `deploy_compose`, because
+that is where every compose call lands: an app that sets `COMPOSE=$DEPLOY_COMPOSE` and runs its build
+inside a job's own `bash -c` never calls the shell function. A git status that fails is a refusal
+naming its exit code, never a clean tree. The window is narrowed, not closed: an edit after the check
+is still built; an untracked file added in it is not seen; and `exec` is not rechecked. Every `run` is
+(card 371), not only `run --build`: compose v5.5.1 builds a missing image on a plain `run` too, as its
+`--dry-run` shows, so a plain `run` over an edited tree (orbit's assets build) is refused like an `up`.
+A deploy whose own steps rewrite a tracked file before `up` or `run` is refused, which is the point.
+Compose's hidden `--workdir`, an alias of `--project-directory`, refuses before the subcommand like it.
+`preflight.sh`'s `deploy_refuse_if_tracked_dirty` (lifted from ghiecode, `deploy_`-prefixed so an
+app's own copy cannot shadow it) is the same judgement for a caller's own `$GIT`; `refuse_if_dirty`
+now fails closed the same way.
+
+**Follow-up (card 320).** `deploy_compose_buildcheck` still `cmp`s the app's `docker/` files as root
+after a `realpath -e` check; a link or a FIFO swapped in between leaks one equality bit or hangs the
+deploy. That read moves to the app user in its own change.
+
+**Every spelling of a caller's own file or name (card 372).** compose parses `-fx.yml`, `-f=x.yml`,
+`-pX` and `-p=X` like their separated forms, and `-f` and `-p` are its only global short options, so
+before the subcommand any single-dash argument refuses, as `--file=`, `--project-name=`,
+`--env-file=` and `--project-directory=` already did. After the subcommand `-f` is the subcommand's own
+(`logs -f`, `rm -f`) and passes. The word after `--profile`, `--progress`, `--ansi` or `--parallel` is
+that option's value whatever it looks like, as compose reads it, so `--profile -x up` is still an `up`.
+
+**Version.** `VERSION` is `2026-10-05.4`, the next after main's `2026-10-05.3` (ES #44); `.2`, reserved
+by the compose env-keys branch, never landed.

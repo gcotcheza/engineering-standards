@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.3 sha256:4053f9cbf5aac8573e6b5db55bd0a4e25c0c39318aa3d4481d233d9b71821cf1
+# fleet-deploy-lib 2026-10-05.4 sha256:7e226e88831a9f73d3524ac9c694aaf0a5d5cd8bb5b65996275d9cd2b416ad49
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -142,14 +142,18 @@ deploy_compose_exec() {
     argv+=(--env-file "$env")
     sub=''
     for f in "$@"; do
+        [ "$sub" != next ] || { sub=''; continue; }
         case $f in
-            -f|--file|--file=*|--env-file|--env-file=*|--project-directory|--project-directory=*|-p|--project-name|--project-name=*)
+            -[!-]*|--file|--file=*|--env-file|--env-file=*|--project-directory|--project-directory=*|--project-name|--project-name=*|--workdir|--workdir=*)
                 [ -n "$sub" ] || { printf 'REFUSED: a caller names no compose file, env file, project directory or name: deploy_compose fixes them\n' >&2; return 1; } ;;
             --profile|--progress|--ansi|--parallel) [ -n "$sub" ] || sub=next ;;
             -*) ;;
-            *) case $sub in '') sub=$f ;; next) sub='' ;; esac ;;
+            *) [ -n "$sub" ] || sub=$f ;;
         esac
     done
+    case $sub in
+        build|up|create|run) deploy_compose_tracked "$root" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
+    esac
     case $sub in
         watch) printf 'REFUSED: compose watch copies the app tree into running containers, so root does not run it\n' >&2; return 1 ;;
         build|up|run|create)
@@ -160,6 +164,17 @@ deploy_compose_exec() {
     for f in "${!COMPOSE_@}"; do unset "$f"; done
     "$docker" "${argv[@]}" "$@"
 }
+
+# Before a build, up, create or run (a plain run builds a missing image), the tracked files as the app user
+# sees them: an edit after the fast-forward is not built (cards 363, 371). root -> 0, or 1 with DEPLOY_COMPOSE_ERR
+deploy_compose_tracked() {
+    local out rc=0
+    out=$("${DEPLOY_GIT_AS:-git-as}" "$(deploy_compose_user "$1")" -C "$1" --no-optional-locks status --porcelain --untracked-files=no) || rc=$?
+    [ "$rc" = 0 ] || { DEPLOY_COMPOSE_ERR="git status exited $rc in $1, so the tracked files are not known to be the merge and nothing is built over them"; return 1; }
+    [ -z "$out" ] || { DEPLOY_COMPOSE_ERR="tracked files in $1 are modified since the fast-forward, so nothing is built over them: ${out//$'\n'/; }"; return 1; }
+}
+
+deploy_compose_user() { printf '%s' "${DEPLOY_APP_USER:-$(basename -- "$1")}"; }
 
 deploy_compose_pieces() { # root, env file, run dir, file… -> 0, or 1 with DEPLOY_COMPOSE_ERR
     local root=$1 env=$2 run=$3 f d
@@ -205,7 +220,8 @@ deploy_compose() { [ -n "${DEPLOY_COMPOSE:-}" ] || refuse "deploy_compose_init h
 # A value from the app's .env, read as the app user (root never follows the app user's link);
 # a failed sudo returns 1 on stderr, never an empty value.
 deploy_app_env_value() {
-    local user=${DEPLOY_APP_USER:-$(basename -- "$ROOT")} dotenv
+    local user dotenv
+    user=$(deploy_compose_user "$ROOT")
     [[ ${1:-} =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || refuse "'${1:-}' is not an env key."
     dotenv=$(sudo -n -u "$user" -- cat -- "$ROOT/.env" 2>/dev/null) || { printf 'REFUSED: %s/.env could not be read as %s (sudo), so no value is guessed\n' "$ROOT" "$user" >&2; return 1; }
     printf '%s\n' "$dotenv" | grep -m1 "^$1=" | cut -d= -f2-

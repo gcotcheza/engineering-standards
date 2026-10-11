@@ -49,6 +49,15 @@ case " $* " in *' config '*) cat "$d/../config.json" ;; esac
 exit 0
 SH
     chmod 0755 "${CF}/bin/docker"
+    # A git-as whose status lists bin/tracked and exits bin/git-rc (default 0); every call goes to bin/argv.
+    cat >"${CF}/bin/git-as" <<'SH'
+#!/bin/sh
+d=$(dirname "$0")
+printf 'git-as %s\n' "$*" >>"$d/argv"
+cat "$d/tracked" 2>/dev/null
+exit "$(cat "$d/git-rc" 2>/dev/null || echo 0)"
+SH
+    chmod 0755 "${CF}/bin/git-as"
     cat >"${CRUN}/scripts/deploy.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -56,6 +65,7 @@ D="$(cd -- "$(dirname -- "$0")" && pwd)"
 say() { printf '%s\n' "$*"; }
 refuse() { say "REFUSED: $*"; exit 1; }
 . "${D}/lib/deploy/compose.sh"
+export DEPLOY_GIT_AS="$(dirname -- "$C_DOCKER")/git-as"
 [ -z "${C_UID}" ] || export DEPLOY_ROOT_UID="${C_UID}"
 ROOT=$C_ROOT DOCKER=$C_DOCKER DEPLOY_APP_ENV_DIR=$C_ENV_DIR
 export DEPLOY_APP_BINDS_DIR=$C_BINDS_DIR
@@ -95,6 +105,23 @@ cfx caller-file
 crun "${INIT}; deploy_compose -f ${CROOT}/docker-compose.yml up -d"
 contains 'compose: a caller'"'"'s own -f is refused' "${OUT}" 'REFUSED: a caller names no compose file, env file, project directory or name'
 absent 'compose: and that file is never handed to docker' "${ARGV}" "${CROOT}/docker-compose.yml"
+# Card 372: every spelling compose parses for its file, name, env file and directory (and its hidden
+# --workdir), joined or not.
+for a in -f/tmp/evil.yml -f=/tmp/evil.yml --file=/tmp/evil.yml '-pevil' '-p=evil' '--project-name=evil' \
+    --env-file=/tmp/x.env --project-directory=/tmp '-p evil' '--file /tmp/evil.yml' '--profile x -f/tmp/evil.yml' \
+    '--profile -x -pevil' --workdir=/tmp '--workdir /tmp'; do
+    n=$((${n:-0} + 1)); cfx "caller-joined-${n}"
+    crun "${INIT}; deploy_compose ${a} up -d"
+    contains "compose: a caller's own ${a} is refused" "${OUT}" 'REFUSED: a caller names no compose file, env file, project directory or name'
+    absent "compose: and docker never runs up (${a})" "${ARGV}" ' up -d'
+done
+# -f after the command is the command's own (logs, rm), and --x=y before it is no short option.
+for a in '--profile web logs -f app' 'rm -f -s app' '--progress=plain up -d'; do
+    n=$((${n:-0} + 1)); cfx "caller-sub-flags-${n}"
+    crun "${INIT}; deploy_compose ${a}"
+    equals "compose: ${a} exits" "${RC}" 0
+    contains "compose: and docker runs ${a}" "${ARGV}" "--env-file ${CENV} ${a}"
+done
 
 cfx no-init
 crun 'deploy_compose ps'
@@ -198,6 +225,47 @@ build_case no_buildcheck 'rm -rf "${CRUN}/buildcheck"' "@RUN@/buildcheck is miss
 cfx build-up-dirty; printf 'RUN id\n' >>"${CROOT}/docker/app/Dockerfile"
 crun "${INIT}; deploy_compose --profile build up -d"
 contains 'build up: up (after a --profile) checks the context too' "${OUT}" "REFUSED: ${CROOT}/docker/app/Dockerfile differs"
+
+# Card 363: a build or an up re-reads the tracked files as the app user inside compose.sh run, so
+# every route to it does: deploy_compose, and $DEPLOY_COMPOSE in a job's own bash -c.
+cfx tracked-clean
+STATUS="-C ${CROOT} --no-optional-locks status --porcelain --untracked-files=no"
+crun "${INIT}; deploy_compose build app; deploy_compose up -d; deploy_compose create; deploy_compose ps; deploy_compose exec -T app true"
+equals 'tracked: build, up and create each re-read the tracked files as the app user, ps and exec do not' \
+    "$(grep -cxF -- "git-as demo ${STATUS}" <<<"${ARGV}")" 3
+contains 'tracked: the check comes before the build' "${ARGV}" "git-as demo ${STATUS}"$'\ncompose --project-directory '"${CROOT}"
+cfx tracked-edited
+crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose --profile web up -d"
+contains 'tracked: a tracked file edited between the merge and the up is refused' "${OUT}" \
+    "REFUSED: tracked files in ${CROOT} are modified since the fast-forward, so nothing is built over them:  M app/Models/User.php"
+absent 'tracked: and compose never runs up' "${ARGV}" ' up -d'
+cfx tracked-job
+crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; COMPOSE=\$DEPLOY_COMPOSE; job=\"\$COMPOSE build app; \$COMPOSE up -d\"; bash -c \"\$job\""
+equals 'tracked: $DEPLOY_COMPOSE in a bash -c job refuses the build and the up' \
+    "$(grep -c "^REFUSED: tracked files in ${CROOT} are modified since the fast-forward" <<<"${OUT}")" 2
+absent 'tracked: and compose never builds (job)' "${ARGV}" ' build app'
+absent 'tracked: and compose never runs up (job)' "${ARGV}" ' up -d'
+cfx tracked-git-fails
+crun "${INIT}; echo 128 >${CF}/bin/git-rc; deploy_compose up -d"
+contains 'tracked: a git status that fails is refused, never read as clean' "${OUT}" \
+    "REFUSED: git status exited 128 in ${CROOT}, so the tracked files are not known to be the merge and nothing is built over them"
+absent 'tracked: and compose never runs up (git failed)' "${ARGV}" ' up -d'
+# Card 371: compose builds a missing image on any run, so every run re-reads the tracked files like build and up.
+cfx tracked-run-build
+crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose run --build --rm app true"
+contains 'tracked: run --build over a tracked file edited after the merge is refused' "${OUT}" \
+    "REFUSED: tracked files in ${CROOT} are modified since the fast-forward, so nothing is built over them:  M app/Models/User.php"
+absent 'tracked: and compose never runs run --build' "${ARGV}" ' run --build'
+cfx tracked-run-plain
+crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose run --rm app true; deploy_compose --profile web run --rm app true"
+equals 'tracked: a plain run over a tracked file edited after the merge is refused, with and without --profile' \
+    "$(grep -c "^REFUSED: tracked files in ${CROOT} are modified since the fast-forward" <<<"${OUT}")" 2
+absent 'tracked: and compose never runs a plain run' "${ARGV}" ' run --rm app true'
+cfx tracked-run-clean
+crun "${INIT}; deploy_compose run --rm app true"
+equals 'tracked: a clean plain run passes after one re-read' "$(grep -cxF -- "git-as demo -C ${CROOT} --no-optional-locks status --porcelain --untracked-files=no" <<<"${ARGV}")" 1
+contains 'tracked: and it runs' "${ARGV}" ' run --rm app true'
+equals 'tracked: and exits 0' "${RC}" 0
 
 # B4: a value from the app's .env is read as the app user, never through root's eyes.
 if root_only_case 'env value: read as the app user (sudo)'; then

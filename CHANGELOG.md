@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-10-05 — root's ownership repair, head read and build hash follow no app-user link, and a build re-reads the tracked files (deploy-lib VERSION 2026-10-05.4; the standard is unchanged and VERSION is not bumped)
+**New `scripts/lib/deploy/ownership.sh`: `chown_root_owned <dir> <user>:<group> [<skip pattern>…]`**
+(card 363) runs `/usr/bin/find -P <dir> -xdev -user 0 … -execdir chown -h <owner> {} +` under its own
+absolute `PATH`, and replaces the five per-app `find … -exec chown` copies at their next re-vendor; pass
+it `$ROOT` itself, whose parent only root can write, never a directory inside it. Refusals (stderr,
+return 1): `chown_root_owned: <dir> is not a plain absolute directory`, `'<owner>' is not user:group`,
+`find or chown failed under <dir>, so root-owned paths may remain`.
+**`summary.sh`:** `deploy_head_file` reads `symbolic-ref HEAD` and `refs/heads/main` through `git-as
+<app> -C "$ROOT"` (`DEPLOY_GIT_AS` is a test seam), never as files; new `deploy_app_user`; new
+`deploy_build_hash <dir>`, a sha256 of `find -P . -type f` read as the app user, refusing `<dir> could
+not be hashed as <user>` and a `<dir>` that is not absolute. It replaces memento's
+`built_output`/`build_files` at its re-vendor; its paths read `./x`, not `x`, and a link is no longer
+followed, so a hash stored by the old code never matches a new one.
+**`preflight.sh`:** `refuse_if_dirty` and the new `deploy_refuse_if_tracked_dirty` (ghiecode's
+`refuse_if_tracked_dirty`, given the `deploy_` prefix so an app's own copy cannot shadow it) refuse a git
+status that fails, naming its exit code, rather than reading it as clean. ghiecode's own copy reads a
+failing git as clean: at re-vendor it deletes it and calls the lib's.
+**`compose.sh`:** `compose.sh run`, the one route every compose call takes (`deploy_compose`, and
+`$DEPLOY_COMPOSE` in a job's own `bash -c`), re-reads the tracked files through `git-as <app>` before
+`build`, `up`, `create` and every `run`, plain or `--build`, since compose builds a missing image on
+either (card 371), and refuses an edit or a failing git. An app whose own deploy steps rewrite a tracked
+file before an `up` or a `run` is refused from its re-vendor on. Before the subcommand a caller's joined
+`-fx.yml`, `-f=x.yml`, `-pX` or `-p=X` refuses like `-f x.yml` (card 372): any single-dash argument there
+does, as does compose's hidden `--workdir`, and the word after `--profile` and its kin is always its value.
+**Every app's deploy-test needs two stubs at re-vendor:** `finish` now reaches `git-as` through
+`deploy_head_file`, which the real one refuses on a test checkout, so fineprint, ghiecode, ghie-writes,
+kidsquest, memento, orbit, reflection and scribly each set `DEPLOY_GIT_AS` (a stub) and
+`DEPLOY_APP_USER` in their deploy-test env; a deploy-test that drives a compose `build`, `up`, `run` or
+`create` exports the same `DEPLOY_GIT_AS` to it. Suite: the new `ownership-test.sh` (run by `test.sh`
+as root, and as nobody for the red proofs), the record cases moved to an app-owned tree read through a
+`git-as` stub, and a case for each new refusal. All eight headers are re-stamped. Why:
+`docs/DECISIONS.md`.
+
 ## 2026-10-05 — a gate run counts for every commit of an identical tree (deploy-lib VERSION 2026-10-05.3; the standard is unchanged and VERSION is not bumped)
 **A ledger row gains a sixth, last field: the tree of the commit the run was armed on** (card 329),
 `<sha> <kind> <utc> <rc> <log> <tree|->`. `gate_ledger_tree` writes the tree only after `git status
