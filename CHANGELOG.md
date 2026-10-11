@@ -2,7 +2,7 @@
 
 ## 2026-10-11 — W2: the builder reviews their own whole diff before the gate (VERSION 2026-10-11)
 **Ghie's approval of 2026-10-11, written into W2 as one sentence.** Before the gate, the builder
-reads their own whole diff against the acceptance checklist and fixes what they find; the PR's "How
+reads their own whole diff against the change's acceptance checklist or brief and fixes what they find; the PR's "How
 it was checked", or the builder's report, says what that self-review checked and changed, and the
 reviewer sends back a PR that lacks it. A review bounce costs a full gate run, so it should be the
 exception. The adversarial review by someone who did not build it is unchanged, and the dependabot

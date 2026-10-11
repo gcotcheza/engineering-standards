@@ -1562,8 +1562,8 @@ config read (root's own files, root-owned checks first); `gate_ledger_arm`, `gat
 ## W2 asks the builder to review their own diff before the gate (2026-10-11)
 
 **Ghie's rule, 2026-10-11.** Fleet workers already carried it (BRIEF-COMMON rule 24, Ghie
-2026-10-03): before the final gate, read the whole diff as the reviewer will, against the
-acceptance checklist, and fix what turns up. W2 now says so for every builder. A bounce found by
+2026-10-03): before the final gate, read the whole diff as the reviewer will, against the change's
+acceptance checklist or brief, and fix what turns up. W2 now says so for every builder. A bounce found by
 the reviewer costs a fix and another full gate run.
 
 **The proof is written down.** The PR's "How it was checked", or the builder's report, says what
