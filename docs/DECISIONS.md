@@ -1449,12 +1449,13 @@ build, so an edit in that window was built and run as if merged. `compose.sh run
 that is where every compose call lands: an app that sets `COMPOSE=$DEPLOY_COMPOSE` and runs its build
 inside a job's own `bash -c` never calls the shell function. A git status that fails is a refusal
 naming its exit code, never a clean tree. The window is narrowed, not closed: an edit after the check
-is still built; an untracked file added in it is not seen; and a plain `run` (orbit's assets build)
-and `exec` are not rechecked. `run --build` builds, so it is (card 371): any `--build` token in the call
-counts, even one meant for the container's own command, because an extra re-read of a clean tree costs
-nothing and refusing `run --build` outright would break a deploy that needs it. A deploy whose own steps rewrite a tracked file before `up` is refused, which is the
-point. `preflight.sh`'s `deploy_refuse_if_tracked_dirty` (lifted from ghiecode, `deploy_`-prefixed so
-an app's own copy cannot shadow it) is the same judgement for a caller's own `$GIT`; `refuse_if_dirty`
+is still built; an untracked file added in it is not seen; and `exec` is not rechecked. Every `run` is
+(card 371), not only `run --build`: compose v5.5.1 builds a missing image on a plain `run` too, as its
+`--dry-run` shows, so a plain `run` over an edited tree (orbit's assets build) is refused like an `up`.
+A deploy whose own steps rewrite a tracked file before `up` or `run` is refused, which is the point.
+Compose's hidden `--workdir`, an alias of `--project-directory`, refuses before the subcommand like it.
+`preflight.sh`'s `deploy_refuse_if_tracked_dirty` (lifted from ghiecode, `deploy_`-prefixed so an
+app's own copy cannot shadow it) is the same judgement for a caller's own `$GIT`; `refuse_if_dirty`
 now fails closed the same way.
 
 **Follow-up (card 320).** `deploy_compose_buildcheck` still `cmp`s the app's `docker/` files as root
