@@ -2,18 +2,18 @@
 
 ## 2026-10-11 — W2: the builder reviews their own whole diff before the gate (VERSION 2026-10-11)
 **Ghie's approval of 2026-10-11, written into W2 as one sentence.** Before the gate, the builder
-reads their own whole diff against the change's acceptance checklist or brief and fixes what they find; the PR's "How
-it was checked", or the builder's report, says what that self-review checked and changed, and the
-reviewer sends back a PR that lacks it. A review bounce costs a full gate run, so it should be the
-exception. The adversarial review by someone who did not build it is unchanged, and the dependabot
-exception still applies. The standards text moved, so `VERSION` moves with it. Why:
-`docs/DECISIONS.md`.
+reads their own whole diff against the brief or checklist and fixes what they find (before review,
+where T1 needs no gate run); "How it was checked" says what that self-review checked and changed, or
+the reviewer returns it. A review bounce costs a full gate run, so it should be the exception. The
+adversarial review by someone who did not build it is unchanged, and a PR whose every commit is
+authored by dependabot[bot] is exempt from all of W2. The standard grew about 238 bytes, accepted as
+S1's was. The standards text moved, so `VERSION` moves with it. Why: `docs/DECISIONS.md`.
 
 **What it means for the projects.** No project code changes; each takes the text when it next
 re-vendors `docs/STANDARDS.md`, and `scripts/fleet-versions.sh` reports every project `STALE` until
 then. The gates that compare their vendored copy against this host's canonical clone by path go red
-when that clone is pulled to this text, so the merge order in `ROLLOUT.md` (the 2026-10-03 S1
-exception) applies again.
+when that clone is pulled to this text, so the merge order in `ROLLOUT.md` ("Standards-text
+change — merge order") applies again.
 
 ## 2026-10-11 — a planted .git file no longer hangs a deploy, and root's compose refuses a name its env file does not hold (deploy-lib VERSION 2026-10-11.1; the standard is unchanged and VERSION is not bumped)
 **Regression fix from 2026-10-05.4 (ES #45):** `deploy_head_file` read `.git/HEAD` through `git-as`,
