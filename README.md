@@ -72,6 +72,11 @@ no link). A project copies those files and `VERSION` into its own `scripts/lib/d
 byte-identical, and sources them. Four of root's reads in the app tree go through the app user:
 `deploy_head_file` and the pre-build tracked-file check through `git-as`, `deploy_app_env_value` and
 `deploy_build_hash` through `sudo -u`; `deploy_compose_buildcheck`'s `cmp` still reads as root (card 320).
+Before any git call in `ROOT` the lib refuses a `.git` that is not a plain directory, or a link, FIFO
+or non-file at the files where a FIFO was seen to hang git, and `deploy_app_env_value` reads only a
+plain `.env`. That list is a fast path for known hangs, not a complete one: other FIFOs under `.git`,
+`core.fsmonitor` and a redirected worktree gitfile still hang git until a bounded timeout lands
+(`docs/DECISIONS.md`, 2026-10-11.1).
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
 project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After
@@ -94,6 +99,11 @@ standards test greps `deploy.sh` for `"$ROOT/scripts/` and fails the gate on a m
 commit from root's own mirror; `summary.sh` refuses a copy anyone but root can write, and `resolve`
 refuses without the `FLEET_DEPLOY_REPO` it sets (`docs/DECISIONS.md`). That is also the first
 landing, once per project — never a hand landing.
+
+**Root's compose needs every name it reads in root's env file.** Before root's compose builds or
+starts anything, a value-less `environment` entry and every `${X}`, `${X?}`, `${X:?}` or `$X` without
+a default must be a key in `/etc/fleet/app-env/<app>.env`; an empty value passes, `$$` is literal, and
+the refusal names the service and the key, never a value (`docs/DECISIONS.md`).
 
 **The gate ledger.** The EXIT trap is what records a run, and a trap that fires on a kill sees
 `$?` from the last command that finished, not from the suite. Sourcing `ledger.sh` discards

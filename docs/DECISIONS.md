@@ -1471,3 +1471,90 @@ that option's value whatever it looks like, as compose reads it, so `--profile -
 
 **Version.** `VERSION` is `2026-10-05.4`, the next after main's `2026-10-05.3` (ES #44); `.2`, reserved
 by the compose env-keys branch, never landed.
+
+## Root's compose refuses a name its env file does not hold (2026-10-11, card 432)
+
+**Ported.** Written as deploy-lib 2026-10-05.2 against the 2026-10-05.1 lib and never merged; it ships
+unchanged in substance in 2026-10-11.1. Card 371 since put a tracked-file re-read ahead of the same
+`build`/`up`/`run`/`create` calls, which runs before this policy and leaves it intact; nothing was dropped.
+
+**The gap (backlog 320, found by the kq session).** Root's `--env-file` replaces the project `.env`, so
+a value-less `environment` entry or a `${VAR}` whose key root's file lacks resolved to nothing, and
+the service started without its secret while every check was green.
+
+**Uninterpolated, through root's own argv.** The policy's first call interpolates, so a missing
+`${VAR}` has already become `""` there. A second call, `config --no-interpolate`, keeps every
+reference as written; it goes through the same argv as every root compose call (`deploy_compose` at
+init, the exec argv before `build`/`up`/`run`/`create`), so it reads only the exported files and
+root's env file. That this call carries no value from that file, keeps a value-less list entry as a
+bare name (`- DATABASE_URL`, a string without `=`) and a value-less map entry as `null` is unverified:
+the probe that would show it prints a resolved config and is refused by the fleet's credential guard.
+The policy counts both shapes either way.
+
+**What counts as a name.** `${X}`, `${X?}`, `${X:?}` and bare `$X`, in any string value, after `$$`
+is dropped (compose's literal `$`). `?` and `:?` are rewritten to `${X}` before every other operator
+form is dropped as carrying a default (`-`, `:-`, `+`, `:+`), so one deletable line decides each. A
+key present with an empty value passes: an empty value is a choice, and `:?` refusing it at run time
+is compose's job. A name in a default (`${X:-${Y}}`) is not read.
+
+**Keys only, never values (S2).** Root's file is read with a keys-only `sed` (`KEY=` at column 0), so
+no value reaches a variable that can be printed; the refusal names the service and the key. A line
+written `export KEY=…`, which compose itself honours, is not read as a key and so is refused: a
+false refusal is loud, a false pass is the bug.
+
+**Fail closed.** A failed call, an answer jq cannot read, or an env file `sed` cannot read refuses,
+as every policy error does. An empty or blank `config` answer refuses on either call (`compose config
+returned nothing, so the policy could not be checked`): jq reads no input as no rules, so the first,
+interpolated call passed an empty answer clean before this round. One guard line per call.
+
+**Cost, not measured against root's files.** The seven apps' current deploy compose files were
+surveyed for the names they need (2026-10-05); root's files were not read here, so each app's first
+deploy after its re-vendor is where a missing key shows, as a refusal before anything starts.
+
+## A planted .git file is refused before git runs, and the lib's reads in an app tree (2026-10-11)
+
+**The regression (ES #45, deploy-lib 2026-10-05.4).** `deploy_head_file` moved from reading `.git/HEAD`
+as a plain file to asking `git-as`, and git opens `HEAD` on every call: a FIFO there blocks it forever,
+as the app user, while root's deploy waits. Ghie Writes' deploy-test case 18 went from a refusal to a
+timeout. The guard goes back in front of git, by `stat` only: root opens nothing in the app tree.
+
+**What is checked: a fast path, not a complete list.** `deploy_git_plain <ROOT>/.git` needs a plain
+directory and a plain `HEAD`, and refuses a link, FIFO or other non-file at the files where a FIFO was
+seen to hang the lib's calls (2026-10-11, as `nobody`, `timeout 5`): `HEAD`, `config`, `commondir`,
+`packed-refs`, `refs/heads/main`, `index` (status only), `info/attributes`, `info/exclude` (status),
+and in each `worktrees/*/` `HEAD`, `commondir`, `gitdir`, `locked` (`worktree list`) and `index`. It
+refuses the known cases fast; it does not close the class. A link is refused even to a readable file:
+the old file read refused it too. A gitfile `.git` is refused, since what it names would go unchecked;
+every live `ROOT` holds a `.git` directory. `compose.sh run` cannot source `summary.sh`, so it carries
+the function as `deploy_compose_git_plain`; `test.sh` compares the two bodies and the two refusal
+sentences.
+
+**Not closed by this.** Each of these still hangs git as the app user while root's deploy waits:
+- a FIFO at `objects/pack/*.idx`, `objects/info/alternates`, `objects/info/commit-graph`, `shallow` or
+  `info/grafts` passes the check (rc 0) and hangs `status` and `rev-parse` (rc 124; review, 2026-10-11);
+- a `core.fsmonitor` command in `.git/config`, a plain file the check passes, hangs `status`;
+- a FIFO `.gitignore` at any depth blocks a full `status` (`refuse_if_dirty`, cleanup's worktree
+  status), and a FIFO `.gitattributes` blocks `--untracked-files=no` too; there is no fixed list to stat;
+- the app user can rewrite a worktree's `.git` gitfile to name a directory with a FIFO `HEAD`: the check
+  on `ROOT` passes, and `cleanup_worktree`'s `status` and `cleanup_envfiles`' `ls-files` in that
+  worktree hang;
+- the race: the check and git's open are two steps, so a plant between them stalls the deploy, with no
+  privilege gained.
+The fix for all of them is a bounded timeout on root's git calls, a design change left to its own
+follow-up card, not built here.
+
+**The sweep: every read the lib makes in an app tree, or through git, as of 2026-10-11.1.** Behind the
+check, each with a case and a guard-deleted mutant: `deploy_head_file`, `refuse_if_dirty`,
+`deploy_refuse_if_tracked_dirty`, `resolve` (before the fetch), `deploy_cleanup` (before every cleanup
+git call, worktree admin files included), `deploy_compose_tracked`, and `deploy_app_env_value` (the app
+user reads `.env` only as a plain file, so a FIFO is never opened). Behind the same check, in the same
+run with nothing app-run between: `resolve`'s later git reads, `test_scope_of`, `github_e2e_same_tree`,
+`github_e2e`'s blob read and `gated` (after `resolve`'s check), and `cleanup_worktree`'s
+`merge-base`/`branch`/`worktree remove` and `cleanup_worktrees` (after `deploy_cleanup`'s check).
+Safe: `deploy_compose_buildcheck`'s `cmp` (as root only after `-f` and a `realpath` match; the race is
+a compare that prints nothing); `deploy_build_hash`, `chown_root_owned`, `cleanup_rootfiles` and
+`deploy_compose_buildcheck`'s two `find`s (`find -P` opens no file, `sha256sum` only `-type f`);
+`deploy_compose_binds`, `deploy_compose_init`'s `export-sha` read, `github_e2e_api` and `github_e2e`'s
+config read (root's own files, root-owned checks first); `gate_ledger_arm`, `gate_ledger_sha` and
+`gate_ledger_tree` (the gate's own checkout, no deploy). Not closed: `cleanup_envfiles`' `ls-files` and
+`cleanup_worktree`'s `status` (the gitfile redirect above), and every path in **Not closed by this**.

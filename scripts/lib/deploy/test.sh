@@ -272,7 +272,7 @@ run_lib() {
     ARGVFILE="${CASE}/gh-argv.log"
     REAPARGV="${CASE}/reap-argv.log"
     # shellcheck disable=SC2086  # repoenv is empty or one NAME=value; "" would be env's command
-    OUT="$(env \
+    OUT="$(${LIB_TIMEOUT:+timeout "${LIB_TIMEOUT}"} env \
         PATH="${BIN}:${PATH}" \
         FAKE_GH_JSON="${CASE}/gh.json" \
         FAKE_GH_FAIL="${GH_FAIL:-}" \
@@ -321,6 +321,7 @@ run_lib() {
     LOGFILE="$(find "${LOGS}" "${CASE}/logroot" -name '*.log' -printf '%T@ %p\n' 2>/dev/null \
         | sort -rn | head -1 | cut -d' ' -f2-)"
     BY_HAND=''
+    LIB_TIMEOUT=''
     GH_FAIL=''
     EXTRA=''
     LOG_DIR_UNSET=''
@@ -1851,6 +1852,67 @@ run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
 contains 'a .git linked to a repository only root can read is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
 unrecorded '.git symlink'
 
+# --- 6c. a planted .git (deploy-lib 2026-10-11.1): a FIFO blocks git forever, so it is refused unread ---
+plain_refusal() { printf '%s/.git is not a plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it' "${ROOT}"; }
+fifo_at() { rm -rf "${ROOT}/.git/$1"; mkdir -p "$(dirname "${ROOT}/.git/$1")"; mkfifo "${ROOT}/.git/$1"; }
+
+fixture record-head-fifo
+landed_at
+fifo_at HEAD
+LIB_TIMEOUT=30 run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+equals 'a FIFO at .git/HEAD is refused, not waited on' "RC=${RC}" 'RC=1'
+contains 'and as no main sha' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+
+fixture record-head-link-readable
+landed_at
+mv "${ROOT}/.git/HEAD" "${CASE}/HEAD-file"
+ln -s "${CASE}/HEAD-file" "${ROOT}/.git/HEAD"
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a HEAD linked to a readable file naming main is still refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'readable HEAD link'
+
+fixture record-gitdir-link-readable
+landed_at
+mv "${ROOT}/.git" "${CASE}/moved.git"
+ln -s "${CASE}/moved.git" "${ROOT}/.git"
+run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a .git linked to a readable repository is still refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
+unrecorded 'readable .git link'
+
+fixture record-config-fifo
+landed_at
+fifo_at config
+LIB_TIMEOUT=30 run_lib "MERGE_SHA=${MERGE_SHA}; GATED=ledger; finish \"\$MERGE_SHA\""
+equals 'a FIFO at .git/config is refused, not waited on' "RC=${RC}" 'RC=1'
+unrecorded 'config FIFO'
+
+fixture dirty-head-fifo
+fifo_at HEAD
+LIB_TIMEOUT=30 run_lib 'refuse_if_dirty; printf "PAST THE DIRTY CHECK\n" >&3'
+equals 'refuse_if_dirty: a FIFO at .git/HEAD is refused, not waited on' "RC=${RC}" 'RC=1'
+contains 'refuse_if_dirty: and says why' "${OUT}" "REFUSED: $(plain_refusal)."
+
+fixture tracked-head-fifo
+fifo_at HEAD
+LIB_TIMEOUT=30 run_lib 'deploy_refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
+equals 'tracked: a FIFO at .git/HEAD is refused, not waited on' "RC=${RC}" 'RC=1'
+contains 'tracked: and says why' "${OUT}" "REFUSED: $(plain_refusal)."
+
+fixture resolve-head-fifo
+fifo_at HEAD
+LIB_TIMEOUT=30 run_lib 'resolve'
+equals 'resolve: a FIFO at .git/HEAD is refused before the fetch, not waited on' "RC=${RC}" 'RC=1'
+contains 'resolve: and says why' "${OUT}" "REFUSED: $(plain_refusal)."
+
+equals 'compose.sh carries summary.sh'\''s deploy_git_plain unchanged (it cannot source it)' \
+    "$(sed -n '/^deploy_compose_git_plain() {$/,/^}$/p' "${LIB_DIR}/compose.sh" | tail -n +2)" \
+    "$(sed -n '/^deploy_git_plain() {$/,/^}$/p' "${LIB_DIR}/summary.sh" | tail -n +2)"
+contains 'and that copy is the real function, not two empty reads' "$(sed -n '/^deploy_compose_git_plain() {$/,/^}$/p' "${LIB_DIR}/compose.sh")" 'worktrees/*/{HEAD,'
+compose_plain_sentence=$(sed -n 's/^.*deploy_compose_git_plain "\$1\/\.git" || { DEPLOY_COMPOSE_ERR="\$1\(\/\.git is not [^"]*\)".*$/\1/p' "${LIB_DIR}/compose.sh")
+summary_plain_sentence=$(sed -n "s/^deploy_git_plain_refusal() { printf '%s\(\/\.git is not [^']*\)'.*\$/\1/p" "${LIB_DIR}/summary.sh")
+equals 'compose.sh refuses a planted .git in summary.sh'\''s sentence, word for word' "${compose_plain_sentence}" "${summary_plain_sentence}"
+contains 'and that sentence was read, not two empty reads' "${compose_plain_sentence}" '/.git is not a plain git directory'
+
 fixture record-other-owner
 mkdir -m 700 "${CASE}/records"
 ( umask 077; : >"${CASE}/records/root.record" )
@@ -2084,12 +2146,22 @@ equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 # each one covers for the other; ROOT is moved here so one case can fail one of them.
 cleanup_fixture cleanup-first-block-excluded
 gh_json main main
+mkdir -p "${CASE}/not-the-checkout/.git"; printf 'ref: refs/heads/main\n' >"${CASE}/not-the-checkout/.git/HEAD"
 run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${CASE}/not-the-checkout; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; exit 0"
 contains 'the first worktree git lists is never a candidate' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 0 (none)'
 equals 'and the checkout is still on disk' "$(on_disk "${ROOT}")" 'there'
 
+cleanup_fixture cleanup-worktree-fifo
+fifo_at worktrees/wt-pr/HEAD
+LIB_TIMEOUT=30 run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; exit 0"
+equals 'cleanup: a FIFO in a worktree'\''s admin directory is not waited on' "RC=${RC}" 'RC=0'
+contains 'cleanup: and it does not run, saying why' "${OUT}" "CLEANUP #73 did not run: $(plain_refusal)."
+equals 'cleanup: and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
 cleanup_fixture cleanup-root-path-excluded
+# A ROOT whose .git is a gitfile is refused before git runs, so the moved ROOT gets a plain .git of its own.
+mv "${WT}/.git" "${CASE}/wt-gitfile"; mkdir "${WT}/.git"; printf 'ref: refs/heads/main\n' >"${WT}/.git/HEAD"
 run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; ROOT=${WT}; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; exit 0"
 contains 'the worktree at the deployed path is never a candidate' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 0 (none)'

@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-10-11 — a planted .git file no longer hangs a deploy, and root's compose refuses a name its env file does not hold (deploy-lib VERSION 2026-10-11.1; the standard is unchanged and VERSION is not bumped)
+**Regression fix from 2026-10-05.4 (ES #45):** `deploy_head_file` read `.git/HEAD` through `git-as`,
+and git blocks forever on a FIFO there, so Ghie Writes' deploy-test case 18 timed out (124) instead of
+refusing. New `deploy_git_plain <ROOT>/.git` (`summary.sh`) refuses, by `stat` alone and never opening
+anything, a `.git` that is not a plain directory, a `HEAD` that is not a plain file, and a link, FIFO
+or other non-file at `config`, `commondir`, `packed-refs`, `refs/heads/main`, `index`,
+`info/attributes`, `info/exclude` or a `worktrees/*/` `HEAD`, `commondir`, `gitdir`, `index` or `locked`
+(each measured to block git as a FIFO). That list is a fast path for known hangs, not a complete one:
+other FIFOs under `.git`, `core.fsmonitor` and a redirected worktree gitfile still hang git, left to a
+bounded-timeout follow-up. It runs before every lib git call on `ROOT`:
+`deploy_head_file` (returns 1, so the caller's "does not read as main" refusal stands),
+`refuse_if_dirty`, `deploy_refuse_if_tracked_dirty` and `resolve` (`REFUSED: <ROOT>/.git is not a
+plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it.`),
+`deploy_cleanup` (`CLEANUP #<n> did not run: …`), and `compose.sh run`'s tracked-file check, through
+`deploy_compose_git_plain`, a copy `test.sh` holds identical in body and refusal sentence. `deploy_app_env_value` reads `.env` only
+when the app user sees a plain file, not a link: the refusal sentence is unchanged. **At re-vendor** a
+deploy-test whose `ROOT` has no `.git` directory with a plain `HEAD` is refused at those calls.
+**Card 432, the unshipped 2026-10-05.2 work, ported:** `deploy_compose_policy` makes one more call,
+`config --no-interpolate --format json`, through the same argv as every root compose call, and refuses
+`compose <service>: <KEY> has no value in root's env file (policy, backlog 320)` (`top level` outside
+services) for a value-less `environment` entry or a `${X}`, `${X?}`, `${X:?}` or `$X` without a default
+whose key root's env file lacks (an empty value passes, `$$` is literal). It fails closed on a failed
+call, unreadable JSON or an unreadable env file, and every `config` answer it reads refuses when empty
+or blank (`compose config returned nothing, so the policy could not be checked`). No value is printed
+(S2). `deploy_compose_policy` takes the env file and the compose command as arguments 4 and on. Suites:
+cases for every guard, each proved red by a saved mutant with its guard line deleted, run as `nobody`.
+All eight headers are re-stamped. Why, and the sweep of every read the lib makes in an app tree:
+`docs/DECISIONS.md`.
+
 ## 2026-10-05 — root's ownership repair, head read and build hash follow no app-user link, and a build re-reads the tracked files (deploy-lib VERSION 2026-10-05.4; the standard is unchanged and VERSION is not bumped)
 **New `scripts/lib/deploy/ownership.sh`: `chown_root_owned <dir> <user>:<group> [<skip pattern>…]`**
 (card 363) runs `/usr/bin/find -P <dir> -xdev -user 0 … -execdir chown -h <owner> {} +` under its own
