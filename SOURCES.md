@@ -55,7 +55,7 @@ shared memory (the owner's standing instructions to the AI sessions).
 | Rule | Derived from |
 |---|---|
 | W1 Branch + PR, never straight to main | The fleet's shared memory (git-workflow note) |
-| W2 Draft → adversarial review → ready | A Laravel project's `CLAUDE.md`: "the reviewer is never the builder" |
+| W2 Draft → adversarial review → ready | A Laravel project's `CLAUDE.md`: "the reviewer is never the builder"; the builder's self-review before the gate from the fleet worker brief (rule 24, Ghie 2026-10-03), made a rule by Ghie 2026-10-11 |
 | W3 Only the owner merges | The fleet's shared memory (git-workflow note: "`gh pr merge` belongs to Ghie"); a Laravel project's `CLAUDE.md` |
 | W4 A title that is the action, then the four literal PR headings, ≤150 words | The fleet's shared memory (comment-style note: the template, and "The four headings are LITERAL… not a vibe"; and the owner's 2026-09-20 note on a PR named after its fault: "title should be action, 'what was done?'"); a Laravel project's `CLAUDE.md`, which holds the canonical wording |
 | W5 Avoid stacks; retarget before merging | The fleet's shared memory (git-workflow note), recording a PR that merged into an already-merged branch and never shipped |

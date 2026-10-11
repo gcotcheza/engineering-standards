@@ -1558,3 +1558,22 @@ a compare that prints nothing); `deploy_build_hash`, `chown_root_owned`, `cleanu
 config read (root's own files, root-owned checks first); `gate_ledger_arm`, `gate_ledger_sha` and
 `gate_ledger_tree` (the gate's own checkout, no deploy). Not closed: `cleanup_envfiles`' `ls-files` and
 `cleanup_worktree`'s `status` (the gitfile redirect above), and every path in **Not closed by this**.
+
+## W2 asks the builder to review their own diff before the gate (2026-10-11)
+
+**Ghie's rule, 2026-10-11.** Fleet workers already carried it (BRIEF-COMMON rule 24, Ghie
+2026-10-03): before the final gate, read the whole diff as the reviewer will, against the change's
+acceptance checklist or brief, and fix what turns up. W2 now says so for every builder: before the
+gate, or before review where T1 needs no gate run, and with the dependabot exemption covering all of
+W2. A bounce found by the reviewer costs a fix and another full gate run.
+
+**The proof is written down.** The PR's "How it was checked", or the builder's report, says what
+the self-review checked and what it changed. A PR that lacks it goes back, so "I reviewed it" is
+never only a claim.
+
+**The option not taken:** letting the self-review replace the adversarial review. The builder is
+still the worst reader of their own diff; the self-review only makes the second reader's bounce the
+exception.
+
+**Size.** The loaded standard grew about 238 bytes (18472 to 18710 over c876908); this is accepted,
+as S1's growth was (0b04aad). Trimming the standard back under budget is a separate change for Ghie to decide.

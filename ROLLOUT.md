@@ -218,7 +218,7 @@ them: the library never sees a step.
 |---|---|---|
 | A step that exits 75 ends the gate with `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exit 75, never `GATE FAILED` | Each adopter's `check.sh`/`ci.sh` still turns a give-up into its ordinary failure banner, which sends someone looking for a failure that never ran. Each takes the convention when it next re-vendors `scripts/lib/deploy/`, where the header comment names it and `docs/DECISIONS.md` carries the full text. | each project, in its own re-vendor PR |
 
-## The 2026-10-03 S1 exception — merge order
+## Standards-text change — merge order
 
 **Merge order.** The exception is text, and a project reads it when it re-vendors
 `docs/STANDARDS.md`; no project code changes. Three gates — fineprint's and health-tracker's
