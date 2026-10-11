@@ -767,6 +767,117 @@ contains 'the killed run is recorded as a failure' "${OUT}" \
 contains 'and the head it was green on before is no longer gated' "${OUT}" \
     "$(no_green e2e "${LIVE_SHA}" 'ci green, e2e red, e2e github: off (no config)')"
 
+# --- 3-tree. card 329: a row on another commit counts when its recorded tree is the gated commit's ---
+# In the plain fixture the merge has the head's tree, so a row filed under the merge is a row on
+# identical code; ONE and TWO are shas no checkout holds, read only through their rows.
+tree_rows() { : >"${LEDGER}"; while [ "$#" -gt 0 ]; do printf '%s %s 2026-10-05T10:00:00Z %s - %s\n' "$1" "$2" "$3" "$4" >>"${LEDGER}"; shift 4; done; }
+TREE_ONE=1111111111111111111111111111111111111111
+TREE_TWO=2222222222222222222222222222222222222222
+tree_fixture() { fixture "$1"; HEAD_TREE="$(git_at rev-parse "${HEAD_SHA}^{tree}")"; }
+tree_gated() { run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'; }
+# tree_shim <mode>: git, but status prints nothing and then a change (late) or fails (fail), or ^{tree} fails (treefail).
+tree_shim() {
+    mkdir -p "${CASE}/shim"
+    printf '#!/bin/sh\ncase " $* " in *"^{tree}"*) [ "%s" = treefail ] && exit 128 ;; *" status "*)\n  n=$(cat "%s" 2>/dev/null || echo 0); echo $((n + 1)) >"%s"\n  [ "%s" = fail ] && exit 128\n  [ "%s" = late ] && [ "$n" -ge 1 ] && echo " M app/base.txt"; exit 0 ;;\nesac\nexec /usr/bin/git "$@"\n' \
+        "$1" "${CASE}/status-calls" "${CASE}/status-calls" "$1" "$1" >"${CASE}/shim/git"
+    chmod 0755 "${CASE}/shim/git"
+}
+
+tree_fixture tree-match
+tree_rows "${MERGE_SHA}" ci 0 "${HEAD_TREE}" "${MERGE_SHA}" e2e 0 "${HEAD_TREE}"
+tree_gated
+contains 'ci and e2e green on another commit of an identical tree gate the head' "${OUT}" \
+    "GATED ${HEAD_SHA:0:7} ci and e2e both green in ${LEDGER}"
+contains 'and the acceptance line names the tree and the commit the run was on' "${OUT}" \
+    "ci accepted by identical tree ${HEAD_TREE:0:12} from ${MERGE_SHA:0:7}"
+contains 'and one line per kind' "${OUT}" "e2e accepted by identical tree ${HEAD_TREE:0:12} from ${MERGE_SHA:0:7}"
+contains 'and DONE records which kinds came by tree, and from where' "${OUT}" \
+    "GATED_IS ledger head ${HEAD_SHA:0:7}, by identical tree: ci ${MERGE_SHA:0:7}, e2e ${MERGE_SHA:0:7}"
+
+tree_fixture tree-differs
+LIVE_TREE="$(git_at rev-parse "${LIVE_SHA}^{tree}")"
+tree_rows "${MERGE_SHA}" ci 0 "${LIVE_TREE}" "${MERGE_SHA}" e2e 0 "${LIVE_TREE}"
+tree_gated
+contains 'green rows on a different tree are refused' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" 'ci absent, e2e absent, e2e github: off (no config)')"
+absent 'and nothing is accepted by tree' "${OUT}" 'accepted by identical tree'
+
+tree_fixture tree-dash
+tree_rows "${MERGE_SHA}" ci 0 - "${MERGE_SHA}" e2e 0 -
+tree_gated
+contains 'a row whose tree is - never matches' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" 'ci absent, e2e absent, e2e github: off (no config)')"
+
+tree_fixture tree-legacy
+printf '%s ci 2026-09-18T20:00:00Z 0 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' "${MERGE_SHA}" "${MERGE_SHA}" >"${LEDGER}"
+tree_gated
+contains 'a legacy 5-field row on another commit of the same tree does not match' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" 'ci absent, e2e absent, e2e github: off (no config)')"
+tree_fixture tree-legacy-exact
+printf '%s ci 2026-09-18T20:00:00Z 0 -\n%s e2e 2026-09-18T20:30:00Z 0 -\n' "${HEAD_SHA}" "${HEAD_SHA}" >"${LEDGER}"
+tree_gated
+contains 'and a legacy 5-field row on the gated sha still matches exactly' "${OUT}" \
+    "GATED ${HEAD_SHA:0:7} ci and e2e both green in ${LEDGER}"
+absent 'and is not called a tree match' "${OUT}" 'accepted by identical tree'
+
+tree_fixture tree-seven-fields
+printf '%s ci 2026-10-05T10:00:00Z 0 a %s -\n%s e2e 2026-10-05T10:00:00Z 0 a %s -\n' \
+    "${MERGE_SHA}" "${HEAD_TREE}" "${MERGE_SHA}" "${HEAD_TREE}" >"${LEDGER}"
+tree_gated
+contains 'a row of other than 6 fields is never read for a tree, whatever its sixth field says' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" 'ci absent, e2e absent, e2e github: off (no config)')"
+
+tree_fixture tree-ci-sha-e2e-tree
+tree_rows "${HEAD_SHA}" ci 0 - "${MERGE_SHA}" e2e 0 "${HEAD_TREE}"
+tree_gated
+contains 'ci by the exact sha and e2e by identical tree gate the head together' "${OUT}" \
+    "GATED ${HEAD_SHA:0:7} ci and e2e both green in ${LEDGER}"
+absent 'and ci is not called a tree match' "${OUT}" 'ci accepted by identical tree'
+contains 'and DONE names e2e alone as by tree' "${OUT}" \
+    "GATED_IS ledger head ${HEAD_SHA:0:7}, by identical tree: e2e ${MERGE_SHA:0:7}"
+
+tree_fixture tree-e2e-only
+tree_rows "${MERGE_SHA}" e2e 0 "${HEAD_TREE}"
+tree_gated
+contains 'an e2e row by tree is never a ci row, so ci is still owed' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" "ci absent, e2e green by identical tree from ${MERGE_SHA:0:7}")"
+
+tree_fixture tree-red
+tree_rows "${MERGE_SHA}" ci 1 "${HEAD_TREE}" "${MERGE_SHA}" e2e 0 "${HEAD_TREE}"
+tree_gated
+contains 'a red row on an identical tree is refused, and named' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" "ci red by identical tree from ${MERGE_SHA:0:7}, e2e green by identical tree from ${MERGE_SHA:0:7}")"
+absent 'and ci is not accepted' "${OUT}" 'ci accepted by identical tree'
+
+tree_fixture tree-newest-wins
+tree_rows "${TREE_ONE}" ci 0 "${HEAD_TREE}" "${TREE_TWO}" ci 1 "${HEAD_TREE}" \
+    "${HEAD_SHA}" e2e 0 -
+tree_gated
+contains 'the newest row of an identical tree decides, as for an exact sha' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" "ci red by identical tree from ${TREE_TWO:0:7}, e2e green")"
+
+tree_fixture tree-exact-first
+tree_rows "${HEAD_SHA}" ci 1 - "${MERGE_SHA}" ci 0 "${HEAD_TREE}" "${HEAD_SHA}" e2e 0 -
+tree_gated
+contains 'a red row on the exact sha is not overruled by a newer green on an identical tree' "${OUT}" \
+    "$(no_green ci "${HEAD_SHA}" 'ci red, e2e green')"
+
+# A tree the deploy cannot read is -, and - never matches, even rows written as -; set -e survives it.
+tree_fixture tree-unreadable
+tree_rows "${MERGE_SHA}" ci 0 - "${MERGE_SHA}" e2e 0 -
+tree_shim treefail
+BY_HAND=1
+run_lib "set -e; GIT='${CASE}/shim/git -C ${ROOT}'; GATE_SHA=${HEAD_SHA}; GATE_WHAT=head; "'gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'a deploy tree git cannot read accepts nothing by tree, and a set -e caller carries on' "${OUT}" \
+    "GATED_IS by hand over [NOT GREEN head ${HEAD_SHA:0:7}: ci absent, e2e absent, e2e github: off (no config)]"
+
+tree_fixture tree-by-hand
+tree_rows "${MERGE_SHA}" ci 0 "${HEAD_TREE}"
+BY_HAND=1
+tree_gated
+contains '--gated-by-hand is unchanged and its verdict names the tree match it saw' "${OUT}" \
+    "GATED_IS by hand over [NOT GREEN head ${HEAD_SHA:0:7}: ci green by identical tree from ${MERGE_SHA:0:7}, e2e absent, e2e github: off (no config)]"
+
 # --- 3a. GitHub e2e: root's config and token, and a fake gh serving saved check-run and run JSON ---
 # The shapes are ghie-writes run 37240193529's (read-only gh api, 2026-10-05), trimmed to what is read.
 GHE_REPO=gcotcheza/fixture
@@ -831,6 +942,13 @@ absent 'and the token is in no output (S2)' "${OUT}" "${GHE_TOKEN}"
 absent 'nor in the deploy log' "$(cat "${LOGFILE}")" "${GHE_TOKEN}"
 absent 'nor on any gh argv' "$(cat "${ARGVFILE}")" "${GHE_TOKEN}"
 equals 'and the route never writes the box ledger' "$(rows "${LEDGER}")" 1
+
+tree_fixture ghe-ci-by-tree
+ghe_fixture "${HEAD_SHA}"
+printf '%s ci 2026-10-04T20:00:00Z 0 - %s\n' "${MERGE_SHA}" "${HEAD_TREE}" >"${LEDGER}"
+ghe_gated
+contains 'ci by identical tree and e2e from GitHub gate together, and DONE says both' "${OUT}" \
+    "GATED_IS ledger ci + github e2e ${GHE_REPO} run 800 (.github/workflows/ci.yml, e2e) on head ${HEAD_SHA:0:7}, by identical tree: ci ${MERGE_SHA:0:7}"
 
 fixture ghe-ledger-red
 ghe_fixture "${HEAD_SHA}"
@@ -1209,6 +1327,12 @@ contains 'a non-UI diff with one green ci row is gated, naming the rule' "${OUT}
 contains 'and the scope line says why' "${OUT}" "SCOPE non-ui: non-UI diff (scripts/, tests/) ${RULE}"
 contains 'and DONE records ci alone' "${OUT}" "GATED_IS ledger head ${SCOPE_SHA:0:7} ci (non-UI)"
 
+scope_fixture scope-nonui-tree live nonui
+printf '%s ci 2026-10-05T10:00:00Z 0 - %s\n' "${TREE_ONE}" "$(git_at rev-parse "${SCOPE_SHA}^{tree}")" >"${LEDGER}"
+scope_gated
+contains 'a non-UI diff takes its ci by identical tree, and DONE says so' "${OUT}" \
+    "GATED_IS ledger head ${SCOPE_SHA:0:7} ci (non-UI), by identical tree: ci ${TREE_ONE:0:7}"
+
 scope_fixture scope-nonui-no-ci live nonui
 scope_rows e2e
 scope_gated
@@ -1352,8 +1476,32 @@ fixture ledger-writer
 WRITTEN="${CASE}/written"
 run_lib "$(armed "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3")"
 contains 'the writer says where it wrote' "${OUT}" "gate-ledger: ${LIVE_SHA:0:7} ci rc=0 -> ${WRITTEN}"
-matches 'the ledger line is <sha> <kind> <utc> <rc> <log>' "$(tail -1 "${WRITTEN}")" \
-    "^${LIVE_SHA} ci [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z 0 /tmp/ci\.log$"
+matches 'the ledger line is <sha> <kind> <utc> <rc> <log> <tree>' "$(tail -1 "${WRITTEN}")" \
+    "^${LIVE_SHA} ci [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z 0 /tmp/ci\.log $(git_at rev-parse "${LIVE_SHA}^{tree}")$"
+
+# Card 329: a tree is written only after a status that ran and found the tree clean.
+fixture ledger-tree-dirty
+printf 'uncommitted\n' >>"${ROOT}/app/base.txt"
+run_lib "GATE_LEDGER_GIT='git -C ${ROOT}'; printf 'TREE=%s\\n' \"\$(gate_ledger_tree ${LIVE_SHA})\" >&3"
+contains 'a dirty worktree names no tree, only -' "${OUT}" 'TREE=-'
+fixture ledger-tree-clean
+run_lib "GATE_LEDGER_GIT='git -C ${ROOT}'; printf 'TREE=%s\\n' \"\$(gate_ledger_tree ${LIVE_SHA})\" >&3"
+contains 'and a clean one names its commit'"'"'s tree' "${OUT}" "TREE=$(git_at rev-parse "${LIVE_SHA}^{tree}")"
+
+fixture ledger-writer-late-dirty
+WRITTEN="${CASE}/written"
+tree_shim late
+run_lib "GATE_LEDGER_GIT='${CASE}/shim/git -C ${ROOT}'; gate_ledger_arm; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 - >&3 2>&3"
+matches 'a tree dirty by the time its tree is read is written as -' "$(tail -1 "${WRITTEN}")" \
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 0 - -$"
+equals 'and both status reads ran' "$(cat "${CASE}/status-calls")" 2
+
+fixture ledger-writer-status-fails
+WRITTEN="${CASE}/written"
+tree_shim fail
+run_lib "GATE_LEDGER_GIT='${CASE}/shim/git -C ${ROOT}'; gate_ledger_arm; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 - >&3 2>&3"
+matches 'a status that could not run writes -, never a tree' "$(tail -1 "${WRITTEN}")" \
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 0 - -$"
 
 # Backlog 268: a red run on an uncommitted tree used to land as <sha>-dirty.
 fixture ledger-writer-dirty
@@ -1376,7 +1524,7 @@ run_lib "$(armed "GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record 
 contains 'rc 0 with GATE_SUITE_PASSED is recorded green' "${OUT}" \
     "gate-ledger: ${LIVE_SHA:0:7} ci rc=0 -> ${WRITTEN}"
 matches 'and the line it writes says rc 0' "$(tail -1 "${WRITTEN}")" \
-    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 0 /tmp/ci\.log$"
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 0 /tmp/ci\.log [0-9a-f]{40}$"
 
 fixture ledger-writer-no-flag
 WRITTEN="${CASE}/written"
@@ -1384,13 +1532,13 @@ run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record e2e 0 - >&3 2>&3")"
 contains 'rc 0 without the flag says the run did not finish' "${OUT}" \
     'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
 matches 'and a failure is what it writes' "$(tail -1 "${WRITTEN}")" \
-    "^${LIVE_SHA} e2e [0-9-]+T[0-9:]+Z 1 -$"
+    "^${LIVE_SHA} e2e [0-9-]+T[0-9:]+Z 1 - [0-9a-f]{40}$"
 
 fixture ledger-writer-nonzero
 WRITTEN="${CASE}/written"
 run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record ci 7 - >&3 2>&3")"
 matches 'a non-zero rc is written unchanged' "$(tail -1 "${WRITTEN}")" \
-    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 7 -$"
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 7 - [0-9a-f]{40}$"
 absent 'and the flag is never mentioned for it' "${OUT}" 'GATE_SUITE_PASSED'
 
 fixture ledger-env-exported-before-source
@@ -1400,7 +1548,15 @@ run_lib "$(armed "GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3
 contains 'an operator export inherited before sourcing is discarded, not honoured' "${OUT}" \
     'gate-ledger: rc 0 without GATE_SUITE_PASSED — the run did not finish; recorded as a failure'
 matches 'and it is written as a failure' "$(tail -1 "${WRITTEN}")" \
-    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 1 /tmp/ci\.log$"
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 1 /tmp/ci\.log [0-9a-f]{40}$"
+
+fixture ledger-writer-tree-unreadable
+WRITTEN="${CASE}/written"
+tree_shim treefail
+run_lib "set -e; GATE_LEDGER_GIT='${CASE}/shim/git -C ${ROOT}'; gate_ledger_arm; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 - >&3 2>&3; printf 'TEARDOWN RAN\n' >&3"
+matches 'a tree git cannot read is written as -' "$(tail -1 "${WRITTEN}" 2>/dev/null)" \
+    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 0 - -$"
+contains 'and a set -e caller still reaches its teardown' "${OUT}" 'TEARDOWN RAN'
 
 # --- 4b. the armed sha: a row names the commit the run began on, or there is no row ---
 # A commit landing between gate_ledger_arm and the EXIT trap. The row would otherwise

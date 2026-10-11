@@ -1,6 +1,6 @@
-# fleet-deploy-lib 2026-10-05.4 sha256:fdc69b8250789848b70b11e60811d0a9eabc76e56dc00ea2fd16942478716b0c
+# fleet-deploy-lib 2026-10-05.4 sha256:ac62efaf26d9ea29e15a21b150830486b8b264570f80a68f93e6c9590392ccaa
 # shellcheck shell=bash
-# One line per gate run: <sha> <ci|e2e> <utc> <rc> <log>. ci.sh and e2e.sh write it,
+# One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
 # scope owes green (none, ci, or ci and e2e) — by hand prints the verdict it overrides instead.
 # GATE_LEDGER_GIT is unquoted on purpose.
@@ -36,8 +36,18 @@ gate_ledger_sha() {
     printf '%s' "$sha"
 }
 
+# The tree of $1 only after a status that ran and found nothing to commit; otherwise -, which no lookup matches.
+gate_ledger_tree() {
+    local git=${GATE_LEDGER_GIT:-git} status=''
+    # shellcheck disable=SC2086
+    status=$($git --no-optional-locks status --porcelain 2>/dev/null) || { printf -- '-'; return 0; }
+    [ -z "$status" ] || { printf -- '-'; return 0; }
+    # shellcheck disable=SC2086
+    $git rev-parse --verify -q "$1^{tree}" 2>/dev/null || printf -- '-'
+}
+
 gate_ledger_record() {
-    local kind=$1 rc=$2 log=${3:--} file dir sha shrc=0
+    local kind=$1 rc=$2 log=${3:--} file dir sha tree shrc=0
     if [ "${GATE_ARMED:-0}" != 1 ]; then
         printf 'gate-ledger: gate_ledger_arm was never called, so the %s run (rc=%s) is NOT recorded\n' "$kind" "$rc" >&2
         return 0
@@ -71,7 +81,8 @@ gate_ledger_record() {
         printf 'gate-ledger: cannot create %s, so the %s run (rc=%s) is NOT recorded\n' "$dir" "$kind" "$rc" >&2
         return 0
     }
-    printf '%s %s %s %s %s\n' "$sha" "$kind" "$(date -u +%FT%TZ)" "$rc" "$log" >>"$file" || {
+    tree=$(gate_ledger_tree "$sha")
+    printf '%s %s %s %s %s %s\n' "$sha" "$kind" "$(date -u +%FT%TZ)" "$rc" "$log" "$tree" >>"$file" || {
         printf 'gate-ledger: cannot append to %s, so the %s run (rc=%s) is NOT recorded\n' "$file" "$kind" "$rc" >&2
         return 0
     }
@@ -275,7 +286,7 @@ github_e2e() {
 }
 
 gated() {
-    local kind sha what v owed kinds='' notgreen='' verdict='' refusal='' gh_e2e=''
+    local kind sha what v from tree='' bytree='' owed kinds='' notgreen='' verdict='' refusal='' gh_e2e=''
     # Unset is a caller without the matching resolve.sh; set but empty is a resolve that
     # was skipped or did not finish, and that one is refused rather than read as the head.
     sha=${GATE_SHA-$HEAD_SHA}
@@ -299,13 +310,29 @@ gated() {
             verdict="NOT GREEN $what ${sha:0:7}: no gate ledger at $LEDGER"
             refusal="no gate ledger at $LEDGER, so no head was ever gated on this box."
         else
+            tree=$($GIT rev-parse --verify -q "$sha^{tree}" 2>/dev/null) || tree=-
             for kind in $owed; do
-                # Append-only, so the last line for (sha, kind) is the newest and it alone decides.
-                v=$(awk -v sha="$sha" -v kind="$kind" \
-                    '$1 == sha && $2 == kind { rc = $4; seen = 1 }
-                     END { printf "%s", (!seen ? "absent" : (rc == "0" ? "green" : "red")) }' "$LEDGER") \
+                # Newest wins: the last row for (sha, kind); with none, the last 6-field row for (tree, kind).
+                v=$(awk -v sha="$sha" -v kind="$kind" -v tree="$tree" \
+                    '$2 "" != kind { next }
+                     $1 "" == sha { rc = $4; seen = 1; next }
+                     NF != 6 { next }
+                     tree == "" || tree == "-" { next }
+                     $6 "" == tree { trc = $4; from = $1; tseen = 1 }
+                     END {
+                         v = "absent"
+                         if (tseen) v = "red " from
+                         if (tseen && trc == "0") v = "green " from
+                         if (seen) v = (rc == "0" ? "green" : "red")
+                         printf "%s", v
+                     }' "$LEDGER") \
                     || v=unreadable
-                kinds="${kinds:+$kinds, }$kind $v"
+                read -r v from <<<"$v"
+                if [ -n "$from" ] && [ "$v" = green ]; then
+                    say "$kind accepted by identical tree ${tree:0:12} from ${from:0:7}"
+                    bytree="${bytree:+$bytree, }$kind ${from:0:7}"
+                fi
+                kinds="${kinds:+$kinds, }$kind $v${from:+ by identical tree from ${from:0:7}}"
                 if github_e2e "$kind" "$v" "$sha" "$what" "${MERGE_SHA:-}"; then v=green; gh_e2e=$GH_E2E_RUN; fi
                 kinds="$kinds${GH_E2E:+, $GH_E2E}"
                 [ -z "$GH_E2E_WHY" ] || say "GITHUB E2E $GH_E2E_WHY"
@@ -334,17 +361,17 @@ gated() {
             ;;
         non-ui)
             # shellcheck disable=SC2034  # the project's finish() prints it
-            GATED="ledger $what ${sha:0:7} ci (non-UI)"
+            GATED="ledger $what ${sha:0:7} ci (non-UI)${bytree:+, by identical tree: $bytree}"
             say "GATED ${sha:0:7} ci green in $LEDGER; e2e not required: $SCOPE_WHY per $TEST_SCOPE_RULE"
             ;;
         *)
             if [ -n "$gh_e2e" ]; then
                 # shellcheck disable=SC2034  # the project's finish() prints it
-                GATED="ledger ci + $GH_E2E_SRC"
+                GATED="ledger ci + $GH_E2E_SRC${bytree:+, by identical tree: $bytree}"
                 say "GATED ${sha:0:7} ci green in $LEDGER, $GH_E2E: $GH_E2E_URL completed $GH_E2E_AT"
             else
                 # shellcheck disable=SC2034  # the project's finish() prints it
-                GATED="ledger $what ${sha:0:7}"
+                GATED="ledger $what ${sha:0:7}${bytree:+, by identical tree: $bytree}"
                 say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
             fi
             ;;

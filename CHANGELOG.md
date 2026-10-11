@@ -30,6 +30,21 @@ as root, and as nobody for the red proofs), the record cases moved to an app-own
 `git-as` stub, and a case for each new refusal. All eight headers are re-stamped. Why:
 `docs/DECISIONS.md`.
 
+## 2026-10-05 — a gate run counts for every commit of an identical tree (deploy-lib VERSION 2026-10-05.3; the standard is unchanged and VERSION is not bumped)
+**A ledger row gains a sixth, last field: the tree of the commit the run was armed on** (card 329),
+`<sha> <kind> <utc> <rc> <log> <tree|->`. `gate_ledger_tree` writes the tree only after `git status
+--porcelain` ran and printed nothing, otherwise `-`, which no lookup matches. Ignored files (`vendor/`,
+`node_modules/`) are outside `--porcelain`, exactly as for the sha rows already. `gated` reads the exact
+sha first, as before; only when a kind has no row there does it take the newest 6-field row of that
+kind whose tree is the gated commit's, and only rc 0 is green. ci and e2e are matched independently,
+both still owed; a red exact row is never overruled by a tree; a 5-field row matches its own sha only,
+and nothing is backfilled. A tree acceptance prints `<kind> accepted by identical tree <tree12> from
+<sha7>`, the verdict item reads `<kind> green|red by identical tree from <sha7>`, and GATED gains
+`, by identical tree: <kind> <sha7>[, …]`. `--gated-by-hand` is unchanged. Readers of fields 1 to 5
+keep working. A deploy commit whose tree git cannot read is `-` too, and `gated` skips every tree match for it. Fields are compared as strings. Suite: 30 new checks; red proofs, one saved mutant per new guard, in the lane of card 329.
+All seven headers are re-stamped for `2026-10-05.3`; `.2` is reserved by the compose env-keys branch,
+which lands first. Why: `docs/DECISIONS.md`.
+
 ## 2026-10-05 — a hand deploy may count a GitHub Actions e2e run on the exact commit (deploy-lib VERSION 2026-10-05.1; the standard is unchanged and VERSION is not bumped)
 **`gated` asks GitHub for `e2e` when the ledger's row is absent or red** (card 352), and never for
 `ci`. Off unless root holds `/etc/fleet/github-e2e/<app>` (`R=`, `N=`, `W=`, `W_SHA256=`; root-owned,
