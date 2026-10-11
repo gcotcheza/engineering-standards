@@ -16,7 +16,7 @@ root_only_case() { [ "$(id -u)" = 0 ] || { printf 'skip %s (root only)\n' "$1"; 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/compose-test.XXXXXXXX")" || { printf 'cannot make a work directory\n' >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
 DEVNULL_BEFORE="$(stat -c '%a %u %g %F' /dev/null)"
-C_UID=''
+C_UID='' C_TIMEOUT=''
 [ "$(id -u)" = 0 ] || C_UID="$(id -u)"
 
 # A run directory shaped like fleet-deploy's export, a stub docker that records its argv and
@@ -33,6 +33,7 @@ cfx() {
     cp "${CRUN}/buildcheck/docker/app/Dockerfile" "${CROOT}/docker/app/Dockerfile"
     printf 'services:\n  app:\n    volumes: ["/:/host"]\n' >"${CROOT}/docker-compose.yml"
     printf 'COMPOSE_FILE=docker-compose.yml\n' >"${CROOT}/.env"
+    mkdir -p "${CROOT}/.git"; printf 'ref: refs/heads/main\n' >"${CROOT}/.git/HEAD"
     printf '%s\n' "${COMPOSE_SHA}" >"${CRUN}/export-sha"
     chmod 700 "${CF}/app-env"
     printf 'DB_PASSWORD=stub\n' >"${CENV}"
@@ -40,20 +41,26 @@ cfx() {
     jq -n --arg r "${CROOT}" '{name: "demo", services: {app: {image: "x", build: {context: "\($r)/docker/app", dockerfile: "Dockerfile"},
         volumes: [{type: "bind", source: "\($r)/storage", target: "/s"}, {type: "volume", source: "data", target: "/d"}]}},
         volumes: {data: {}}}' >"${CF}/config.json"
+    cp "${CF}/config.json" "${CF}/raw.json"
     cat >"${CF}/bin/docker" <<'SH'
 #!/bin/sh
 d=$(dirname "$0")
 printf '%s\n' "$*" >>"$d/argv"
 env | grep '^COMPOSE_' >>"$d/env"
-case " $* " in *' config '*) cat "$d/../config.json" ;; esac
+case " $* " in
+    *' --no-interpolate '*) [ ! -e "$d/raw-fails" ] || exit 1; cat "$d/../raw.json" ;;
+    *' config '*) [ ! -e "$d/config-empty" ] || exit 0; cat "$d/../config.json" ;;
+esac
 exit 0
 SH
     chmod 0755 "${CF}/bin/docker"
     # A git-as whose status lists bin/tracked and exits bin/git-rc (default 0); every call goes to bin/argv.
+    # Like git, it opens <root>/.git/HEAD first, so a FIFO there blocks it.
     cat >"${CF}/bin/git-as" <<'SH'
 #!/bin/sh
 d=$(dirname "$0")
 printf 'git-as %s\n' "$*" >>"$d/argv"
+: <"$3/.git/HEAD"
 cat "$d/tracked" 2>/dev/null
 exit "$(cat "$d/git-rc" 2>/dev/null || echo 0)"
 SH
@@ -75,11 +82,11 @@ SH
 cjson() { local t; t=$(jq --arg r "${CROOT}" "$1" "${CF}/config.json") && printf '%s\n' "$t" >"${CF}/config.json"; }
 crun() {
     # shellcheck disable=SC2086
-    OUT="$(env -i PATH=/usr/bin:/bin C_ROOT="${CROOT}" C_DOCKER="${CF}/bin/docker" C_ENV_DIR="${CF}/app-env" C_BINDS_DIR="${CF}/app-binds" C_UID="${C_UID}" \
+    OUT="$(${C_TIMEOUT:+timeout "${C_TIMEOUT}"} env -i PATH=/usr/bin:/bin C_ROOT="${CROOT}" C_DOCKER="${CF}/bin/docker" C_ENV_DIR="${CF}/app-env" C_BINDS_DIR="${CF}/app-binds" C_UID="${C_UID}" \
         FLEET_DEPLOY_REPO=gcotcheza/demo ${C_EXTRA:-} C_CALLS="$1" bash "${CRUN}/scripts/deploy.sh" 2>&1)"
     RC=$?
     ARGV="$(cat "${CF}/bin/argv" 2>/dev/null)"
-    C_EXTRA=''
+    C_EXTRA='' C_TIMEOUT=''
 }
 INIT="deploy_compose_init ${COMPOSE_SHA}"
 
@@ -93,8 +100,12 @@ equals 'compose: the policy, the first call, reads every profile'"'"'s services,
     "compose --project-directory ${CROOT} -p demo -f ${CRUN}/compose/docker-compose.yml --env-file ${CENV} --profile * config --no-env-resolution --format json"
 absent 'compose: never the tree'"'"'s docker-compose.yml' "${ARGV}" "${CROOT}/docker-compose.yml"
 absent 'compose: never the tree'"'"'s .env' "${ARGV}" "${CROOT}/.env"
-equals 'compose: up checks the build context, exec does not (config runs twice)' "$(grep -c ' config ' "${CF}/bin/argv")" 2
-equals 'compose: and the build check reads every profile too' "$(grep -c -- "--profile \* config" "${CF}/bin/argv")" 2
+equals 'compose: the env-key call, the second, reads the same files and root'"'"'s env file, uninterpolated' "$(sed -n 2p "${CF}/bin/argv")" \
+    "compose --project-directory ${CROOT} -p demo -f ${CRUN}/compose/docker-compose.yml --env-file ${CENV} --profile * config --no-interpolate --format json"
+equals 'compose: and up makes the same env-key call, by the same argv' "$(grep -- '--no-interpolate' "${CF}/bin/argv" | sort | uniq -c | sed 's/^ *//')" \
+    "2 compose --project-directory ${CROOT} -p demo -f ${CRUN}/compose/docker-compose.yml --env-file ${CENV} --profile * config --no-interpolate --format json"
+equals 'compose: up checks the policy and the build context, exec does not (config runs twice at init, twice at up)' "$(grep -c ' config ' "${CF}/bin/argv")" 4
+equals 'compose: and the build check reads every profile too' "$(grep -c -- "--profile \* config" "${CF}/bin/argv")" 4
 
 cfx env-dropped
 C_EXTRA='COMPOSE_FILE=/tmp/evil.yml COMPOSE_PROFILES=evil'
@@ -267,6 +278,25 @@ equals 'tracked: a clean plain run passes after one re-read' "$(grep -cxF -- "gi
 contains 'tracked: and it runs' "${ARGV}" ' run --rm app true'
 equals 'tracked: and exits 0' "${RC}" 0
 
+# 2026-10-11.1: a planted .git is refused before git-as runs; the stub opens HEAD as git does.
+plain_case() { # name, setup run in CROOT/.git
+    cfx "plain-$1"
+    (cd "${CROOT}/.git" && eval "$2")
+    C_TIMEOUT=30 crun "${INIT}; deploy_compose up -d"
+    equals "plain $1: refused, not waited on" "RC=${RC}" 'RC=1'
+    contains "plain $1: and says why" "${OUT}" "REFUSED: ${CROOT}/.git is not a plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it"
+    absent "plain $1: and git-as never runs" "${ARGV}" 'git-as '
+    absent "plain $1: and nothing runs" "${ARGV}" ' up -d'
+}
+plain_case head_fifo 'rm HEAD; mkfifo HEAD'
+plain_case head_link 'mv HEAD ../HEAD-file; ln -s ../HEAD-file HEAD'
+plain_case config_fifo 'mkfifo config'
+plain_case worktree_fifo 'mkdir -p worktrees/w; mkfifo worktrees/w/HEAD'
+plain_case gitdir_link 'cd .. && mv .git real.git && ln -s real.git .git'
+cfx plain-regular
+crun "${INIT}; deploy_compose up -d"
+contains 'plain: a regular HEAD still reaches git-as and up' "${ARGV}" "git-as demo -C ${CROOT} --no-optional-locks status"
+
 # B4: a value from the app's .env is read as the app user, never through root's eyes.
 if root_only_case 'env value: read as the app user (sudo)'; then
     cfx env-value; chown -R nobody "${CF}/www"; chmod 711 "${WORK}" "${CF}"
@@ -353,7 +383,7 @@ crun "${INIT}; deploy_compose up -d"
 contains 'binds up: the policy at up reads the same list' "${ARGV}" "--env-file ${CENV} up -d"
 
 drun() { # direct run mode, as a job's text calls it
-    OUT="$(env -i PATH=/usr/bin:/bin FLEET_DEPLOY_REPO=gcotcheza/demo ${C_UID:+DEPLOY_ROOT_UID=${C_UID}} bash "${CRUN}/scripts/lib/deploy/compose.sh" "$@" 2>&1)"
+    OUT="$(${C_TIMEOUT:+timeout "${C_TIMEOUT}"} env -i PATH=/usr/bin:/bin FLEET_DEPLOY_REPO=gcotcheza/demo ${C_UID:+DEPLOY_ROOT_UID=${C_UID}} bash "${CRUN}/scripts/lib/deploy/compose.sh" "$@" 2>&1)"
     ARGV="$(cat "${CF}/bin/argv" 2>/dev/null)"
 }
 cfx direct-ok
@@ -386,6 +416,23 @@ cfx init-docker-glob
 crun "DOCKER='${CF}/bin/docke?'; ${INIT}; deploy_compose ps"
 contains 'init: a DOCKER that is not one word (a glob) is refused' "${OUT}" "REFUSED: DOCKER '${CF}/bin/docke?' is not one plain word."
 equals 'init: and calls no docker (DOCKER)' "${ARGV}" ''
+# 2026-10-11.1: a sudo that runs its command as the caller, so the plain-file check runs unprivileged too.
+env_plain_case() { # name, setup in CROOT
+    cfx "env-plain-$1"; printf '#!/bin/sh\nshift 4\nexec "$@"\n' >"${CF}/bin/sudo"; chmod 755 "${CF}/bin/sudo"
+    (cd "${CROOT}" && eval "$2")
+    C_EXTRA="PATH=${CF}/bin:/usr/bin:/bin" C_TIMEOUT=30
+    crun 'v=$(DEPLOY_APP_USER=nobody deploy_app_env_value APP_URL) || printf "RC=%s\n" "$?"; printf "VAL=[%s]\n" "${v:-}"'
+    equals "env plain $1: not waited on" "$(grep -c '^RC=1$' <<<"${OUT}")" 1
+    contains "env plain $1: refused with no value" "${OUT}" "REFUSED: ${CROOT}/.env could not be read as nobody (sudo), so no value is guessed"
+    absent "env plain $1: and never its content" "${OUT}" 'linked.invalid'
+}
+env_plain_case fifo 'rm .env; mkfifo .env'
+env_plain_case link 'printf "APP_URL=https://linked.invalid\n" >linked; rm .env; ln -s linked .env'
+cfx env-plain-regular; printf '#!/bin/sh\nshift 4\nexec "$@"\n' >"${CF}/bin/sudo"; chmod 755 "${CF}/bin/sudo"
+printf 'APP_URL=https://demo.invalid\n' >"${CROOT}/.env"
+C_EXTRA="PATH=${CF}/bin:/usr/bin:/bin"
+crun 'printf "VAL=%s\n" "$(DEPLOY_APP_USER=nobody deploy_app_env_value APP_URL)"'
+contains 'env plain: a regular .env is still read' "${OUT}" 'VAL=https://demo.invalid'
 cfx env-value-sudo-fails; printf '#!/bin/sh\nexit 1\n' >"${CF}/bin/sudo"; chmod 755 "${CF}/bin/sudo"
 C_EXTRA="PATH=${CF}/bin:/usr/bin:/bin"
 crun 'v=$(DEPLOY_APP_USER=nobody deploy_app_env_value APP_URL) || printf "RC=%s\n" "$?"; printf "VAL=[%s]\n" "${v:-}"'
@@ -456,6 +503,64 @@ absent 'init: and says nothing clean' "${OUT}" 'policy clean'
 cfx env-key
 crun 'deploy_app_env_value "bad key"'
 contains 'env value: a key that is not a name refuses' "${OUT}" "REFUSED: 'bad key' is not an env key."
+# 2026-10-05.2: every name compose reads from root's env file is a key there (backlog 320); a value is never printed.
+ENV_KEYS=$'PRESENT=SECRET_VALUE_9f3a\nEMPTYV=\nOPT=\nREQ=\nexport SHADOW=SECRET_VALUE_9f3a_2\n# COMMENTED=x\n'
+env_case() { # name, raw config as a jq expression, expect: clean or "<service>: <KEY>"
+    cfx "envkeys-$1"
+    jq -n "$2" >"${CF}/raw.json"
+    printf '%s' "${ENV_KEYS}" >"${CENV}"
+    crun "${INIT}; deploy_compose up -d"
+    if [ "$3" = clean ]; then contains "env keys $1: passes" "${ARGV}" "--env-file ${CENV} up -d"
+    else
+        contains "env keys $1: refused" "${OUT}" "REFUSED: compose $3 has no value in root's env file (policy, backlog 320)"
+        absent "env keys $1: nothing runs" "${ARGV}" ' up -d'
+    fi
+    absent "env keys $1: no value of root's env file is printed (S2)" "${OUT}${ARGV}" 'SECRET_VALUE_9f3a'
+}
+env_case present_list '{name: "demo", services: {app: {environment: ["PRESENT", "A=${PRESENT}"]}}}' clean
+env_case present_map '{name: "demo", services: {app: {environment: {PRESENT: null, A: "${PRESENT}"}}}}' clean
+env_case empty_value '{name: "demo", services: {app: {environment: ["EMPTYV", "A=${EMPTYV}", "B=$EMPTYV"]}}}' clean
+env_case default_dash '{name: "demo", services: {app: {environment: ["A=${X-d}"]}}}' clean
+env_case default_colon_dash '{name: "demo", services: {app: {environment: ["A=${X:-d}"], image: "x:${X:-latest}"}}}' clean
+env_case default_plus '{name: "demo", services: {app: {environment: ["A=${X+d}", "B=${X:+d}"]}}}' clean
+env_case dollar_escape '{name: "demo", services: {app: {command: ["sh", "-c", "echo $$NAME $${NAME}"]}}}' clean
+env_case opt_empty '{name: "demo", services: {app: {environment: ["A=${OPT?}"]}}}' clean
+env_case req_empty '{name: "demo", services: {app: {environment: ["A=${REQ:?set REQ}"]}}}' clean
+env_case null_list '{name: "demo", services: {app: {environment: ["PRESENT", "DATABASE_URL"]}}}' 'app: DATABASE_URL'
+env_case null_map '{name: "demo", services: {app: {environment: {PRESENT: null, DATABASE_URL: null}}}}' 'app: DATABASE_URL'
+env_case brace '{name: "demo", services: {app: {environment: ["PRESENT", "A=${APP_SECRET}"]}}}' 'app: APP_SECRET'
+env_case opt_absent '{name: "demo", services: {web: {environment: ["A=${MISSING_OPT?}"]}}}' 'web: MISSING_OPT'
+env_case req_absent '{name: "demo", services: {app: {environment: {A: "${MISSING_REQ:?set it}"}}}}' 'app: MISSING_REQ'
+env_case bare '{name: "demo", services: {app: {command: ["echo", "$CMDVAR"]}}}' 'app: CMDVAR'
+env_case escape_then_bare '{name: "demo", services: {app: {command: ["echo", "$$$BARE"]}}}' 'app: BARE'
+env_case export_line '{name: "demo", services: {app: {environment: ["SHADOW"]}}}' 'app: SHADOW'
+env_case top_level '{name: "demo", services: {app: {image: "x"}}, volumes: {data: {name: "demo_${VOLNAME}"}}}' 'top level: VOLNAME'
+cfx envkeys-at-up; printf '%s' "${ENV_KEYS}" >"${CENV}"; jq -n '{name: "demo", services: {app: {environment: ["PRESENT"]}}}' >"${CF}/raw.json"
+crun "${INIT}; printf 'EMPTYV=\n' >${CENV}; deploy_compose up -d"
+contains 'env keys at up: init passed with the key there' "${OUT}" 'policy clean'
+contains 'env keys at up: a key gone before up is refused at up' "${OUT}" "REFUSED: compose app: PRESENT has no value in root's env file (policy, backlog 320)"
+absent 'env keys at up: and nothing runs' "${ARGV}" ' up -d'
+cfx envkeys-config-fails; touch "${CF}/bin/raw-fails"
+crun "${INIT}"
+contains 'env keys: a failed uninterpolated config refuses' "${OUT}" "REFUSED: compose config --no-interpolate failed, so root's env file was not checked and no compose call runs"
+cfx envkeys-jq; printf 'not json\n' >"${CF}/raw.json"
+crun "${INIT}"
+contains 'env keys: an uninterpolated config jq cannot read refuses' "${OUT}" 'REFUSED: jq could not read the uninterpolated compose config, so no compose call runs'
+empty_case() { # name, setup, calls: an empty or blank config answer refuses, and nothing runs
+    cfx "empty-$1"
+    eval "$2"
+    crun "$3"
+    contains "empty config $1: refused" "${OUT}" 'REFUSED: compose config returned nothing, so the policy could not be checked'
+    absent "empty config $1: nothing runs" "${ARGV}" ' up -d'
+}
+empty_case first 'touch "${CF}/bin/config-empty"' "${INIT}"
+empty_case first_blank 'printf " \n\t\n" >"${CF}/config.json"' "${INIT}"
+empty_case first_at_up ':' "${INIT}"'; touch "$(dirname "$C_DOCKER")/config-empty"; deploy_compose up -d'
+empty_case raw ': >"${CF}/raw.json"' "${INIT}"
+empty_case raw_blank 'printf " \n\t\n" >"${CF}/raw.json"' "${INIT}"
+cfx envkeys-unreadable
+crun 'deploy_compose_policy "$ROOT" "{\"name\": \"demo\"}" demo "$C_ENV_DIR/none.env" "$C_DOCKER" compose || printf "ERR=%s\n" "$DEPLOY_COMPOSE_ERR"'
+contains 'env keys: an env file that cannot be read refuses' "${OUT}" "ERR=root's env file could not be read for its keys, so no compose call runs"
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 if [ "${fails}" -eq 0 ]; then printf '\ncompose-test: all checks passed\n'; exit 0; fi
 printf '\ncompose-test: %s check(s) failed\n' "${fails}" >&2

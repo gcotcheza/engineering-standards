@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.4 sha256:0fadd7581e986b3ea96ce4548bebbc2583cd4f11de240447186167a14da1abd2
+# fleet-deploy-lib 2026-10-11.1 sha256:3990ede1288ea50c957ec7b2eb955114c3ba6cda83b0e35ab222a61b43589070
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -206,6 +206,8 @@ deploy_cleanup() {
         || { say "CLEANUP #${PR-} worktrees not examined (base: merged into ${base:-unreadable}, not main) scratch not reaped (base)"; return 0; }
     [ -n "$head_ref" ] \
         || { say "CLEANUP #${PR-} worktrees not examined (headRef: gh named no head branch) scratch not reaped (headRef)"; return 0; }
+    deploy_git_plain "${ROOT-}/.git" \
+        || { say "CLEANUP #${PR-} did not run: $(deploy_git_plain_refusal "${ROOT-}")."; return 0; }
     rc=0
     ${GIT-} merge-base --is-ancestor "${merge_sha:-missing}" origin/main >/dev/null 2>&1 || rc=$?
     [ "$rc" = 0 ] \

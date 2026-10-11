@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.4 sha256:60295991f8cf7f1ff110a9f534968f8c183b66b57deae210a3b7ecefc609a612
+# fleet-deploy-lib 2026-10-11.1 sha256:6412fd1ae6808996aec3e3fafb26baf28940550cf13894117a9f4515f346687f
 # shellcheck shell=bash
 # resolve <PR#> proves gh says MERGED and the merge commit IS origin/main, then sets
 # GATE_SHA: the commit whose tree deploys, and so the commit that must be gated.
@@ -27,6 +27,7 @@ resolve() {
     { [ -n "$HEAD_SHA" ] && [ -n "$MERGE_SHA" ]; } \
         || refuse "PR #$PR names no head commit and no merge commit."
     [ -z "${FLEET_DEPLOY_MERGE_SHA:-}" ] || [ "$MERGE_SHA" = "$FLEET_DEPLOY_MERGE_SHA" ] || refuse "gh names merge commit $MERGE_SHA for PR #$PR, not $FLEET_DEPLOY_MERGE_SHA, the one fleet-deploy exported scripts/ at."
+    deploy_git_plain "$ROOT/.git" || refuse "$(deploy_git_plain_refusal "$ROOT")."
     $GIT fetch origin || refuse "git fetch origin failed; a deploy does not read a stale remote."
     # Both commits are proved readable before any comparison: an unreadable one makes
     # `git diff` exit 128, which is not "the trees differ".

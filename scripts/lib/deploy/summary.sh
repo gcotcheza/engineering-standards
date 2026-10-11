@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.4 sha256:2c8a3673f19611414b7286ba079e27e2c3f6016f846211310315c777ad4ab7fc
+# fleet-deploy-lib 2026-10-11.1 sha256:32e06a9ba21503e11a5ba2048645611b0136eed96c1390ebf4b6491688f17fc7
 # shellcheck shell=bash
 # Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
 # this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)
@@ -49,10 +49,21 @@ fail_tail() {
 # The app user: DEPLOY_APP_USER, else ROOT's last part, which every app's account is named after.
 deploy_app_user() { printf '%s' "${DEPLOY_APP_USER:-$(basename -- "$ROOT")}"; }
 
+# deploy_git_plain <.git>: a plain directory whose files git opens on every call are plain files or absent.
+# A FIFO there blocks git forever; root only stats them. docs/DECISIONS.md (deploy-lib 2026-10-11.1)
+deploy_git_plain() {
+    local g=${1:-} f
+    [[ $g == /* && -d $g && ! -L $g ]] || return 1
+    [[ -f $g/HEAD && ! -L $g/HEAD ]] || return 1
+    for f in "$g"/{config,commondir,packed-refs,refs/heads/main,index,info/attributes,info/exclude} "$g"/worktrees/*/{HEAD,commondir,gitdir,index,locked}; do [[ ! -L $f && ( -f $f || ! -e $f ) ]] || return 1; done
+}
+deploy_git_plain_refusal() { printf '%s/.git is not a plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it' "$1"; }
+
 # The live commit, read by git as the app user through git-as: root opens nothing under ROOT/.git.
 deploy_head_file() {
     local as=${DEPLOY_GIT_AS:-git-as} user ref sha
     user=$(deploy_app_user)
+    deploy_git_plain "$ROOT/.git" || return 1
     ref=$("$as" "$user" -C "$ROOT" symbolic-ref -q HEAD) || return 1
     [ "$ref" = refs/heads/main ] || return 1
     sha=$("$as" "$user" -C "$ROOT" rev-parse --verify -q 'refs/heads/main^{commit}') || return 1
