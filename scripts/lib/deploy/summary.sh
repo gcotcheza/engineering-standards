@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-11.1 sha256:32e06a9ba21503e11a5ba2048645611b0136eed96c1390ebf4b6491688f17fc7
+# fleet-deploy-lib 2026-10-11.1 sha256:19a78ce99b4c8d55f855b01b7fb06dcfdf4da0379df0b20d649b1037ad159666
 # shellcheck shell=bash
 # Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
 # this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)
@@ -49,8 +49,8 @@ fail_tail() {
 # The app user: DEPLOY_APP_USER, else ROOT's last part, which every app's account is named after.
 deploy_app_user() { printf '%s' "${DEPLOY_APP_USER:-$(basename -- "$ROOT")}"; }
 
-# deploy_git_plain <.git>: a plain directory whose files git opens on every call are plain files or absent.
-# A FIFO there blocks git forever; root only stats them. docs/DECISIONS.md (deploy-lib 2026-10-11.1)
+# deploy_git_plain <.git>: a fast path, by stat only, over the files where a FIFO was seen to hang git;
+# not a complete list. docs/DECISIONS.md (deploy-lib 2026-10-11.1)
 deploy_git_plain() {
     local g=${1:-} f
     [[ $g == /* && -d $g && ! -L $g ]] || return 1

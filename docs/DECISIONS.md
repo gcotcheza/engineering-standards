@@ -1486,9 +1486,10 @@ the service started without its secret while every check was green.
 `${VAR}` has already become `""` there. A second call, `config --no-interpolate`, keeps every
 reference as written; it goes through the same argv as every root compose call (`deploy_compose` at
 init, the exec argv before `build`/`up`/`run`/`create`), so it reads only the exported files and
-root's env file, and it carries no value from that file (a value-less entry stays a bare name). With
-`--no-interpolate` compose keeps a list-form `environment` as written, so `- DATABASE_URL` is a
-string without `=` there, and a map-form entry is `null`; both count.
+root's env file. That this call carries no value from that file, keeps a value-less list entry as a
+bare name (`- DATABASE_URL`, a string without `=`) and a value-less map entry as `null` is unverified:
+the probe that would show it prints a resolved config and is refused by the fleet's credential guard.
+The policy counts both shapes either way.
 
 **What counts as a name.** `${X}`, `${X?}`, `${X:?}` and bare `$X`, in any string value, after `$$`
 is dropped (compose's literal `$`). `?` and `:?` are rewritten to `${X}` before every other operator
@@ -1517,33 +1518,43 @@ as a plain file to asking `git-as`, and git opens `HEAD` on every call: a FIFO t
 as the app user, while root's deploy waits. Ghie Writes' deploy-test case 18 went from a refusal to a
 timeout. The guard goes back in front of git, by `stat` only: root opens nothing in the app tree.
 
-**What is checked, and why that list.** `deploy_git_plain <ROOT>/.git` needs a plain directory and a
-plain `HEAD`, and refuses a link, FIFO or other non-file at each file git was measured (2026-10-11, as
-`nobody`, `timeout 5`) to block on as a FIFO for the calls the lib makes: `HEAD`, `config`,
-`commondir`, `packed-refs`, `refs/heads/main`, `index` (status only), `info/attributes`, `info/exclude`
-(status), and in each `worktrees/*/` `HEAD`, `commondir`, `gitdir`, `locked` (`worktree list`) and
-`index`. A link is refused even to a readable file: the old file read refused it too. A gitfile `.git`
-is refused, since what it names would go unchecked; every live `ROOT` holds a `.git` directory.
-`compose.sh run` cannot source `summary.sh`, so it carries the function as `deploy_compose_git_plain`;
-`test.sh` compares the two bodies.
+**What is checked: a fast path, not a complete list.** `deploy_git_plain <ROOT>/.git` needs a plain
+directory and a plain `HEAD`, and refuses a link, FIFO or other non-file at the files where a FIFO was
+seen to hang the lib's calls (2026-10-11, as `nobody`, `timeout 5`): `HEAD`, `config`, `commondir`,
+`packed-refs`, `refs/heads/main`, `index` (status only), `info/attributes`, `info/exclude` (status),
+and in each `worktrees/*/` `HEAD`, `commondir`, `gitdir`, `locked` (`worktree list`) and `index`. It
+refuses the known cases fast; it does not close the class. A link is refused even to a readable file:
+the old file read refused it too. A gitfile `.git` is refused, since what it names would go unchecked;
+every live `ROOT` holds a `.git` directory. `compose.sh run` cannot source `summary.sh`, so it carries
+the function as `deploy_compose_git_plain`; `test.sh` compares the two bodies and the two refusal
+sentences.
 
-**Not closed by this: the race, and the work tree.** The check and git's open are two steps, so an app
-user who plants between them still stalls its own deploy, with no privilege gained. A FIFO
-`.gitignore` at any depth blocks a full `status` (`refuse_if_dirty`, cleanup's worktree status), and a
-FIFO `.gitattributes` blocks `--untracked-files=no` too; there is no fixed list to stat. Both need a
-bounded wait on root's git calls, a design change this round does not make.
+**Not closed by this.** Each of these still hangs git as the app user while root's deploy waits:
+- a FIFO at `objects/pack/*.idx`, `objects/info/alternates`, `objects/info/commit-graph`, `shallow` or
+  `info/grafts` passes the check (rc 0) and hangs `status` and `rev-parse` (rc 124; review, 2026-10-11);
+- a `core.fsmonitor` command in `.git/config`, a plain file the check passes, hangs `status`;
+- a FIFO `.gitignore` at any depth blocks a full `status` (`refuse_if_dirty`, cleanup's worktree
+  status), and a FIFO `.gitattributes` blocks `--untracked-files=no` too; there is no fixed list to stat;
+- the app user can rewrite a worktree's `.git` gitfile to name a directory with a FIFO `HEAD`: the check
+  on `ROOT` passes, and `cleanup_worktree`'s `status` and `cleanup_envfiles`' `ls-files` in that
+  worktree hang;
+- the race: the check and git's open are two steps, so a plant between them stalls the deploy, with no
+  privilege gained.
+The fix for all of them is a bounded timeout on root's git calls, a design change left to its own
+follow-up card, not built here.
 
-**The sweep: every read the lib makes in an app tree, or through git, as of 2026-10-11.1.** Fixed, each
-with a case and a guard-deleted mutant: `summary.sh:66` (`deploy_head_file`), `preflight.sh:16`
-(`refuse_if_dirty`), `preflight.sh:25` (`deploy_refuse_if_tracked_dirty`), `resolve.sh:30` (before
-the fetch), `cleanup.sh:209` (before every cleanup git call, worktree admin files included),
-`compose.sh:200` (`deploy_compose_tracked`), `compose.sh:264` (`deploy_app_env_value`: the app user
-reads `.env` only as a plain file, so a FIFO is never opened). Covered by those, in the same run with
-nothing app-run between: `resolve.sh:34-40` and `ledger.sh:171-181,227,264-265,313` (after
-`resolve.sh:30`), `cleanup.sh:91,94,107,117` (after `cleanup.sh:209`). Safe: `cleanup.sh:81,99` (a
-worktree's admin files are in `cleanup.sh:209`'s list; a FIFO at its `.git` gitfile makes git exit
-128, measured); `compose.sh:138` (`cmp` as root only after `-f` and a `realpath` match; the race is a
-compare that prints nothing); `summary.sh:80`, `ownership.sh:12`, `cleanup.sh:72`, `compose.sh:139,143`
-(`find -P` opens no file, `sha256sum` only `-type f`); `compose.sh:100,246`, `ledger.sh:220,255`
-(root's own files, root-owned checks first); `ledger.sh:18-46` (the gate's own checkout, no deploy).
-Not fixed: the work-tree files and the race above.
+**The sweep: every read the lib makes in an app tree, or through git, as of 2026-10-11.1.** Behind the
+check, each with a case and a guard-deleted mutant: `deploy_head_file`, `refuse_if_dirty`,
+`deploy_refuse_if_tracked_dirty`, `resolve` (before the fetch), `deploy_cleanup` (before every cleanup
+git call, worktree admin files included), `deploy_compose_tracked`, and `deploy_app_env_value` (the app
+user reads `.env` only as a plain file, so a FIFO is never opened). Behind the same check, in the same
+run with nothing app-run between: `resolve`'s later git reads, `test_scope_of`, `github_e2e_same_tree`,
+`github_e2e`'s blob read and `gated` (after `resolve`'s check), and `cleanup_worktree`'s
+`merge-base`/`branch`/`worktree remove` and `cleanup_worktrees` (after `deploy_cleanup`'s check).
+Safe: `deploy_compose_buildcheck`'s `cmp` (as root only after `-f` and a `realpath` match; the race is
+a compare that prints nothing); `deploy_build_hash`, `chown_root_owned`, `cleanup_rootfiles` and
+`deploy_compose_buildcheck`'s two `find`s (`find -P` opens no file, `sha256sum` only `-type f`);
+`deploy_compose_binds`, `deploy_compose_init`'s `export-sha` read, `github_e2e_api` and `github_e2e`'s
+config read (root's own files, root-owned checks first); `gate_ledger_arm`, `gate_ledger_sha` and
+`gate_ledger_tree` (the gate's own checkout, no deploy). Not closed: `cleanup_envfiles`' `ls-files` and
+`cleanup_worktree`'s `status` (the gitfile redirect above), and every path in **Not closed by this**.

@@ -7,12 +7,14 @@ refusing. New `deploy_git_plain <ROOT>/.git` (`summary.sh`) refuses, by `stat` a
 anything, a `.git` that is not a plain directory, a `HEAD` that is not a plain file, and a link, FIFO
 or other non-file at `config`, `commondir`, `packed-refs`, `refs/heads/main`, `index`,
 `info/attributes`, `info/exclude` or a `worktrees/*/` `HEAD`, `commondir`, `gitdir`, `index` or `locked`
-(each measured to block git as a FIFO). It runs before every lib git call on `ROOT`:
+(each measured to block git as a FIFO). That list is a fast path for known hangs, not a complete one:
+other FIFOs under `.git`, `core.fsmonitor` and a redirected worktree gitfile still hang git, left to a
+bounded-timeout follow-up. It runs before every lib git call on `ROOT`:
 `deploy_head_file` (returns 1, so the caller's "does not read as main" refusal stands),
 `refuse_if_dirty`, `deploy_refuse_if_tracked_dirty` and `resolve` (`REFUSED: <ROOT>/.git is not a
 plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it.`),
 `deploy_cleanup` (`CLEANUP #<n> did not run: …`), and `compose.sh run`'s tracked-file check, through
-`deploy_compose_git_plain`, a copy `test.sh` holds identical. `deploy_app_env_value` reads `.env` only
+`deploy_compose_git_plain`, a copy `test.sh` holds identical in body and refusal sentence. `deploy_app_env_value` reads `.env` only
 when the app user sees a plain file, not a link: the refusal sentence is unchanged. **At re-vendor** a
 deploy-test whose `ROOT` has no `.git` directory with a plain `HEAD` is refused at those calls.
 **Card 432, the unshipped 2026-10-05.2 work, ported:** `deploy_compose_policy` makes one more call,

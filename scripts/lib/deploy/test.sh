@@ -1908,6 +1908,10 @@ equals 'compose.sh carries summary.sh'\''s deploy_git_plain unchanged (it cannot
     "$(sed -n '/^deploy_compose_git_plain() {$/,/^}$/p' "${LIB_DIR}/compose.sh" | tail -n +2)" \
     "$(sed -n '/^deploy_git_plain() {$/,/^}$/p' "${LIB_DIR}/summary.sh" | tail -n +2)"
 contains 'and that copy is the real function, not two empty reads' "$(sed -n '/^deploy_compose_git_plain() {$/,/^}$/p' "${LIB_DIR}/compose.sh")" 'worktrees/*/{HEAD,'
+compose_plain_sentence=$(sed -n 's/^.*deploy_compose_git_plain "\$1\/\.git" || { DEPLOY_COMPOSE_ERR="\$1\(\/\.git is not [^"]*\)".*$/\1/p' "${LIB_DIR}/compose.sh")
+summary_plain_sentence=$(sed -n "s/^deploy_git_plain_refusal() { printf '%s\(\/\.git is not [^']*\)'.*\$/\1/p" "${LIB_DIR}/summary.sh")
+equals 'compose.sh refuses a planted .git in summary.sh'\''s sentence, word for word' "${compose_plain_sentence}" "${summary_plain_sentence}"
+contains 'and that sentence was read, not two empty reads' "${compose_plain_sentence}" '/.git is not a plain git directory'
 
 fixture record-other-owner
 mkdir -m 700 "${CASE}/records"
