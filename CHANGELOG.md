@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-10-05 — root's ownership repair, head read and build hash follow no app-user link, and a build re-reads the tracked files (deploy-lib VERSION 2026-10-05.4, version set at rebase; the standard is unchanged and VERSION is not bumped)
+## 2026-10-05 — root's ownership repair, head read and build hash follow no app-user link, and a build re-reads the tracked files (deploy-lib VERSION 2026-10-05.4; the standard is unchanged and VERSION is not bumped)
 **New `scripts/lib/deploy/ownership.sh`: `chown_root_owned <dir> <user>:<group> [<skip pattern>…]`**
 (card 363) runs `/usr/bin/find -P <dir> -xdev -user 0 … -execdir chown -h <owner> {} +` under its own
 absolute `PATH`, and replaces the five per-app `find … -exec chown` copies at their next re-vendor; pass
@@ -19,8 +19,10 @@ status that fails, naming its exit code, rather than reading it as clean. ghieco
 failing git as clean: at re-vendor it deletes it and calls the lib's.
 **`compose.sh`:** `compose.sh run`, the one route every compose call takes (`deploy_compose`, and
 `$DEPLOY_COMPOSE` in a job's own `bash -c`), re-reads the tracked files through `git-as <app>` before
-`build`, `up` and `create`, and refuses an edit or a failing git. An app whose own deploy steps rewrite a
-tracked file before an `up` is refused from its re-vendor on.
+`build`, `up`, `create` and `run --build` (card 371), and refuses an edit or a failing git. An app whose own
+deploy steps rewrite a tracked file before an `up` is refused from its re-vendor on. Before the subcommand
+a caller's joined `-fx.yml`, `-f=x.yml`, `-pX` or `-p=X` refuses like `-f x.yml` (card 372): any
+single-dash argument there does, and the word after `--profile` and its kin is always its value.
 **Every app's deploy-test needs two stubs at re-vendor:** `finish` now reaches `git-as` through
 `deploy_head_file`, which the real one refuses on a test checkout, so fineprint, ghiecode, ghie-writes,
 kidsquest, memento, orbit, reflection and scribly each set `DEPLOY_GIT_AS` (a stub) and

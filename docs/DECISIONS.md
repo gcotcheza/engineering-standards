@@ -1449,8 +1449,10 @@ build, so an edit in that window was built and run as if merged. `compose.sh run
 that is where every compose call lands: an app that sets `COMPOSE=$DEPLOY_COMPOSE` and runs its build
 inside a job's own `bash -c` never calls the shell function. A git status that fails is a refusal
 naming its exit code, never a clean tree. The window is narrowed, not closed: an edit after the check
-is still built; an untracked file added in it is not seen; and `run` (orbit's assets build) and `exec`
-are not rechecked. A deploy whose own steps rewrite a tracked file before `up` is refused, which is the
+is still built; an untracked file added in it is not seen; and a plain `run` (orbit's assets build)
+and `exec` are not rechecked. `run --build` builds, so it is (card 371): any `--build` token in the call
+counts, even one meant for the container's own command, because an extra re-read of a clean tree costs
+nothing and refusing `run --build` outright would break a deploy that needs it. A deploy whose own steps rewrite a tracked file before `up` is refused, which is the
 point. `preflight.sh`'s `deploy_refuse_if_tracked_dirty` (lifted from ghiecode, `deploy_`-prefixed so
 an app's own copy cannot shadow it) is the same judgement for a caller's own `$GIT`; `refuse_if_dirty`
 now fails closed the same way.
@@ -1459,5 +1461,12 @@ now fails closed the same way.
 after a `realpath -e` check; a link or a FIFO swapped in between leaks one equality bit or hangs the
 deploy. That read moves to the app user in its own change.
 
-**Version.** `VERSION` is `2026-10-05.4` on the assumption that lib .2 and ES #44 (.3) land first; it
-is set at the rebase, the way card 329's was.
+**Every spelling of a caller's own file or name (card 372).** compose parses `-fx.yml`, `-f=x.yml`,
+`-pX` and `-p=X` like their separated forms, and `-f` and `-p` are its only global short options, so
+before the subcommand any single-dash argument refuses, as `--file=`, `--project-name=`,
+`--env-file=` and `--project-directory=` already did. After the subcommand `-f` is the subcommand's own
+(`logs -f`, `rm -f`) and passes. The word after `--profile`, `--progress`, `--ansi` or `--parallel` is
+that option's value whatever it looks like, as compose reads it, so `--profile -x up` is still an `up`.
+
+**Version.** `VERSION` is `2026-10-05.4`, the next after main's `2026-10-05.3` (ES #44); `.2`, reserved
+by the compose env-keys branch, never landed.

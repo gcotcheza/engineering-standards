@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-05.4 sha256:df9ed3f273df4e6fb6658d9b46d3970bfdc5fa208e89718970effaaadbe89bf3
+# fleet-deploy-lib 2026-10-05.4 sha256:1930132c8377dbe93eea31c6f27fbd264774f7eac335d69f890ad8d6455efe24
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -140,18 +140,20 @@ deploy_compose_exec() {
     argv+=(-p "$DEPLOY_COMPOSE_APP")
     for f in "${files[@]}"; do argv+=(-f "$run/compose/$f"); done
     argv+=(--env-file "$env")
-    sub=''
+    sub='' build=''
     for f in "$@"; do
+        [ "$sub" != next ] || { sub=''; continue; }
         case $f in
-            -f|--file|--file=*|--env-file|--env-file=*|--project-directory|--project-directory=*|-p|--project-name|--project-name=*)
+            -[!-]*|--file|--file=*|--env-file|--env-file=*|--project-directory|--project-directory=*|--project-name|--project-name=*)
                 [ -n "$sub" ] || { printf 'REFUSED: a caller names no compose file, env file, project directory or name: deploy_compose fixes them\n' >&2; return 1; } ;;
             --profile|--progress|--ansi|--parallel) [ -n "$sub" ] || sub=next ;;
+            --build|--build=*) build=y ;;
             -*) ;;
-            *) case $sub in '') sub=$f ;; next) sub='' ;; esac ;;
+            *) [ -n "$sub" ] || sub=$f ;;
         esac
     done
-    case $sub in
-        build|up|create) deploy_compose_tracked "$root" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
+    case $sub/$build in
+        build/*|up/*|create/*|run/y) deploy_compose_tracked "$root" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
     esac
     case $sub in
         watch) printf 'REFUSED: compose watch copies the app tree into running containers, so root does not run it\n' >&2; return 1 ;;
@@ -164,8 +166,8 @@ deploy_compose_exec() {
     "$docker" "${argv[@]}" "$@"
 }
 
-# Before a build or an up, the tracked files as the app user sees them: an edit made after the
-# fast-forward is not built (card 363). root -> 0, or 1 with DEPLOY_COMPOSE_ERR
+# Before a build, an up, a create or a run --build, the tracked files as the app user sees them: an
+# edit made after the fast-forward is not built (cards 363, 371). root -> 0, or 1 with DEPLOY_COMPOSE_ERR
 deploy_compose_tracked() {
     local out rc=0
     out=$("${DEPLOY_GIT_AS:-git-as}" "$(deploy_compose_user "$1")" -C "$1" --no-optional-locks status --porcelain --untracked-files=no) || rc=$?
