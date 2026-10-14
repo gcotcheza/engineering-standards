@@ -1594,13 +1594,14 @@ still holds: the reapers treat it as an error and keep the lane, and the clean-u
 same way rather than deciding the label is wrong. The reason itself is never printed: it is free text
 from a lane, and the log only needs the label's path.
 
-**A label is never followed or waited on.** The clean-up runs as root in the deploy's EXIT handler,
-and the directories it walks can be written by app users. A label that is a symbolic link, to anything
-or to nothing, keeps the tree without being opened — the reaper's `[ -L "$lbl" ] || [ ! -f "$lbl" ]`:
+**The label itself is never followed or waited on.** The clean-up runs as root in the deploy's EXIT
+handler, and the directories it walks can be written by app users. A label that is a symbolic link, to
+anything or to nothing, keeps the tree without being opened — the reaper's `[ -L "$lbl" ] || [ ! -f "$lbl" ]`:
 a link to a blocking or endless regular file (`/proc/kmsg`, a trace pipe, a huge sparse file) would
 pass `-f` and hang the handler. A label that is not a plain file (a FIFO, a directory) keeps it too.
 A plain label is read by the pinned `grep` under the pinned `timeout` (5 seconds); a timeout or any
-read error keeps the tree.
+read error keeps the tree. A symbolic-linked directory between the root and the worktree is followed,
+but what it can do is bounded: at most it keeps the tree, and each label read stops at 5 seconds.
 
 **Why a scratch root and no new seam.** Lanes live only under `/srv/worker-scratch`, so the walk
 starts there and goes no higher: a worktree outside it, such as one under `/var/www/<app>-worktrees`,

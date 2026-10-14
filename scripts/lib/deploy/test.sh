@@ -2122,7 +2122,7 @@ printf '#!/bin/sh\nexit 124\n' >"${CASE}/timed-out"
 chmod +x "${CASE}/timed-out"
 run_lib "CLEANUP_TIMEOUT=${CASE}/timed-out; ${CLEAN_CALL}"
 contains 'a lane label whose read timed out keeps the worktree' "$(cat "${LOGFILE}")" \
-    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch could not be read within 5s (exit 124), so a keep= could not be ruled out)"
+    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch could not be read (exit 124), so a keep= could not be ruled out)"
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 equals 'and the deploy still exits 0' "${RC}" '0'
 
@@ -2133,6 +2133,14 @@ run_lib "CLEANUP_SCRATCH_ROOT=${WORK}/scratch-root; ${CLEAN_CALL}"
 contains 'a keep= label above a worktree outside the scratch root is not read' "${OUT}" \
     'worktrees removed 1 kept 0 (none)'
 equals 'and it is gone from disk' "$(on_disk "${WT}")" 'gone'
+
+# CASE is the scratch root itself: the walk stops below it, so a label on the root is no lane's.
+cleanup_fixture cleanup-lane-label-on-scratch-root
+printf 'keep=not a lane\n' >"${CASE}/.fleet-scratch"
+run_lib "CLEANUP_SCRATCH_ROOT=${CASE}; ${CLEAN_CALL}"
+contains 'a keep= label on the scratch root itself is not read' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and the worktree under it is gone from disk' "$(on_disk "${WT}")" 'gone'
 
 cleanup_fixture cleanup-rootfiles
 ROOT_UID_SEAM="$(stat -c %u "${WT}/app/base.txt")"

@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-14 sha256:b10fd485a8b5edd89701c1e7bb29beeb42d5d4786f743eecdf7421681bcf36be
+# fleet-deploy-lib 2026-10-14 sha256:582fba49377b444a1d91081d46d5e2c0a93171828046f249752440497737b39a
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -102,7 +102,7 @@ cleanup_lanekeep() {
         rc=0
         "${CLEANUP_TIMEOUT}" 5 "${CLEANUP_GREP}" -q -m 1 -e '^keep=' -- "$label" </dev/null 2>/dev/null || rc=$?
         [ "$rc" != 0 ] || { cleanup_keep laneKeep "$wt (its lane label $label carries keep=)"; return 1; }
-        [ "$rc" = 1 ] || { cleanup_keep laneKeep "$wt ($label could not be read within 5s (exit ${rc}), so a keep= could not be ruled out)"; return 1; }
+        [ "$rc" = 1 ] || { cleanup_keep laneKeep "$wt ($label could not be read (exit ${rc}), so a keep= could not be ruled out)"; return 1; }
     done
     return 0
 }
