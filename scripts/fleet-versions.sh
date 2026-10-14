@@ -18,9 +18,9 @@
 # The projects are the directories under ROOT that carry docs/STANDARDS.md or
 # scripts/lib/deploy/VERSION — except a `*-staging` or `*-worktrees` directory,
 # which mirrors a project's files rather than being one (docs/DECISIONS.md). A
-# project with the deploy lib but no STANDARDS.md copy reads `retired`, not a
-# failure. The paths below describe one host's layout and are overridable by
-# environment variable.
+# project with the deploy lib but no STANDARDS.md copy or link reads `retired`, not
+# a failure; one that kept the link reads HALFRETIRED. The paths below describe
+# one host's layout and are overridable by environment variable.
 #
 # Env: STANDARDS_CANONICAL (default /srv/engineering-standards), STANDARDS_ROOT
 # (default /var/www), STANDARDS_PROJECTS (space-separated; default = discovery;
@@ -33,6 +33,7 @@ CANON=${STANDARDS_CANONICAL:-/srv/engineering-standards}
 ROOT=${STANDARDS_ROOT:-/var/www}
 LINK_TARGET='../../docs/STANDARDS.md'   # what every project commits, byte-for-byte (#56)
 LIB_FILES="ledger resolve preflight summary"   # scripts/lib/deploy/*.sh, the vendored deploy library
+LIB_MARKER=scripts/lib/deploy/VERSION
 
 QUIET=0
 case "${1:-}" in
@@ -90,7 +91,7 @@ canon_lib_version=${canon_lib_version%"${canon_lib_version##*[![:space:]]}"}
 discover_project_names_c_ordered() {
     local s n
     set +f
-    for s in "$ROOT"/*/docs/STANDARDS.md "$ROOT"/*/scripts/lib/deploy/VERSION; do
+    for s in "$ROOT"/*/docs/STANDARDS.md "$ROOT"/*/"$LIB_MARKER"; do
         [ -e "$s" ] || continue
         n=${s#"$ROOT"/}; n=${n%%/*}
         is_fleet_project_name "$n" && printf '%s\n' "$n"
@@ -105,21 +106,24 @@ if [ "${STANDARDS_PROJECTS+x}" = x ]; then
     [ "${#projects[@]}" -gt 0 ] || die "no projects to check (STANDARDS_PROJECTS is empty) — refusing to report a clean fleet"
 else
     while IFS= read -r p; do projects+=("$p"); done < <(discover_project_names_c_ordered)
-    [ "${#projects[@]}" -gt 0 ] || die "no project under $ROOT has docs/STANDARDS.md or scripts/lib/deploy/VERSION — refusing to report a clean fleet"
+    [ "${#projects[@]}" -gt 0 ] || die "no project under $ROOT has docs/STANDARDS.md or $LIB_MARKER — refusing to report a clean fleet"
 fi
 
 # --- per project -------------------------------------------------------------
-bad=0; checked=0
+bad=0; checked=0; retired=0
 for p in "${projects[@]}"; do
     checked=$((checked+1))
     # A project is one unit of attention however many of its rows fail.
     pbad=0
     f=$ROOT/$p/docs/STANDARDS.md
     link=$ROOT/$p/.claude/rules/standards.md
+    lmark=$ROOT/$p/$LIB_MARKER
     content=ok; cwhy=""; linkst=ok; lwhy=""
 
-    if [ ! -e "$f" ] && [ -e "$ROOT/$p/scripts/lib/deploy/VERSION" ]; then
+    if [ ! -e "$f" ] && [ -e "$lmark" ] && [ ! -e "$link" ] && [ ! -L "$link" ]; then
         content=retired; cwhy="no docs/STANDARDS.md copy — retired; the standard loads from the canonical clone"
+    elif [ ! -e "$f" ] && [ -e "$lmark" ]; then
+        content=HALFRETIRED; cwhy="no docs/STANDARDS.md copy but .claude/rules/standards.md is still there — remove the link or re-vendor"
     elif [ ! -e "$f" ]; then
         content=MISSING; cwhy="no docs/STANDARDS.md — not adopted"
     elif [ ! -r "$f" ]; then
@@ -169,6 +173,7 @@ for p in "${projects[@]}"; do
 
     if [ "$content" = retired ]; then
         say "  retired    $p  ($cwhy)"
+        retired=$((retired+1))
     elif [ "$content" = ok ] && [ "$linkst" = ok ]; then
         say "  ok         $p  ($declared_version)"
     else
@@ -189,6 +194,7 @@ for p in "${projects[@]}"; do
     dsh=$ROOT/$p/scripts/deploy.sh
     ldir=$ROOT/$p/scripts/lib/deploy
     dstatus=none; dwhy="no scripts/deploy.sh — deploy-lib not adopted yet"
+    [ -e "$lmark" ] && dwhy="$LIB_MARKER present but no scripts/deploy.sh — the lib is not compared"
     if [ -e "$dsh" ]; then
         if [ ! -d "$ldir" ]; then
             dstatus=MISSING; dwhy="scripts/deploy.sh present but no scripts/lib/deploy"
@@ -257,11 +263,13 @@ done < <(find "$ROOT" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/nu
 if [ "${#unlisted[@]}" -gt 0 ]; then
     say ""
     for n in "${unlisted[@]}"; do
-        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not a project: no docs/STANDARDS.md or scripts/lib/deploy/VERSION)"
+        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not a project: no docs/STANDARDS.md or $LIB_MARKER)"
     done
     bad=$((bad+${#unlisted[@]})); checked=$((checked+${#unlisted[@]}))
 fi
 
+retired_note=""
+[ "$retired" -gt 0 ] && retired_note=" ($retired retired)"
 say ""
-if [ "$bad" -eq 0 ]; then say "fleet: all $checked project(s) on $canon_version"; exit 0; fi
-say "fleet: $bad of $checked project(s) need attention"; exit 1
+if [ "$bad" -eq 0 ]; then say "fleet: all $checked project(s) on $canon_version$retired_note"; exit 0; fi
+say "fleet: $bad of $checked project(s) need attention$retired_note"; exit 1

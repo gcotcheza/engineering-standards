@@ -1021,6 +1021,8 @@ on the box or, worse, pass them all in silence.
 
 ## The fleet check discovers its projects, and `docs/STANDARDS.md` is what joins one (2026-10-03)
 
+*Superseded 2026-10-14 in what joins a project: see "The fleet check finds a project by its deploy lib" below.*
+
 The list of ten project names lived in the script, so joining the fleet meant two edits in two
 repositories and a pull request nobody thinks of: vendor the standard, then come back here and
 add the name. The check now takes its projects from `$ROOT/*/docs/STANDARDS.md` — the very file
@@ -1586,6 +1588,9 @@ project that retired it dropped out of the report silently, and with it the STAL
 `scripts/lib/deploy/` — the one row that still matters for it. Discovery is now the union of
 `$ROOT/*/docs/STANDARDS.md` and `$ROOT/*/scripts/lib/deploy/VERSION`, de-duplicated and C-ordered
 by `LC_ALL=C sort -u`, still filtered by `is_fleet_project_name`. A project with the lib but no
-copy reads `retired` in the standards column: lowercase, so the watchdog's ALL-CAPS parser ignores
-it as it ignores `ok` and `none`, and not a failure; its symlink is not checked. A project with
-neither marker in an explicit `STANDARDS_PROJECTS` list is still MISSING.
+copy and no `.claude/rules/standards.md` reads `retired` in the standards column: lowercase, so
+the watchdog's ALL-CAPS parser ignores it as it ignores `ok` and `none`, and not a failure; the
+summary adds "(K retired)". If the link is still there the copy was half-removed, so the row is
+HALFRETIRED and counts as attention. A lib with no `scripts/deploy.sh` stays `none`, worded as
+present but not compared rather than "not adopted": the deploy-lib row has always keyed on
+`deploy.sh`. A project with neither marker in an explicit `STANDARDS_PROJECTS` list is still MISSING.
