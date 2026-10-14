@@ -5,6 +5,15 @@
 `/srv/worker-scratch` when a `.fleet-scratch` above it carries `keep=`, or when that label is a link, not a
 plain file, or cannot be read within 5 seconds. Why: `docs/DECISIONS.md`.
 
+## 2026-10-14 — W10: the owning session cleans up after a merged task (VERSION 2026-10-14)
+**New rule W10; the standard now has 39 rules.** When a task is merged, and deployed where it deploys,
+its owning session removes the PR's worktrees and lanes, its gate and e2e image tags and its scratch
+files. Checked by the reaper for lanes whose PR is merged and deployed, a gate-tag prune that selects
+by the project's own gate tag (never a production tag, T9), and the health check's disk row;
+selection is by name or label after the read-only preview and its count (S7), never by an "unused"
+filter. `README.md` now says 39 rules and `SOURCES.md` has a W10 row. The standards text moved, so
+`VERSION` moves with it.
+
 ## 2026-10-11 — W2: the builder reviews their own whole diff before the gate (VERSION 2026-10-11)
 **Ghie's approval of 2026-10-11, written into W2 as one sentence.** Before the gate, the builder
 reads their own whole diff against the brief or checklist and fixes what they find (before review,
