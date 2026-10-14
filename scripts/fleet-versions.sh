@@ -15,11 +15,12 @@
 #       including a directory under ROOT that is a repository but not a project ·
 #       2 usage error, canonical clone unreadable/invalid, or no projects to check.
 #
-# The projects are the directories under ROOT that carry docs/STANDARDS.md, so a
-# project joins the check by vendoring the file — except a `*-staging` or
-# `*-worktrees` directory, which mirrors a project's files rather than being one
-# (docs/DECISIONS.md). The paths below describe one host's layout and are
-# overridable by environment variable.
+# The projects are the directories under ROOT that carry docs/STANDARDS.md or
+# scripts/lib/deploy/VERSION — except a `*-staging` or `*-worktrees` directory,
+# which mirrors a project's files rather than being one (docs/DECISIONS.md). A
+# project with the deploy lib but no STANDARDS.md copy reads `retired`, not a
+# failure. The paths below describe one host's layout and are overridable by
+# environment variable.
 #
 # Env: STANDARDS_CANONICAL (default /srv/engineering-standards), STANDARDS_ROOT
 # (default /var/www), STANDARDS_PROJECTS (space-separated; default = discovery;
@@ -87,13 +88,13 @@ canon_lib_version=${canon_lib_version%"${canon_lib_version##*[![:space:]]}"}
 # --- projects ----------------------------------------------------------------
 # Row order is the C collation of the names, never the caller's locale's.
 discover_project_names_c_ordered() {
-    local LC_ALL=C s n
+    local s n
     set +f
-    for s in "$ROOT"/*/docs/STANDARDS.md; do
+    for s in "$ROOT"/*/docs/STANDARDS.md "$ROOT"/*/scripts/lib/deploy/VERSION; do
         [ -e "$s" ] || continue
-        n=${s%/docs/STANDARDS.md}; n=${n##*/}
+        n=${s#"$ROOT"/}; n=${n%%/*}
         is_fleet_project_name "$n" && printf '%s\n' "$n"
-    done
+    done | LC_ALL=C sort -u
     set -f
 }
 
@@ -104,7 +105,7 @@ if [ "${STANDARDS_PROJECTS+x}" = x ]; then
     [ "${#projects[@]}" -gt 0 ] || die "no projects to check (STANDARDS_PROJECTS is empty) — refusing to report a clean fleet"
 else
     while IFS= read -r p; do projects+=("$p"); done < <(discover_project_names_c_ordered)
-    [ "${#projects[@]}" -gt 0 ] || die "no project under $ROOT has docs/STANDARDS.md — refusing to report a clean fleet"
+    [ "${#projects[@]}" -gt 0 ] || die "no project under $ROOT has docs/STANDARDS.md or scripts/lib/deploy/VERSION — refusing to report a clean fleet"
 fi
 
 # --- per project -------------------------------------------------------------
@@ -117,7 +118,9 @@ for p in "${projects[@]}"; do
     link=$ROOT/$p/.claude/rules/standards.md
     content=ok; cwhy=""; linkst=ok; lwhy=""
 
-    if [ ! -e "$f" ]; then
+    if [ ! -e "$f" ] && [ -e "$ROOT/$p/scripts/lib/deploy/VERSION" ]; then
+        content=retired; cwhy="no docs/STANDARDS.md copy — retired; the standard loads from the canonical clone"
+    elif [ ! -e "$f" ]; then
         content=MISSING; cwhy="no docs/STANDARDS.md — not adopted"
     elif [ ! -r "$f" ]; then
         content=UNREADABLE; cwhy="docs/STANDARDS.md exists but is not readable by $(id -un)"
@@ -164,7 +167,9 @@ for p in "${projects[@]}"; do
         fi
     fi
 
-    if [ "$content" = ok ] && [ "$linkst" = ok ]; then
+    if [ "$content" = retired ]; then
+        say "  retired    $p  ($cwhy)"
+    elif [ "$content" = ok ] && [ "$linkst" = ok ]; then
         say "  ok         $p  ($declared_version)"
     else
         st=$content; why=$cwhy
@@ -252,7 +257,7 @@ done < <(find "$ROOT" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/nu
 if [ "${#unlisted[@]}" -gt 0 ]; then
     say ""
     for n in "${unlisted[@]}"; do
-        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not a project: no docs/STANDARDS.md)"
+        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not a project: no docs/STANDARDS.md or scripts/lib/deploy/VERSION)"
     done
     bad=$((bad+${#unlisted[@]})); checked=$((checked+${#unlisted[@]}))
 fi

@@ -1037,8 +1037,8 @@ zero. What keeps an override entry a name and not a pattern is `read -r -a`, whi
 whitespace and never pathname-expands; `set -f` is defence in depth for the rest of the script,
 not the mechanism, and the case-18 test goes red against a rewrite that word-splits an unquoted
 expansion instead — deleting `set -f` alone leaves it green. The one glob this script wants is
-expanded inside `discover_project_names_c_ordered`, which lifts `set -f` and pins `LC_ALL=C` for
-that loop alone.
+expanded inside `discover_project_names_c_ordered`, which lifts `set -f` for that loop alone and
+orders its names with `LC_ALL=C sort -u`.
 
 `*-staging` and `*-worktrees` are excluded on **both** sides — discovery and the UNLISTED row —
 through one helper, `is_fleet_project_name`, because two copies of that pattern are two things to
@@ -1577,3 +1577,15 @@ exception.
 
 **Size.** The loaded standard grew about 238 bytes (18472 to 18710 over c876908); this is accepted,
 as S1's growth was (0b04aad). Trimming the standard back under budget is a separate change for Ghie to decide.
+
+## The fleet check finds a project by its deploy lib as well as its standards copy (2026-10-14)
+
+Apps are retiring their vendored `docs/STANDARDS.md`, because every session already loads the
+standard from this canonical clone (Scribly #50 first). Discovery keyed on that file alone, so a
+project that retired it dropped out of the report silently, and with it the STALE check on its
+`scripts/lib/deploy/` — the one row that still matters for it. Discovery is now the union of
+`$ROOT/*/docs/STANDARDS.md` and `$ROOT/*/scripts/lib/deploy/VERSION`, de-duplicated and C-ordered
+by `LC_ALL=C sort -u`, still filtered by `is_fleet_project_name`. A project with the lib but no
+copy reads `retired` in the standards column: lowercase, so the watchdog's ALL-CAPS parser ignores
+it as it ignores `ok` and `none`, and not a failure; its symlink is not checked. A project with
+neither marker in an explicit `STANDARDS_PROJECTS` list is still MISSING.

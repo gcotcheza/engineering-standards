@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-14 — the fleet check finds a project by its deploy lib as well as its standards copy (tooling only; the standard is unchanged and VERSION is not bumped)
+**A project that retired its `docs/STANDARDS.md` copy stays in the report.** `scripts/fleet-versions.sh`
+now discovers projects by `docs/STANDARDS.md` or `scripts/lib/deploy/VERSION`, de-duplicated and
+still C-ordered. Such a project reads `retired` (lowercase, not a failure) in the standards column,
+and its deploy-lib row reports STALE or ok as before. Cases 21 and 22 cover a lib-only project and
+a project with both markers. Why: `docs/DECISIONS.md`.
+
 ## 2026-10-14 — W10: the owning session cleans up after a merged task (VERSION 2026-10-14)
 **New rule W10; the standard now has 39 rules.** When a task is merged, and deployed where it deploys,
 its owning session removes the PR's worktrees and lanes, its gate and e2e image tags and its scratch

@@ -287,6 +287,35 @@ ORDER="$(printf '%s\n' "${OUT}" | grep -oE '^ +ok +[A-Za-z]+' | awk '{print $2}'
 equals 'case 20: rows come out in C collation order' "${ORDER}" 'Mike Zulu alpha '
 equals 'case 20: exit code' "${RC}" 0
 
+# --- 21. a project that retired its STANDARDS.md copy is still found by its deploy lib ---
+# Discovery by docs/STANDARDS.md alone dropped such a project, and its stale lib with it.
+RROOT="${WORK}/retired"
+mkdir -p "${RROOT}/quill/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${RROOT}/quill/scripts/lib/deploy/"
+printf '2020-01-01\n' >"${RROOT}/quill/scripts/lib/deploy/VERSION"
+: >"${RROOT}/quill/scripts/deploy.sh"
+run_discovery "${RROOT}"
+matches   'case 21: a deploy-lib-only project reads retired, not missing' "${OUT}" '^ +retired +quill +\(no docs/STANDARDS\.md copy'
+unmatches 'case 21: and no STALE/MISSING standards row' "${OUT}" '(STALE|MISSING) +quill +\((declared|no docs)'
+matches   'case 21: its stale deploy lib is still flagged' "${OUT}" "STALE +quill +\\(VERSION is '2020-01-01', canonical is '${LIB_VERSION}'\\)"
+equals    'case 21: exit code' "${RC}" 1
+cp "${CANON}/scripts/lib/deploy/VERSION" "${RROOT}/quill/scripts/lib/deploy/VERSION"
+run_discovery "${RROOT}"
+matches   'case 21: with a current lib it is clean' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18'
+equals    'case 21: retired is not a failure — exit code' "${RC}" 0
+
+# --- 22. a project carrying both markers is one project, not two ---------------
+BROOT="${WORK}/both"
+mkdir -p "${BROOT}/sundial/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${BROOT}/sundial/scripts/lib/deploy/"
+: >"${BROOT}/sundial/scripts/deploy.sh"
+add_docs_ok "${BROOT}/sundial"
+run_discovery "${BROOT}"
+equals  'case 22: one standards row' "$(printf '%s\n' "${OUT}" | grep -cE '^ +ok +sundial +\(2026-09-18\)')" 1
+equals  'case 22: one deploy-lib row' "$(printf '%s\n' "${OUT}" | grep -cE '^ +ok +sundial +\(deploy-lib ')" 1
+matches 'case 22: counted once' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18'
+equals  'case 22: exit code' "${RC}" 0
+
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'
     exit 0
