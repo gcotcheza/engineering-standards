@@ -1577,3 +1577,30 @@ exception.
 
 **Size.** The loaded standard grew about 238 bytes (18472 to 18710 over c876908); this is accepted,
 as S1's growth was (0b04aad). Trimming the standard back under budget is a separate change for Ghie to decide.
+
+## A lane label with keep= holds the worktrees inside it from the deploy's clean-up (2026-10-14, card 488)
+
+**The gap.** Card 481 taught `fleet-scratch-reap` and `fleet-merged-reap` to keep any lane whose
+`.fleet-scratch` carries a `keep=<reason>` line (BRIEF-COMMON rule 18). The deploy's own clean-up
+never read the label: `cleanup_worktrees` removed a clean, merged PR-branch worktree under
+`/srv/worker-scratch/<lane>/` even when that lane was held. On this lib before the fix, the new
+`cleanup-lane-held` case printed `FAIL and it is still on disk is [gone], expected [there]`.
+
+**The rule.** `cleanup_lanekeep` runs first in `cleanup_worktree`: it looks for a `.fleet-scratch`
+in every directory above the worktree, up to `/`, and keeps the tree under `laneKeep` when one has a
+line starting `keep=` — the reapers' `grep -m 1 '^keep='`, so an indented `keep=` does not count.
+A blank reason still holds: the reapers treat it as an error and keep the lane, and the clean-up
+keeps the tree the same way rather than deciding the label is wrong. A label that is not a plain file
+(a FIFO, a directory, a link to one) or cannot be read keeps the tree too, never opened in the FIFO
+case — a read on a FIFO would hang the EXIT handler. The reason itself is never printed: it is free
+text from a lane, and the log only needs the label's path.
+
+**Why every ancestor and no new seam.** Every name the clean-up reads is assigned by `deploy.sh`,
+and a scratch-root variable would mean editing every project's deploy script. Walking up from the
+worktree needs nothing new, finds a lane at any depth (`<lane>/wt` or `<lane>/clones/wt`), and costs
+one `stat` per level. A worktree under `/var/www/<app>-worktrees` meets no label and is unaffected.
+
+**Not shared with the reapers (C1/C2).** `fleet-scratch-reap`'s `keep_reason` is the same decision,
+but it lives in an installed `/usr/local/sbin` script and this lib is vendored into project repos
+that cannot source it; the clean-up also has no use for the reason text it returns. The match rule
+(`^keep=`) is the part that must agree, and `cleanup-lane-keep-not-indented` holds it.

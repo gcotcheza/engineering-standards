@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-11.1 sha256:19a78ce99b4c8d55f855b01b7fb06dcfdf4da0379df0b20d649b1037ad159666
+# fleet-deploy-lib 2026-10-14 sha256:19a78ce99b4c8d55f855b01b7fb06dcfdf4da0379df0b20d649b1037ad159666
 # shellcheck shell=bash
 # Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
 # this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)

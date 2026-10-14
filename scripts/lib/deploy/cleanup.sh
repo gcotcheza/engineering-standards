@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-11.1 sha256:3990ede1288ea50c957ec7b2eb955114c3ba6cda83b0e35ab222a61b43589070
+# fleet-deploy-lib 2026-10-14 sha256:d13e6c85233959f5e46fc16cf6ee6f550d2acca2476e11e72e2f5d81474dd133
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -85,8 +85,28 @@ cleanup_envfiles() {
     return 0
 }
 
+# A .fleet-scratch label with a keep= line in any directory above the worktree holds it,
+# as the scratch reapers hold that lane (card 488).
+cleanup_lanekeep() {
+    local wt=$1 dir=$1 label line
+    while [ "${dir%/*}" != "$dir" ]; do
+        dir=${dir%/*}
+        label="${dir}/.fleet-scratch"
+        [ -e "$label" ] || [ -L "$label" ] || continue
+        [ -f "$label" ] || { cleanup_keep laneKeep "$wt ($label is not a plain file, so a keep= could not be ruled out)"; return 1; }
+        while IFS= read -r line || [ -n "$line" ]; do
+            case "$line" in
+                keep=*) cleanup_keep laneKeep "$wt (its lane label $label carries keep=)"; return 1 ;;
+            esac
+        done <"$label" 2>/dev/null \
+            || { cleanup_keep laneKeep "$wt ($label could not be read, so a keep= could not be ruled out)"; return 1; }
+    done
+    return 0
+}
+
 cleanup_worktree() {
     local wt=$1 head=$2 rc=0 out
+    cleanup_lanekeep "$wt" || return 0
     [ -n "$head" ] || { cleanup_keep headInMain "$wt (git named no HEAD for it)"; return 0; }
     ${GIT-} merge-base --is-ancestor "$head" origin/main >/dev/null 2>&1 || rc=$?
     if [ "$rc" != 0 ]; then
