@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-14 — the fleet check finds a project by its deploy lib as well as its standards copy (tooling only; the standard is unchanged and VERSION is not bumped)
+**A project that retired its `docs/STANDARDS.md` copy stays in the report.** `scripts/fleet-versions.sh`
+now discovers projects by `docs/STANDARDS.md` or `scripts/lib/deploy/VERSION`, de-duplicated and
+still C-ordered. Such a project reads `retired` (lowercase, not a failure, counted in the summary
+as "(K retired)") in the standards column, or `HALFRETIRED` (attention) if its
+`.claude/rules/standards.md` link is still there; its deploy-lib row reports STALE or ok as before.
+A lib with no `scripts/deploy.sh` stays `none`, now worded as present but not compared. Cases 21-25
+cover these. Why: `docs/DECISIONS.md`.
+
 ## 2026-10-14 — the deploy's clean-up keeps a worktree inside a lane labelled keep= (deploy-lib VERSION 2026-10-14; the standard is unchanged and VERSION is not bumped)
 **Card 488.** New `cleanup_lanekeep` (`cleanup.sh`): a deploy's clean-up keeps a worktree under
 `/srv/worker-scratch` when a `.fleet-scratch` above it carries `keep=`, or when that label is a link, not a

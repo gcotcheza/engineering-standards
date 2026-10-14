@@ -1021,6 +1021,8 @@ on the box or, worse, pass them all in silence.
 
 ## The fleet check discovers its projects, and `docs/STANDARDS.md` is what joins one (2026-10-03)
 
+*Superseded 2026-10-14 in what joins a project: see "The fleet check finds a project by its deploy lib" below.*
+
 The list of ten project names lived in the script, so joining the fleet meant two edits in two
 repositories and a pull request nobody thinks of: vendor the standard, then come back here and
 add the name. The check now takes its projects from `$ROOT/*/docs/STANDARDS.md` — the very file
@@ -1037,8 +1039,8 @@ zero. What keeps an override entry a name and not a pattern is `read -r -a`, whi
 whitespace and never pathname-expands; `set -f` is defence in depth for the rest of the script,
 not the mechanism, and the case-18 test goes red against a rewrite that word-splits an unquoted
 expansion instead — deleting `set -f` alone leaves it green. The one glob this script wants is
-expanded inside `discover_project_names_c_ordered`, which lifts `set -f` and pins `LC_ALL=C` for
-that loop alone.
+expanded inside `discover_project_names_c_ordered`, which lifts `set -f` for that loop alone and
+orders its names with `LC_ALL=C sort -u`.
 
 `*-staging` and `*-worktrees` are excluded on **both** sides — discovery and the UNLISTED row —
 through one helper, `is_fleet_project_name`, because two copies of that pattern are two things to
@@ -1613,3 +1615,18 @@ new one would mean editing every project's deploy script.
 but it lives in an installed `/usr/local/sbin` script and this lib is vendored into project repos
 that cannot source it; the clean-up also has no use for the reason text it returns. The match rule
 (`^keep=`) is the part that must agree, and `cleanup-lane-keep-not-indented` holds it.
+
+## The fleet check finds a project by its deploy lib as well as its standards copy (2026-10-14)
+
+Apps are retiring their vendored `docs/STANDARDS.md`, because every session already loads the
+standard from this canonical clone (Scribly #50 first). Discovery keyed on that file alone, so a
+project that retired it dropped out of the report silently, and with it the STALE check on its
+`scripts/lib/deploy/` — the one row that still matters for it. Discovery is now the union of
+`$ROOT/*/docs/STANDARDS.md` and `$ROOT/*/scripts/lib/deploy/VERSION`, de-duplicated and C-ordered
+by `LC_ALL=C sort -u`, still filtered by `is_fleet_project_name`. A project with the lib but no
+copy and no `.claude/rules/standards.md` reads `retired` in the standards column: lowercase, so
+the watchdog's ALL-CAPS parser ignores it as it ignores `ok` and `none`, and not a failure; the
+summary adds "(K retired)". If the link is still there the copy was half-removed, so the row is
+HALFRETIRED and counts as attention. A lib with no `scripts/deploy.sh` stays `none`, worded as
+present but not compared rather than "not adopted": the deploy-lib row has always keyed on
+`deploy.sh`. A project with neither marker in an explicit `STANDARDS_PROJECTS` list is still MISSING.

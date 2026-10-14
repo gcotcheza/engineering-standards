@@ -230,8 +230,8 @@ matches 'case 14: a copy ahead of canonical is not called stale' "${OUT}" "DIVER
 equals  'case 14: exit code' "${RC}" 1
 
 # --- 15. the projects are discovered from the root, not carried in the script --
-# A project joins the check by vendoring docs/STANDARDS.md; a directory that
-# vendored nothing is not a project, whatever it is called.
+# A project joins the check by vendoring docs/STANDARDS.md or the deploy lib (case 21);
+# a directory that vendored neither is not a project, whatever it is called.
 DROOT="${WORK}/discovered"
 mkdir -p "${DROOT}/sundial-e2e" "${DROOT}/sundial-worktrees"
 add_docs_ok "${DROOT}/sundial"
@@ -286,6 +286,65 @@ run_discovery "${OROOT}"
 ORDER="$(printf '%s\n' "${OUT}" | grep -oE '^ +ok +[A-Za-z]+' | awk '{print $2}' | tr '\n' ' ')"
 equals 'case 20: rows come out in C collation order' "${ORDER}" 'Mike Zulu alpha '
 equals 'case 20: exit code' "${RC}" 0
+
+# --- 21. a project that retired its STANDARDS.md copy is still found by its deploy lib ---
+# Discovery by docs/STANDARDS.md alone dropped such a project, and its stale lib with it.
+RROOT="${WORK}/retired"
+mkdir -p "${RROOT}/quill/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${RROOT}/quill/scripts/lib/deploy/"
+printf '2020-01-01\n' >"${RROOT}/quill/scripts/lib/deploy/VERSION"
+: >"${RROOT}/quill/scripts/deploy.sh"
+run_discovery "${RROOT}"
+matches   'case 21: a deploy-lib-only project reads retired, not missing' "${OUT}" '^ +retired +quill +\(no docs/STANDARDS\.md copy'
+unmatches 'case 21: and no STALE/MISSING standards row' "${OUT}" '(STALE|MISSING) +quill +\((declared|no docs)'
+matches   'case 21: its stale deploy lib is still flagged' "${OUT}" "STALE +quill +\\(VERSION is '2020-01-01', canonical is '${LIB_VERSION}'\\)"
+equals    'case 21: exit code' "${RC}" 1
+cp "${CANON}/scripts/lib/deploy/VERSION" "${RROOT}/quill/scripts/lib/deploy/VERSION"
+run_discovery "${RROOT}"
+matches   'case 21: with a current lib it is clean, and the summary counts it retired' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18 \(1 retired\)'
+equals    'case 21: retired is not a failure — exit code' "${RC}" 0
+
+# --- 22. a project carrying both markers is one project, not two ---------------
+BROOT="${WORK}/both"
+mkdir -p "${BROOT}/sundial/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${BROOT}/sundial/scripts/lib/deploy/"
+: >"${BROOT}/sundial/scripts/deploy.sh"
+add_docs_ok "${BROOT}/sundial"
+run_discovery "${BROOT}"
+equals  'case 22: one standards row' "$(printf '%s\n' "${OUT}" | grep -cE '^ +ok +sundial +\(2026-09-18\)')" 1
+equals  'case 22: one deploy-lib row' "$(printf '%s\n' "${OUT}" | grep -cE '^ +ok +sundial +\(deploy-lib ')" 1
+matches 'case 22: counted once' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18'
+equals  'case 22: exit code' "${RC}" 0
+
+# --- 23. a copy retired but its link left behind is attention, not retired ----
+HROOT="${WORK}/halfretired"
+mkdir -p "${HROOT}/inkpot/scripts/lib/deploy" "${HROOT}/inkpot/.claude/rules"
+cp "${CANON}/scripts/lib/deploy/"* "${HROOT}/inkpot/scripts/lib/deploy/"
+: >"${HROOT}/inkpot/scripts/deploy.sh"
+ln -s '../../docs/STANDARDS.md' "${HROOT}/inkpot/.claude/rules/standards.md"
+run_discovery "${HROOT}"
+matches   'case 23: a left-behind link reads HALFRETIRED' "${OUT}" '^ +HALFRETIRED +inkpot +\(no docs/STANDARDS\.md copy but \.claude/rules/standards\.md is still there'
+unmatches 'case 23: and not retired' "${OUT}" '^ +retired +inkpot'
+equals    'case 23: exit code' "${RC}" 1
+rm "${HROOT}/inkpot/.claude/rules/standards.md"
+printf 'left behind\n' >"${HROOT}/inkpot/.claude/rules/standards.md"
+run_discovery "${HROOT}"
+matches 'case 23: a left-behind plain file reads HALFRETIRED' "${OUT}" '^ +HALFRETIRED +inkpot'
+equals  'case 23: plain file exit code' "${RC}" 1
+
+# --- 24. an explicit project with neither marker is still MISSING -------------
+run ghost
+matches 'case 24: a named project with no copy and no lib reads MISSING' "${OUT}" '^ +MISSING +ghost +\(no docs/STANDARDS\.md — not adopted'
+equals  'case 24: exit code' "${RC}" 1
+
+# --- 25. a lib with no deploy.sh is not called "not adopted" ------------------
+NROOT="${WORK}/libnodeploy"
+mkdir -p "${NROOT}/quire/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${NROOT}/quire/scripts/lib/deploy/"
+run_discovery "${NROOT}"
+matches   'case 25: the none row says the lib is there but not compared' "${OUT}" '^ +none +quire +\(scripts/lib/deploy/VERSION present but no scripts/deploy\.sh'
+unmatches 'case 25: and does not claim it was never adopted' "${OUT}" 'quire +\(no scripts/deploy\.sh — deploy-lib not adopted'
+equals    'case 25: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'
