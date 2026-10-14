@@ -63,6 +63,7 @@ shared memory (the owner's standing instructions to the AI sessions).
 | W7 `docs/DECISIONS.md` per project | A Laravel project's `docs/DECISIONS.md` preamble; another project's equivalent `docs/rationale-*.md` |
 | W8 One deploy runbook per project | The `.claude/commands/deploy.md` runbooks of seven projects; the fleet's shared memory ("follow it literally; it encodes hard-won ordering") |
 | W9 Exercise, don't read the config | The fleet's shared memory (two standing instructions: prove a mechanism by running it, and execute rather than narrate) |
+| W10 Clean up after merge | The box's own disk incident: the health check's disk row sat red for ten days at 89% with 117 lanes and ~80 unused images left behind |
 
 ---
 
