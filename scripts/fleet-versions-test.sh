@@ -326,6 +326,11 @@ run_discovery "${HROOT}"
 matches   'case 23: a left-behind link reads HALFRETIRED' "${OUT}" '^ +HALFRETIRED +inkpot +\(no docs/STANDARDS\.md copy but \.claude/rules/standards\.md is still there'
 unmatches 'case 23: and not retired' "${OUT}" '^ +retired +inkpot'
 equals    'case 23: exit code' "${RC}" 1
+rm "${HROOT}/inkpot/.claude/rules/standards.md"
+printf 'left behind\n' >"${HROOT}/inkpot/.claude/rules/standards.md"
+run_discovery "${HROOT}"
+matches 'case 23: a left-behind plain file reads HALFRETIRED' "${OUT}" '^ +HALFRETIRED +inkpot'
+equals  'case 23: plain file exit code' "${RC}" 1
 
 # --- 24. an explicit project with neither marker is still MISSING -------------
 run ghost
