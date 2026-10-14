@@ -9,6 +9,11 @@ as "(K retired)") in the standards column, or `HALFRETIRED` (attention) if its
 A lib with no `scripts/deploy.sh` stays `none`, now worded as present but not compared. Cases 21-25
 cover these. Why: `docs/DECISIONS.md`.
 
+## 2026-10-14 — the deploy's clean-up keeps a worktree inside a lane labelled keep= (deploy-lib VERSION 2026-10-14; the standard is unchanged and VERSION is not bumped)
+**Card 488.** New `cleanup_lanekeep` (`cleanup.sh`): a deploy's clean-up keeps a worktree under
+`/srv/worker-scratch` when a `.fleet-scratch` above it carries `keep=`, or when that label is a link, not a
+plain file, or cannot be read within 5 seconds. Why: `docs/DECISIONS.md`.
+
 ## 2026-10-14 — W10: the owning session cleans up after a merged task (VERSION 2026-10-14)
 **New rule W10; the standard now has 39 rules.** When a task is merged, and deployed where it deploys,
 its owning session removes the PR's worktrees and lanes, its gate and e2e image tags and its scratch

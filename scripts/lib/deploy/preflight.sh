@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-11.1 sha256:75e2bbe6bbb38c51742b45943eb14e7df3926aebd5a4d512fbf788c3ee1253bb
+# fleet-deploy-lib 2026-10-14 sha256:75e2bbe6bbb38c51742b45943eb14e7df3926aebd5a4d512fbf788c3ee1253bb
 # shellcheck shell=bash
 # preflight prints what the box looked like and never refuses; refuse_if_dirty sits ahead of every
 # command that moves the checkout. Both checks refuse a git status that fails.

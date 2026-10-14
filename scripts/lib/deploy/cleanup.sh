@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-11.1 sha256:3990ede1288ea50c957ec7b2eb955114c3ba6cda83b0e35ab222a61b43589070
+# fleet-deploy-lib 2026-10-14 sha256:582fba49377b444a1d91081d46d5e2c0a93171828046f249752440497737b39a
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -8,9 +8,13 @@
 # shell, on the line before a success-path finish, stands for a deploy that reached it.
 unset DEPLOY_SUCCEEDED
 
-# find is pinned to the binary: an exported shell function named find must not decide
-# which directories a removal run looks inside.
+# find, timeout and grep are pinned to the binary: an exported shell function of that name
+# must not decide what a removal run looks inside or keeps.
 CLEANUP_FIND=/usr/bin/find
+CLEANUP_TIMEOUT=/usr/bin/timeout
+CLEANUP_GREP=/usr/bin/grep
+# Lane labels are read only below this root; a worktree outside it meets none.
+CLEANUP_SCRATCH_ROOT=/srv/worker-scratch
 
 cleanup_reason() {
     case ",${CLEANUP_REASONS}," in
@@ -85,8 +89,27 @@ cleanup_envfiles() {
     return 0
 }
 
+# A .fleet-scratch label with a keep= line in a directory between the scratch root and the
+# worktree holds it, as the scratch reapers hold that lane (card 488).
+cleanup_lanekeep() {
+    local wt=$1 dir=$1 label rc
+    case "$wt" in "${CLEANUP_SCRATCH_ROOT}"/?*) ;; *) return 0 ;; esac
+    while dir=${dir%/*}; [ "${#dir}" -gt "${#CLEANUP_SCRATCH_ROOT}" ]; do
+        label="${dir}/.fleet-scratch"
+        [ ! -L "$label" ] || { cleanup_keep laneKeep "$wt ($label is a symbolic link, so a keep= could not be ruled out)"; return 1; }
+        [ -e "$label" ] || continue
+        [ -f "$label" ] || { cleanup_keep laneKeep "$wt ($label is not a plain file, so a keep= could not be ruled out)"; return 1; }
+        rc=0
+        "${CLEANUP_TIMEOUT}" 5 "${CLEANUP_GREP}" -q -m 1 -e '^keep=' -- "$label" </dev/null 2>/dev/null || rc=$?
+        [ "$rc" != 0 ] || { cleanup_keep laneKeep "$wt (its lane label $label carries keep=)"; return 1; }
+        [ "$rc" = 1 ] || { cleanup_keep laneKeep "$wt ($label could not be read (exit ${rc}), so a keep= could not be ruled out)"; return 1; }
+    done
+    return 0
+}
+
 cleanup_worktree() {
     local wt=$1 head=$2 rc=0 out
+    cleanup_lanekeep "$wt" || return 0
     [ -n "$head" ] || { cleanup_keep headInMain "$wt (git named no HEAD for it)"; return 0; }
     ${GIT-} merge-base --is-ancestor "$head" origin/main >/dev/null 2>&1 || rc=$?
     if [ "$rc" != 0 ]; then

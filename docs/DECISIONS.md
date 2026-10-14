@@ -1580,6 +1580,42 @@ exception.
 **Size.** The loaded standard grew about 238 bytes (18472 to 18710 over c876908); this is accepted,
 as S1's growth was (0b04aad). Trimming the standard back under budget is a separate change for Ghie to decide.
 
+## A lane label with keep= holds the worktrees inside it from the deploy's clean-up (2026-10-14, card 488)
+
+**The gap.** Card 481 taught `fleet-scratch-reap` and `fleet-merged-reap` to keep any lane whose
+`.fleet-scratch` carries a `keep=<reason>` line (BRIEF-COMMON rule 18). The deploy's own clean-up
+never read the label: `cleanup_worktrees` removed a clean, merged PR-branch worktree under
+`/srv/worker-scratch/<lane>/` even when that lane was held. On this lib before the fix, the new
+`cleanup-lane-held` case printed `FAIL and it is still on disk is [gone], expected [there]`.
+
+**The rule.** `cleanup_lanekeep` runs first in `cleanup_worktree`. For a worktree under
+`/srv/worker-scratch` (`CLEANUP_SCRATCH_ROOT`), it looks for a `.fleet-scratch` in every directory
+between that root and the worktree, and keeps the tree under `laneKeep` when one has a line starting
+`keep=` — the reapers' `grep -m 1 '^keep='`, so an indented `keep=` does not count. A blank reason
+still holds: the reapers treat it as an error and keep the lane, and the clean-up keeps the tree the
+same way rather than deciding the label is wrong. The reason itself is never printed: it is free text
+from a lane, and the log only needs the label's path.
+
+**The label itself is never followed or waited on.** The clean-up runs as root in the deploy's EXIT
+handler, and the directories it walks can be written by app users. A label that is a symbolic link, to
+anything or to nothing, keeps the tree without being opened — the reaper's `[ -L "$lbl" ] || [ ! -f "$lbl" ]`:
+a link to a blocking or endless regular file (`/proc/kmsg`, a trace pipe, a huge sparse file) would
+pass `-f` and hang the handler. A label that is not a plain file (a FIFO, a directory) keeps it too.
+A plain label is read by the pinned `grep` under the pinned `timeout` (5 seconds); a timeout or any
+read error keeps the tree. A symbolic-linked directory between the root and the worktree is followed,
+but what it can do is bounded: at most it keeps the tree, and each label read stops at 5 seconds.
+
+**Why a scratch root and no new seam.** Lanes live only under `/srv/worker-scratch`, so the walk
+starts there and goes no higher: a worktree outside it, such as one under `/var/www/<app>-worktrees`,
+is not looked at at all, even when a `.fleet-scratch` sits above it. The root is a lib constant, as
+`find` is pinned, because every name the clean-up reads from outside is assigned by `deploy.sh`, and a
+new one would mean editing every project's deploy script.
+
+**Not shared with the reapers (C1/C2).** `fleet-scratch-reap`'s `keep_reason` is the same decision,
+but it lives in an installed `/usr/local/sbin` script and this lib is vendored into project repos
+that cannot source it; the clean-up also has no use for the reason text it returns. The match rule
+(`^keep=`) is the part that must agree, and `cleanup-lane-keep-not-indented` holds it.
+
 ## The fleet check finds a project by its deploy lib as well as its standards copy (2026-10-14)
 
 Apps are retiring their vendored `docs/STANDARDS.md`, because every session already loads the
