@@ -1,14 +1,9 @@
 # Changelog
 
 ## 2026-10-14 — the deploy's clean-up keeps a worktree inside a lane labelled keep= (deploy-lib VERSION 2026-10-14; the standard is unchanged and VERSION is not bumped)
-**Card 488.** `cleanup_worktrees` removed a clean, merged PR-branch worktree under
-`/srv/worker-scratch/<lane>/` even when the lane's `.fleet-scratch` carried `keep=<reason>`, which the
-scratch reapers have honoured since card 481. New `cleanup_lanekeep` (`cleanup.sh`) runs first in
-`cleanup_worktree`: a `.fleet-scratch` in any directory above the worktree with a line starting `keep=`
-keeps it under the new reason `laneKeep`, and so does a label that is not a plain file or cannot be read
-(a FIFO is never opened). No deploy script changes. Suites: seven cleanup cases in `test.sh`, the
-held one shown red on the old lib and on a saved mutant with the call deleted. All eight headers are
-re-stamped. Why, and why it does not share the reapers' parser: `docs/DECISIONS.md`.
+**Card 488.** New `cleanup_lanekeep` (`cleanup.sh`): a deploy's clean-up keeps a worktree under
+`/srv/worker-scratch` when a `.fleet-scratch` above it carries `keep=`, or when that label is a link, not a
+plain file, or cannot be read within 5 seconds. Why: `docs/DECISIONS.md`.
 
 ## 2026-10-11 — W2: the builder reviews their own whole diff before the gate (VERSION 2026-10-11)
 **Ghie's approval of 2026-10-11, written into W2 as one sentence.** Before the gate, the builder

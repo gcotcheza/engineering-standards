@@ -2099,6 +2099,41 @@ run_lib "${CLEAN_CALL}"
 contains 'a directory in place of the lane label keeps the worktree' "${OUT}" \
     'worktrees removed 0 kept 1 (laneKeep)'
 
+# The link's target is a plain label without keep=: following it would remove the worktree.
+cleanup_fixture cleanup-lane-label-symlink
+printf 'repo=gcotcheza/fixture\npr=73\n' >"${CASE}/target-label"
+ln -s "${CASE}/target-label" "${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a symbolic link to a plain file in place of the lane label keeps the worktree' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch is a symbolic link, so a keep= could not be ruled out)"
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-lane-label-dangling
+ln -s "${CASE}/no-such-label" "${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a dangling symbolic link in place of the lane label keeps the worktree' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch is a symbolic link, so a keep= could not be ruled out)"
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+# The stub stands for a read that ran out its time, as one on a blocking file would.
+cleanup_fixture cleanup-lane-label-timeout
+printf 'repo=gcotcheza/fixture\npr=73\n' >"${CASE}/.fleet-scratch"
+printf '#!/bin/sh\nexit 124\n' >"${CASE}/timed-out"
+chmod +x "${CASE}/timed-out"
+run_lib "CLEANUP_TIMEOUT=${CASE}/timed-out; ${CLEAN_CALL}"
+contains 'a lane label whose read timed out keeps the worktree' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch could not be read within 5s (exit 124), so a keep= could not be ruled out)"
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+equals 'and the deploy still exits 0' "${RC}" '0'
+
+# CASE stands for /var/www/<app>-worktrees here: outside the scratch root, its label is never read.
+cleanup_fixture cleanup-lane-outside-scratch
+printf 'keep=not a lane\n' >"${CASE}/.fleet-scratch"
+run_lib "CLEANUP_SCRATCH_ROOT=${WORK}/scratch-root; ${CLEAN_CALL}"
+contains 'a keep= label above a worktree outside the scratch root is not read' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and it is gone from disk' "$(on_disk "${WT}")" 'gone'
+
 cleanup_fixture cleanup-rootfiles
 ROOT_UID_SEAM="$(stat -c %u "${WT}/app/base.txt")"
 run_lib "${CLEAN_CALL}"
