@@ -2044,6 +2044,104 @@ contains 'a dirty worktree is kept and the reason names the check' "${OUT}" \
     'worktrees removed 0 kept 1 (dirty)'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 
+# A worker lane is CASE itself here: its .fleet-scratch label sits one level above the worktree.
+cleanup_fixture cleanup-lane-held
+printf 'repo=gcotcheza/fixture\npr=73\nkeep=outlives the deploy\n' >"${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a clean worktree inside a lane labelled keep= is kept' "${OUT}" \
+    'worktrees removed 0 kept 1 (laneKeep)'
+contains 'and the deploy log names the label' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep laneKeep ${WT} (its lane label ${CASE}/.fleet-scratch carries keep=)"
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+equals 'and the deploy still exits 0' "${RC}" '0'
+
+cleanup_fixture cleanup-lane-held-deeper
+mkdir -p "${CASE}/lane"
+git_at worktree move "${WT}" "${CASE}/lane/wt-pr"
+WT="${CASE}/lane/wt-pr"
+printf 'keep=the reason is all it says\n' >"${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a keep= label two levels above the worktree still holds it' "${OUT}" \
+    'worktrees removed 0 kept 1 (laneKeep)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-lane-unheld
+printf 'repo=gcotcheza/fixture\npr=73\n' >"${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a clean worktree inside a lane labelled without keep= is removed' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and it is gone from disk' "$(on_disk "${WT}")" 'gone'
+
+cleanup_fixture cleanup-lane-keep-blank
+printf 'repo=gcotcheza/fixture\npr=73\nkeep=  \n' >"${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a keep= line with a blank reason still holds the worktree' "${OUT}" \
+    'worktrees removed 0 kept 1 (laneKeep)'
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-lane-keep-not-indented
+printf 'repo=gcotcheza/fixture\npr=73\n keep=indented\n' >"${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'keep= counts only at the start of a line, as the reapers read it' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+
+cleanup_fixture cleanup-lane-label-fifo
+mkfifo "${CASE}/.fleet-scratch"
+LIB_TIMEOUT=30 run_lib "${CLEAN_CALL}"
+equals 'a FIFO in place of the lane label is not waited on' "RC=${RC}" 'RC=0'
+contains 'and the worktree is kept, saying the label could not be read' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch is not a plain file, so a keep= could not be ruled out)"
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-lane-label-dir
+mkdir "${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a directory in place of the lane label keeps the worktree' "${OUT}" \
+    'worktrees removed 0 kept 1 (laneKeep)'
+
+# The link's target is a plain label without keep=: following it would remove the worktree.
+cleanup_fixture cleanup-lane-label-symlink
+printf 'repo=gcotcheza/fixture\npr=73\n' >"${CASE}/target-label"
+ln -s "${CASE}/target-label" "${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a symbolic link to a plain file in place of the lane label keeps the worktree' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch is a symbolic link, so a keep= could not be ruled out)"
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-lane-label-dangling
+ln -s "${CASE}/no-such-label" "${CASE}/.fleet-scratch"
+run_lib "${CLEAN_CALL}"
+contains 'a dangling symbolic link in place of the lane label keeps the worktree' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch is a symbolic link, so a keep= could not be ruled out)"
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+# The stub stands for a read that ran out its time, as one on a blocking file would.
+cleanup_fixture cleanup-lane-label-timeout
+printf 'repo=gcotcheza/fixture\npr=73\n' >"${CASE}/.fleet-scratch"
+printf '#!/bin/sh\nexit 124\n' >"${CASE}/timed-out"
+chmod +x "${CASE}/timed-out"
+run_lib "CLEANUP_TIMEOUT=${CASE}/timed-out; ${CLEAN_CALL}"
+contains 'a lane label whose read timed out keeps the worktree' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep laneKeep ${WT} (${CASE}/.fleet-scratch could not be read (exit 124), so a keep= could not be ruled out)"
+equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+equals 'and the deploy still exits 0' "${RC}" '0'
+
+# CASE stands for /var/www/<app>-worktrees here: outside the scratch root, its label is never read.
+cleanup_fixture cleanup-lane-outside-scratch
+printf 'keep=not a lane\n' >"${CASE}/.fleet-scratch"
+run_lib "CLEANUP_SCRATCH_ROOT=${WORK}/scratch-root; ${CLEAN_CALL}"
+contains 'a keep= label above a worktree outside the scratch root is not read' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and it is gone from disk' "$(on_disk "${WT}")" 'gone'
+
+# CASE is the scratch root itself: the walk stops below it, so a label on the root is no lane's.
+cleanup_fixture cleanup-lane-label-on-scratch-root
+printf 'keep=not a lane\n' >"${CASE}/.fleet-scratch"
+run_lib "CLEANUP_SCRATCH_ROOT=${CASE}; ${CLEAN_CALL}"
+contains 'a keep= label on the scratch root itself is not read' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+equals 'and the worktree under it is gone from disk' "$(on_disk "${WT}")" 'gone'
+
 cleanup_fixture cleanup-rootfiles
 ROOT_UID_SEAM="$(stat -c %u "${WT}/app/base.txt")"
 run_lib "${CLEAN_CALL}"
