@@ -1543,7 +1543,7 @@ sentences.
 - the race: the check and git's open are two steps, so a plant between them stalls the deploy, with no
   privilege gained.
 The fix for all of them is a bounded timeout on root's git calls, a design change left to its own
-follow-up card, not built here.
+follow-up card, not built here. Card 441 built it (2026-10-15): see its entry below.
 
 **The sweep: every read the lib makes in an app tree, or through git, as of 2026-10-11.1.** Behind the
 check, each with a case and a guard-deleted mutant: `deploy_head_file`, `refuse_if_dirty`,
@@ -1630,3 +1630,83 @@ summary adds "(K retired)". If the link is still there the copy was half-removed
 HALFRETIRED and counts as attention. A lib with no `scripts/deploy.sh` stays `none`, worded as
 present but not compared rather than "not adopted": the deploy-lib row has always keyed on
 `deploy.sh`. A project with neither marker in an explicit `STANDARDS_PROJECTS` list is still MISSING.
+
+## The deploy library's own git calls run under a timeout (2026-10-15, card 441)
+
+**Scope.** The library's deploy-time git calls in `summary.sh`, `preflight.sh`, `resolve.sh`,
+`cleanup.sh`, `compose.sh` and `ledger.sh`. A project's own `deploy.sh` git calls (its
+`merge --ff-only`, its `rev-parse`) are not bounded by this: they are that project's to route through
+`deploy_git_or_refuse`.
+
+**The gap.** `deploy_git_plain` stats a fixed list of files, so it refuses the known FIFOs fast but
+cannot close the class (the **Not closed by this** list above: a FIFO at `objects/info/alternates`, a
+pack `.idx`, `commit-graph`, `shallow` or `info/grafts`; a `core.fsmonitor` command; a worktree gitfile
+naming a directory with a FIFO `HEAD`; the race between the stat and git's open). Each hangs git as
+the app user while root's deploy waits. It is self-DoS only: no privilege is gained.
+
+**The rule.** `deploy_git_bounded <git argv…>` runs git under `/usr/bin/timeout -k 5
+"${DEPLOY_GIT_TIMEOUT:-300}"` and returns git's exit code; a timeout (124, or 137 after the KILL) sets
+`DEPLOY_GIT_ERR="git did not answer in Ns"`. `deploy_git_or_refuse` stops the deploy on it with
+`REFUSED: git did not answer in Ns: <argv>`; `resolve`, `refuse_if_dirty` and
+`deploy_refuse_if_tracked_dirty` use it. `deploy_head_file` and the clean-up use the bounded call
+alone: the clean-up keeps the tree on any non-zero exit and never fails the deploy, and
+`deploy_record_row` refuses a HEAD it could not read. `deploy_git_plain` stays as the fast path.
+`test.sh` has a git that ignores TERM, so only the KILL ends it (137), and expects the same refusal
+as for 124.
+
+**A timeout is named as one.** `deploy_head_file` runs inside `$(...)`, so `DEPLOY_GIT_ERR` cannot
+reach its caller: it returns git's 124 or 137 instead of 1, and `deploy_record_row` says `git did not
+answer in Ns reading <ROOT>/.git/HEAD`, not "reads no main sha". In the clean-up, a merge-base that
+timed out is reported as `merge-base: git did not answer in Ns` (in `deploy_cleanup` and per
+worktree), not as a merge or a head outside main, and no `branch -r` follows it, so one hang costs
+one wait, not two. A `branch -r` that timed out says so too. `compose.sh`'s tracked check puts
+`DEPLOY_GIT_ERR` in its refusal.
+
+**A failed read-back is a failure.** If `$(<"/dev/fd/N")` cannot reopen a file, bash prints an error and
+the assignment is empty. Without a check, `refuse_if_dirty` read a dirty tree as clean. Both read-backs
+set `DEPLOY_GIT_ERR='git output could not be read back'` and rc 1, so `deploy_git_or_refuse` refuses.
+Under `set -e`, bash 5.2 exits on the failed `x=$(<f)` before the `||` runs, so such a deploy stops with
+rc 1 and no REFUSED line: still closed, only less plainly said. No code changes for it.
+`test.sh` makes the read-back fail with a fake git that sets its own output file to mode 000. As root,
+the case drops `CAP_DAC_OVERRIDE` and `CAP_DAC_READ_SEARCH` for that one shell, using `setpriv`.
+
+**`$GIT` stays a string.** `GIT`, `WT_GIT` and `DEPLOY_GIT` are strings every project's `deploy.sh`
+sets, so turning them into arrays would change the vendored interface. Each call that splits them
+carries its own `# shellcheck disable=SC2086`. `test_scope_of`'s `if`/`elif` chain is the exception: a
+directive cannot sit inside the chain, so one directive sits above the `if`.
+
+**Why files, not `$(...)`.** git can leave a `setsid` grandchild (a hook, an fsmonitor daemon) that
+inherits its stdout. A command substitution waits for every holder of its pipe to close it, so the
+timeout would kill git and the deploy would still wait. Stdout and stderr go to two root `mktemp`
+files in `/tmp` (not `$TMPDIR`, which the deploy inherits from whoever started it), opened and then
+unlinked before git starts, and read back through `/dev/fd/N` into `DEPLOY_GIT_OUT` and
+`DEPLOY_GIT_STDERR`. Stdin is `/dev/null` and fd 3,
+the deploy's summary channel, is closed for git, since a grandchild holding it holds `fleet-deploy`'s
+reader. The cleanup's `status` and `ls-files` still count stderr as output, as their `2>&1` did.
+
+**The timeout.** 300 seconds: a `fetch` on a slow link must not be refused. `DEPLOY_GIT_TIMEOUT` must be
+1 to 99999: GNU `timeout` reads 0 as no limit, so 0 is refused, not honoured.
+
+**The copy.** `compose.sh run` cannot source `summary.sh`, so it carries `deploy_compose_git_bounded`,
+body for body, as it carries `deploy_compose_git_plain`; `test.sh` compares the two.
+
+**The ledger's reads.** `ledger.sh`'s deploy-time reads (`test_scope_of`'s four, `github_e2e_same_tree`,
+`github_e2e`'s workflow `rev-parse` and blob hash, `gated`'s tree read) go through
+`deploy_git_or_refuse`: a timeout stops the deploy, and every other failure reads as before (every
+path UI, not the same tree, tree `-`, no workflow). `summary.sh` is sourced before `ledger.sh` at
+deploy time, so no copy is needed. The blob is hashed inside the bounded call (`bash -c '… cat-file
+blob … | sha256sum'`), because read back through a variable it would lose its trailing newlines. The
+gate-side reads (`gate_ledger_arm`, `gate_ledger_sha`, `gate_ledger_tree`, through `GATE_LEDGER_GIT`)
+are left alone: they run in the gate's own checkout, not a deploy.
+
+**No temp file outlives a kill, and no trap is touched.** The files are unlinked while open, before git
+starts, so a deploy killed mid-git (TERM, INT, anything) leaves no `/tmp/deploy-git.*` name; only the
+few builtins between `mktemp` and the unlink can leave one. A trap that removed them was built first
+and dropped: saving a caller's traps with `trap -p` and putting them back is wrong in a subshell,
+where `trap -p` lists the parent's traps although none is active. Inside `$(deploy_head_file)` the
+restore armed `deploy_cleanup` as the subshell's EXIT trap; measured, 11 checks failed, the clean-up
+ran three times and its output landed in the HEAD the deploy read. **A TERM still waits for git:**
+bash runs a caller's TERM or INT trap only after the foreground `timeout` returns, so a trapped signal
+takes effect within N+5 seconds; with no trap, bash dies at once and `timeout` still ends git within
+N+5 seconds. `test.sh` kills a call mid-git with and without a caller's TERM trap and finds neither
+file, and checks that a caller's traps are the same after a call.

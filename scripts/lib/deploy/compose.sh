@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-14 sha256:c459f15b492c638105f25567707256f6eee79d51eaf83a2ac02cfb98dfe6c49a
+# fleet-deploy-lib 2026-10-15 sha256:289fe9f3555a4cc7c4be7d236d5e5eea16b82b8b589e4c773e3aee2e0cc2effe
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -198,8 +198,9 @@ deploy_compose_exec() {
 deploy_compose_tracked() {
     local out rc=0
     deploy_compose_git_plain "$1/.git" || { DEPLOY_COMPOSE_ERR="$1/.git is not a plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it"; return 1; }
-    out=$("${DEPLOY_GIT_AS:-git-as}" "$(deploy_compose_user "$1")" -C "$1" --no-optional-locks status --porcelain --untracked-files=no) || rc=$?
-    [ "$rc" = 0 ] || { DEPLOY_COMPOSE_ERR="git status exited $rc in $1, so the tracked files are not known to be the merge and nothing is built over them"; return 1; }
+    deploy_compose_git_bounded "${DEPLOY_GIT_AS:-git-as}" "$(deploy_compose_user "$1")" -C "$1" --no-optional-locks status --porcelain --untracked-files=no || rc=$?
+    out=$DEPLOY_GIT_OUT
+    [ "$rc" = 0 ] || { DEPLOY_COMPOSE_ERR="${DEPLOY_GIT_ERR:-git status exited $rc} in $1, so the tracked files are not known to be the merge and nothing is built over them"; return 1; }
     [ -z "$out" ] || { DEPLOY_COMPOSE_ERR="tracked files in $1 are modified since the fast-forward, so nothing is built over them: ${out//$'\n'/; }"; return 1; }
 }
 
@@ -209,6 +210,25 @@ deploy_compose_git_plain() {
     [[ $g == /* && -d $g && ! -L $g ]] || return 1
     [[ -f $g/HEAD && ! -L $g/HEAD ]] || return 1
     for f in "$g"/{config,commondir,packed-refs,refs/heads/main,index,info/attributes,info/exclude} "$g"/worktrees/*/{HEAD,commondir,gitdir,index,locked}; do [[ ! -L $f && ( -f $f || ! -e $f ) ]] || return 1; done
+}
+
+# summary.sh's deploy_git_bounded, for the same reason; test.sh fails if the two drift.
+deploy_compose_git_bounded() {
+    local n=${DEPLOY_GIT_TIMEOUT:-300} o e wo we rc=0
+    DEPLOY_GIT_OUT='' DEPLOY_GIT_STDERR='' DEPLOY_GIT_ERR=''
+    [[ $n =~ ^[1-9][0-9]{0,4}$ ]] || { DEPLOY_GIT_ERR="DEPLOY_GIT_TIMEOUT '$n' is not a whole number of seconds from 1 to 99999"; return 1; }
+    o=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    e=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { rm -f -- "${o:?}"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    exec {wo}>"$o" {we}>"$e" || { rm -f -- "${o:?}" "${e:?}"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    # Unlinked while open, before git starts: a deploy killed mid-git leaves no file, and no trap is touched.
+    rm -f -- "${o:?}" "${e:?}"
+    /usr/bin/timeout -k 5 "$n" "$@" </dev/null >&"$wo" 2>&"$we" 3>&- {wo}>&- {we}>&- || rc=$?
+    DEPLOY_GIT_OUT=$(<"/dev/fd/$wo") || { DEPLOY_GIT_ERR='git output could not be read back'; rc=1; }
+    DEPLOY_GIT_STDERR=$(<"/dev/fd/$we") || { DEPLOY_GIT_ERR='git output could not be read back'; rc=1; }
+    exec {wo}>&- {we}>&-
+    [ -z "$DEPLOY_GIT_STDERR" ] || printf '%s\n' "$DEPLOY_GIT_STDERR" >&2
+    case $rc in 124|137) DEPLOY_GIT_ERR="git did not answer in ${n}s"; printf '%s: %s\n' "$DEPLOY_GIT_ERR" "$*" >&2 ;; esac
+    return "$rc"
 }
 
 deploy_compose_user() { printf '%s' "${DEPLOY_APP_USER:-$(basename -- "$1")}"; }

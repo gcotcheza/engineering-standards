@@ -1797,6 +1797,15 @@ run_lib "${LAND}"'$GIT checkout -q -b other; GATED=ledger; finish "$MERGE_SHA"'
 contains 'a HEAD on another branch is refused' "${OUT}" "REFUSED: ${ROOT}/.git/HEAD reads no main sha, not ${MERGE_SHA}"
 unrecorded 'another branch'
 
+fixture record-head-hangs
+mkdir -p "${CASE}/shim"
+printf '#!/bin/bash\ncase " $* " in *" symbolic-ref "*) exec sleep 600 ;; esac\nexec %q "$@"\n' "${BIN}/git-as" >"${CASE}/shim/git-as"
+chmod 0755 "${CASE}/shim/git-as"
+LIB_TIMEOUT=60 run_lib "${LAND}DEPLOY_GIT_AS='${CASE}/shim/git-as'; DEPLOY_GIT_TIMEOUT=2; GATED=ledger; finish \"\$MERGE_SHA\""
+contains 'a HEAD read that never answers is refused as a timeout, not as no main sha' "${OUT}" \
+    "REFUSED: git did not answer in 2s reading ${ROOT}/.git/HEAD: root's record ${CASE}/records/root.record is not written."
+unrecorded 'HEAD read timed out'
+
 # Landed on the test's side, so the case can rearrange .git before the deploy reads it.
 landed_at() { git_at reset -q --hard "${MERGE_SHA}"; }
 
@@ -1912,6 +1921,126 @@ compose_plain_sentence=$(sed -n 's/^.*deploy_compose_git_plain "\$1\/\.git" || {
 summary_plain_sentence=$(sed -n "s/^deploy_git_plain_refusal() { printf '%s\(\/\.git is not [^']*\)'.*\$/\1/p" "${LIB_DIR}/summary.sh")
 equals 'compose.sh refuses a planted .git in summary.sh'\''s sentence, word for word' "${compose_plain_sentence}" "${summary_plain_sentence}"
 contains 'and that sentence was read, not two empty reads' "${compose_plain_sentence}" '/.git is not a plain git directory'
+
+# --- card 441: every git call the lib makes at deploy time runs under a timeout, its output through a file ---
+equals 'compose.sh carries summary.sh'\''s deploy_git_bounded unchanged (it cannot source it)' \
+    "$(sed -n '/^deploy_compose_git_bounded() {$/,/^}$/p' "${LIB_DIR}/compose.sh" | tail -n +2)" \
+    "$(sed -n '/^deploy_git_bounded() {$/,/^}$/p' "${LIB_DIR}/summary.sh" | tail -n +2)"
+contains 'and that copy is the real function, not two empty reads' "$(sed -n '/^deploy_compose_git_bounded() {$/,/^}$/p' "${LIB_DIR}/compose.sh")" '/usr/bin/timeout -k 5'
+
+fixture git-bounded-hang
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\nsetsid sleep 20 &\nexec sleep 600\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+started=${SECONDS}
+LIB_TIMEOUT=60 run_lib "GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2; refuse_if_dirty; printf 'PAST THE DIRTY CHECK\n' >&3"
+took=$((SECONDS - started))
+equals 'bounded: a git that never answers is refused' "RC=${RC}" 'RC=1'
+contains 'bounded: and the refusal says git did not answer' "${OUT}" \
+    "REFUSED: git did not answer in 2s: ${CASE}/shim/git -C ${ROOT} --no-optional-locks status --porcelain"
+absent 'bounded: and nothing after it runs' "${OUT}" 'PAST THE DIRTY CHECK'
+if [ "${took}" -lt 15 ]; then pass "bounded: and it took ${took}s, not the git's setsid grandchild's 20"; else fail "bounded: a hanging git held the deploy ${took}s"; fi
+
+fixture git-bounded-alternates-fifo
+fifo_at objects/info/alternates
+LIB_TIMEOUT=60 run_lib 'DEPLOY_GIT_TIMEOUT=2; resolve'
+equals 'bounded: a FIFO at objects/info/alternates, past the fast path, is refused' "RC=${RC}" 'RC=1'
+contains 'bounded: and real git is named as the one that did not answer' "${OUT}" \
+    "REFUSED: git did not answer in 2s: git -C ${ROOT} fetch origin"
+
+fixture git-bounded-zero
+LIB_TIMEOUT=60 run_lib 'DEPLOY_GIT_TIMEOUT=0; refuse_if_dirty; printf "PAST THE DIRTY CHECK\n" >&3'
+contains 'bounded: a timeout of 0, which timeout reads as none, is refused' "${OUT}" \
+    "REFUSED: DEPLOY_GIT_TIMEOUT '0' is not a whole number of seconds from 1 to 99999"
+absent 'bounded: and nothing after it runs (timeout 0)' "${OUT}" 'PAST THE DIRTY CHECK'
+
+# A git that ignores TERM outlives timeout's TERM; the KILL five seconds later exits 137, not 124.
+fixture git-bounded-kill
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ntrap "" TERM\nsleep 600 &\nwait\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+started=${SECONDS}
+LIB_TIMEOUT=60 run_lib "GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=1; refuse_if_dirty; printf 'PAST THE DIRTY CHECK\n' >&3"
+took=$((SECONDS - started))
+contains 'bounded: a git that ignores TERM is killed and refused as not answering' "${OUT}" \
+    "REFUSED: git did not answer in 1s: ${CASE}/shim/git -C ${ROOT} --no-optional-locks status --porcelain"
+absent 'bounded: and nothing after it runs (KILL)' "${OUT}" 'PAST THE DIRTY CHECK'
+if [ "${took}" -ge 5 ] && [ "${took}" -lt 20 ]; then pass "bounded: and it took ${took}s, so the KILL ended it"; else fail "bounded: the TERM-ignoring git took ${took}s, not the 1s timeout plus the 5s KILL"; fi
+
+# A read-back that fails is refused, never read as empty output (a dirty tree read as clean).
+# Root reads a mode-000 file, so the case drops root's DAC override for its one shell.
+fixture git-bounded-readback
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\necho " M app/feature.txt"\nchmod 000 /proc/self/fd/1\n' >"${CASE}/shim/git-out"
+printf '#!/bin/sh\necho "warning: noise" >&2\nchmod 000 /proc/self/fd/2\n' >"${CASE}/shim/git-err"
+chmod 0755 "${CASE}/shim/git-out" "${CASE}/shim/git-err"
+readback_drop=()
+[ "$(id -u)" != 0 ] || readback_drop=(setpriv '--bounding-set=-dac_override,-dac_read_search' --)
+for which in out err; do
+    OUT=$(ROOT="${ROOT}" GIT="${CASE}/shim/git-${which}" "${readback_drop[@]}" \
+        bash -c '. "$1"; . "$2"; exec 3>&1; refuse_if_dirty; echo "PAST THE DIRTY CHECK"' _ "${LIB_DIR}/summary.sh" "${LIB_DIR}/preflight.sh" 2>&1)
+    contains "bounded: a std${which} that cannot be read back is refused" "${OUT}" \
+        "REFUSED: git output could not be read back: ${CASE}/shim/git-${which} --no-optional-locks status --porcelain"
+    absent "bounded: and the tree is not read as clean (std${which})" "${OUT}" 'PAST THE DIRTY CHECK'
+done
+
+# Every deploy-time read in ledger.sh: a git that hangs on that one read stops the deploy.
+hang_shim() { # the argv piece the shim hangs on; every other call is real git
+    mkdir -p "${CASE}/shim"
+    printf '#!/bin/bash\ncase " $* " in *%q*) exec sleep 600 ;; esac\nexec %q "$@"\n' "$1" "$(command -v git)" >"${CASE}/shim/git"
+    chmod 0755 "${CASE}/shim/git"
+}
+ledger_refused() { # label, the argv piece git hung on
+    local refusal
+    refusal=$(grep -m1 'REFUSED: git did not answer in 2s: ' <<<"${OUT}")
+    equals "bounded ledger ($1): a git hanging on [$2] stops the deploy" "RC=${RC}" 'RC=1'
+    contains "bounded ledger ($1): and the refusal names that read" "${refusal}" "$2"
+    absent "bounded ledger ($1): and nothing after it runs" "${OUT}" 'PAST THE LEDGER READ'
+}
+for read in 'test_scope_of:rev-parse HEAD' 'test_scope_of:diff --no-ext-diff' 'test_scope_of:cat-file -e' 'test_scope_of:show ' 'gated:^{tree}'; do
+    scope_fixture "git-bounded-ledger-${read%%:*}-${#read}" live ui
+    scope_rows ci e2e
+    hang_shim "${read#*:}"
+    LIB_TIMEOUT=30 run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2; gated; printf 'PAST THE LEDGER READ\n' >&3"
+    ledger_refused "${read%%:*}" "${read#*:}"
+done
+for read in ':.github/workflows/ci.yml' 'cat-file blob'; do
+    fixture "git-bounded-ledger-github-e2e-${#read}"
+    ghe_fixture "${HEAD_SHA}"
+    hang_shim "${read}"
+    LIB_TIMEOUT=30 run_lib "resolve; GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2; gated; printf 'PAST THE LEDGER READ\n' >&3"
+    ledger_refused github_e2e "${read}"
+done
+fixture git-bounded-ledger-same-tree
+hang_shim '^{tree}'
+LIB_TIMEOUT=30 run_lib "GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2; github_e2e_same_tree ${HEAD_SHA} ${MERGE_SHA}; printf 'PAST THE LEDGER READ\n' >&3"
+ledger_refused github_e2e_same_tree '^{tree}'
+
+# A TERM while git hangs leaves neither named temp file, with and without the caller's own TERM trap.
+fixture git-bounded-term
+printf '#!/bin/bash\nreadlink /proc/$$/fd/1 /proc/$$/fd/2 >"$1"\nexec sleep 600\n' >"${CASE}/names-git"
+chmod 0755 "${CASE}/names-git"
+for caller in default own; do
+    names="${CASE}/names-${caller}" marker="${CASE}/marker-${caller}"
+    if [ "${caller}" = own ]; then term_trap="trap 'echo CALLER_TERM >>${marker}; exit 7' TERM"; else term_trap=:; fi
+    bash -c '. "$1"; trap "echo CALLER_EXIT >>$3" EXIT; '"${term_trap}"'; DEPLOY_GIT_TIMEOUT=3; deploy_git_bounded "$2" "$4"' \
+        _ "${LIB_DIR}/summary.sh" "${CASE}/names-git" "${marker}" "${names}" 2>/dev/null &
+    pid=$!
+    for _ in $(seq 50); do [ -s "${names}" ] && break; sleep 0.2; done
+    kill -TERM "${pid}"
+    wait "${pid}"
+    rc=$?
+    equals "bounded TERM (${caller} TERM trap): git wrote to two named temp files" "$(grep -c '^/tmp/deploy-git\.' "${names}")" 2
+    equals "bounded TERM (${caller} TERM trap): and neither is left" "$(while read -r f; do f=${f% (deleted)}; [ ! -e "${f}" ] || printf '%s ' "${f}"; done <"${names}")" ''
+    if [ "${caller}" = own ]; then
+        equals 'bounded TERM: the caller'\''s TERM trap ran, then its EXIT trap' "rc=${rc} $(tr '\n' ' ' <"${marker}")" 'rc=7 CALLER_TERM CALLER_EXIT '
+    else
+        equals 'bounded TERM: with no TERM trap the deploy dies of TERM' "rc=${rc}" 'rc=143'
+    fi
+done
+equals 'bounded: the caller'\''s traps come back after the call, an ignored one still ignored' \
+    "$(bash -c '. "$1"; trap "echo CALLER_EXIT" EXIT; trap "" TERM; deploy_git_bounded true; trap -p EXIT INT TERM' _ "${LIB_DIR}/summary.sh")" \
+    "trap -- 'echo CALLER_EXIT' EXIT"$'\n'"trap -- '' SIGTERM"$'\n'"CALLER_EXIT"
 
 fixture record-other-owner
 mkdir -m 700 "${CASE}/records"
@@ -2284,6 +2413,55 @@ run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/s
 contains 'a worktree listed with no HEAD line is kept on doubt, not judged' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 1 (headInMain)'
 equals 'and that worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-status-hangs
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ncase " $* " in *" status "*) setsid sleep 20 & exec sleep 600 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+WT_GIT_SEAM="${CASE}/shim/git"
+started=${SECONDS}
+LIB_TIMEOUT=60 run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; DEPLOY_GIT_TIMEOUT=2; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; ${LAND}finish \"\$MERGE_SHA\""
+took=$((SECONDS - started))
+contains 'cleanup: a worktree whose git status never answers is kept, not waited on' "${OUT}" \
+    'CLEANUP #73 worktrees removed 0 kept 1 (status)'
+contains 'cleanup: and the deploy still reports DONE' "${OUT}" "DONE #73 live ${MERGE_SHA}"
+equals 'cleanup: and that worktree is still on disk' "$(on_disk "${WT}")" 'there'
+if [ "${took}" -lt 15 ]; then pass "cleanup: and it took ${took}s, not the git's setsid grandchild's 20"; else fail "cleanup: a hanging git status held the clean-up ${took}s"; fi
+
+# A timeout in the clean-up says so, and the clean-up makes no further git call on that question.
+cleanup_hang_run() { # the argv piece root's git hangs on; every call is logged to shim/argv
+    mkdir -p "${CASE}/shim"
+    printf '#!/bin/bash\nprintf "%%s\\n" "$*" >>%q\ncase " $* " in *%q*) exec sleep 600 ;; esac\nexec git "$@"\n' \
+        "${CASE}/shim/argv" "$1" >"${CASE}/shim/git"
+    chmod 0755 "${CASE}/shim/git"
+    LIB_TIMEOUT=60 run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; DEPLOY_GIT_TIMEOUT=2; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; ${LAND}GIT='${CASE}/shim/git -C ${ROOT}'; finish \"\$MERGE_SHA\""
+}
+cleanup_fixture cleanup-merge-base-hangs
+cleanup_hang_run ' merge-base '
+contains 'cleanup: a merge-base that never answers is named as a timeout, not as a merge outside main' "${OUT}" \
+    'CLEANUP #73 worktrees not examined (mergeInMain: merge-base: git did not answer in 2s) scratch not reaped (mergeInMain)'
+equals 'cleanup: and no second git call is made on it' "$(grep -c '' "${CASE}/shim/argv")" 1
+contains 'cleanup: and the deploy still reports DONE (merge-base)' "${OUT}" "DONE #73 live ${MERGE_SHA}"
+equals 'cleanup: and the worktree is still on disk (merge-base)' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-head-merge-base-hangs
+git_at worktree add -q "${CASE}/wt-side" side
+gh_json main side
+cleanup_hang_run " merge-base --is-ancestor ${SIDE_SHA} "
+contains 'cleanup: a worktree whose merge-base never answers is kept' "${OUT}" 'worktrees removed 0 kept 1 (headInMain)'
+contains 'cleanup: and the deploy log names the timeout' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep headInMain ${CASE}/wt-side (merge-base: git did not answer in 2s, so head ${SIDE_SHA:0:7} is not known to be in origin/main)"
+absent 'cleanup: and branch -r is not asked after it' "$(cat "${CASE}/shim/argv")" 'branch -r'
+equals 'cleanup: and that worktree is still on disk (head merge-base)' "$(on_disk "${CASE}/wt-side")" 'there'
+
+cleanup_fixture cleanup-branch-r-hangs
+git_at worktree add -q "${CASE}/wt-side" side
+gh_json main side
+cleanup_hang_run ' branch -r '
+contains 'cleanup: a worktree whose branch -r never answers is kept' "${OUT}" 'worktrees removed 0 kept 1 (headOnRemote)'
+contains 'cleanup: and the deploy log names the timeout (branch -r)' "$(cat "${LOGFILE}")" \
+    "CLEANUP keep headOnRemote ${CASE}/wt-side (branch -r: git did not answer in 2s, so no remote branch is known to contain head ${SIDE_SHA:0:7})"
+equals 'cleanup: and that worktree is still on disk (branch -r)' "$(on_disk "${CASE}/wt-side")" 'there'
 
 cleanup_fixture cleanup-reaper-error
 REAP_DRY_RC=2

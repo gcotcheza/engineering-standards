@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-14 sha256:582fba49377b444a1d91081d46d5e2c0a93171828046f249752440497737b39a
+# fleet-deploy-lib 2026-10-15 sha256:70b8794dba770008e5adc706060ed5ff35b28cc1a1ca81239b9d75f4cb20ddaf
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -82,8 +82,10 @@ cleanup_rootfiles() {
 cleanup_envfiles() {
     local wt=$1 rc=0 out
     # Any depth (api/.env, api/.env.d/prod), but not vendored packages' own .envrc files.
-    out=$(${WT_GIT-} -C "$wt" ls-files -o -i --exclude-standard -- '.env*' ':(glob)**/.env*' ':(glob)**/.env*/**' \
-        ':(glob,exclude)**/vendor/**' ':(glob,exclude)**/node_modules/**' 2>&1) || rc=$?
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${WT_GIT-} -C "$wt" ls-files -o -i --exclude-standard -- '.env*' ':(glob)**/.env*' ':(glob)**/.env*/**' \
+        ':(glob,exclude)**/vendor/**' ':(glob,exclude)**/node_modules/**' 2>/dev/null || rc=$?
+    out=$DEPLOY_GIT_OUT$DEPLOY_GIT_STDERR
     [ "$rc" = 0 ] || { cleanup_keep envfiles "$wt (ls-files exited ${rc}, so an ignored .env could not be ruled out)"; return 1; }
     [ -z "$out" ] || { cleanup_keep envfiles "$wt (it carries an ignored $out)"; return 1; }
     return 0
@@ -111,15 +113,21 @@ cleanup_worktree() {
     local wt=$1 head=$2 rc=0 out
     cleanup_lanekeep "$wt" || return 0
     [ -n "$head" ] || { cleanup_keep headInMain "$wt (git named no HEAD for it)"; return 0; }
-    ${GIT-} merge-base --is-ancestor "$head" origin/main >/dev/null 2>&1 || rc=$?
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${GIT-} merge-base --is-ancestor "$head" origin/main 2>/dev/null || rc=$?
+    [ -z "$DEPLOY_GIT_ERR" ] || { cleanup_keep headInMain "$wt (merge-base: $DEPLOY_GIT_ERR, so head ${head:0:7} is not known to be in origin/main)"; return 0; }
     if [ "$rc" != 0 ]; then
         rc=0
-        out=$(${GIT-} branch -r --contains "$head" 2>/dev/null) || rc=$?
-        { [ "$rc" = 0 ] && [ -n "$out" ]; } \
+        # shellcheck disable=SC2086
+        deploy_git_bounded ${GIT-} branch -r --contains "$head" 2>/dev/null || rc=$?
+        [ -z "$DEPLOY_GIT_ERR" ] || { cleanup_keep headOnRemote "$wt (branch -r: $DEPLOY_GIT_ERR, so no remote branch is known to contain head ${head:0:7})"; return 0; }
+        { [ "$rc" = 0 ] && [ -n "$DEPLOY_GIT_OUT" ]; } \
             || { cleanup_keep headOnRemote "$wt (head ${head:0:7} is not in origin/main and no remote branch contains it)"; return 0; }
     fi
     rc=0
-    out=$(${WT_GIT-} -C "$wt" --no-optional-locks status --porcelain 2>&1) || rc=$?
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${WT_GIT-} -C "$wt" --no-optional-locks status --porcelain 2>/dev/null || rc=$?
+    out=$DEPLOY_GIT_OUT$DEPLOY_GIT_STDERR
     [ "$rc" = 0 ] || { cleanup_keep status "$wt (status --porcelain exited ${rc}, so uncommitted work could not be ruled out)"; return 0; }
     [ -z "$out" ] || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
     cleanup_procs "$wt" || return 0
@@ -127,7 +135,8 @@ cleanup_worktree() {
     cleanup_rootfiles "$wt" || return 0
     cleanup_envfiles "$wt" || return 0
     rc=0
-    ${GIT-} worktree remove "$wt" >/dev/null 2>&1 || rc=$?
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${GIT-} worktree remove "$wt" 2>/dev/null || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep remove "$wt (worktree remove exited ${rc}; it is never re-run with --force)"; return 0; }
     CLEANUP_REMOVED=$((CLEANUP_REMOVED + 1))
     detail "CLEANUP removed $wt"
@@ -137,7 +146,9 @@ cleanup_worktree() {
 cleanup_worktrees() {
     local head_ref=$1 rc=0 list line block=0 path='' head='' entry
     local -a sel=()
-    list=$(${GIT-} worktree list --porcelain 2>&1) || rc=$?
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${GIT-} worktree list --porcelain || rc=$?
+    list=$DEPLOY_GIT_OUT
     [ "$rc" = 0 ] || { CLEANUP_WT_PART="not listed (worktree list exited ${rc})"; return 0; }
     while IFS= read -r line; do
         case "$line" in
@@ -232,7 +243,10 @@ deploy_cleanup() {
     deploy_git_plain "${ROOT-}/.git" \
         || { say "CLEANUP #${PR-} did not run: $(deploy_git_plain_refusal "${ROOT-}")."; return 0; }
     rc=0
-    ${GIT-} merge-base --is-ancestor "${merge_sha:-missing}" origin/main >/dev/null 2>&1 || rc=$?
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${GIT-} merge-base --is-ancestor "${merge_sha:-missing}" origin/main 2>/dev/null || rc=$?
+    [ -z "$DEPLOY_GIT_ERR" ] \
+        || { say "CLEANUP #${PR-} worktrees not examined (mergeInMain: merge-base: $DEPLOY_GIT_ERR) scratch not reaped (mergeInMain)"; return 0; }
     [ "$rc" = 0 ] \
         || { say "CLEANUP #${PR-} worktrees not examined (mergeInMain: merge ${merge_sha:-unreadable} is not an ancestor of origin/main) scratch not reaped (mergeInMain)"; return 0; }
 

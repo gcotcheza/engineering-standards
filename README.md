@@ -76,9 +76,11 @@ byte-identical, and sources them. Four of root's reads in the app tree go throug
 `deploy_build_hash` through `sudo -u`; `deploy_compose_buildcheck`'s `cmp` still reads as root (card 320).
 Before any git call in `ROOT` the lib refuses a `.git` that is not a plain directory, or a link, FIFO
 or non-file at the files where a FIFO was seen to hang git, and `deploy_app_env_value` reads only a
-plain `.env`. That list is a fast path for known hangs, not a complete one: other FIFOs under `.git`,
-`core.fsmonitor` and a redirected worktree gitfile still hang git until a bounded timeout lands
-(`docs/DECISIONS.md`, 2026-10-11.1).
+plain `.env`. That list is a fast path for known hangs, not a complete one. Every git call the
+library makes at deploy time also runs under `timeout` (`DEPLOY_GIT_TIMEOUT`, 300 seconds), so in those
+calls other FIFOs under `.git`, `core.fsmonitor` and a redirected worktree gitfile stop the deploy
+instead of hanging it. A project's own `deploy.sh` git calls are not bounded unless it routes them
+through `deploy_git_or_refuse` (`docs/DECISIONS.md`, card 441).
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
 project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After

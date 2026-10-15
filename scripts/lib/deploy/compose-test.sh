@@ -61,6 +61,7 @@ SH
 d=$(dirname "$0")
 printf 'git-as %s\n' "$*" >>"$d/argv"
 : <"$3/.git/HEAD"
+[ ! -e "$d/git-hangs" ] || exec sleep 600
 cat "$d/tracked" 2>/dev/null
 exit "$(cat "$d/git-rc" 2>/dev/null || echo 0)"
 SH
@@ -261,6 +262,14 @@ crun "${INIT}; echo 128 >${CF}/bin/git-rc; deploy_compose up -d"
 contains 'tracked: a git status that fails is refused, never read as clean' "${OUT}" \
     "REFUSED: git status exited 128 in ${CROOT}, so the tracked files are not known to be the merge and nothing is built over them"
 absent 'tracked: and compose never runs up (git failed)' "${ARGV}" ' up -d'
+cfx tracked-git-hangs
+: >"${CF}/bin/git-hangs"
+C_EXTRA='DEPLOY_GIT_TIMEOUT=1'
+C_TIMEOUT=60
+crun "${INIT}; deploy_compose up -d"
+contains 'tracked: a git status that never answers is refused as a timeout' "${OUT}" \
+    "REFUSED: git did not answer in 1s in ${CROOT}, so the tracked files are not known to be the merge and nothing is built over them"
+absent 'tracked: and compose never runs up (git hung)' "${ARGV}" ' up -d'
 # Card 371: compose builds a missing image on any run, so every run re-reads the tracked files like build and up.
 cfx tracked-run-build
 crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose run --build --rm app true"
