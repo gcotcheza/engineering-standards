@@ -1710,3 +1710,25 @@ bash runs a caller's TERM or INT trap only after the foreground `timeout` return
 takes effect within N+5 seconds; with no trap, bash dies at once and `timeout` still ends git within
 N+5 seconds. `test.sh` kills a call mid-git with and without a caller's TERM trap and finds neither
 file, and checks that a caller's traps are the same after a call.
+
+## The deploy lib's suite runs twice in the gate: in place, and from an app-owned copy (2026-10-15, card 506)
+
+**What broke.** `summary.sh` refuses to load from any file not owned by root (`deploy_src_root_only`).
+Every case that loads it is meant to load the root-owned copy `write_driver` makes under the case's
+own directory. Three #51 cases (the read-back refusal, the TERM kill, the trap restore) loaded
+`${LIB_DIR}/summary.sh` in place instead. In this repo the tree is root's, so they passed; in an app,
+whose `ci.sh` runs its vendored `test.sh` from a tree the app user owns with `DEPLOY_LIB_DIR` unset,
+`summary.sh` refused to load and the suite went red with 7 failures, blocking every re-vendor.
+
+**The rule.** A case runs library code from `${CASE}/lib/`, never from `${LIB_DIR}`; reading
+`${LIB_DIR}` (headers, function bodies) is fine. Step 8 holds it: after the in-place run it copies
+`scripts/lib/deploy/` to a fresh `/srv/worker-scratch` directory, hands it to `nobody`, makes it
+read-only, and runs that copy's `test.sh` with `DEPLOY_LIB_DIR` unset, as an app's gate does. It
+refuses to count the run if the copy is not owned by `nobody`. The step is in the gate script, not a
+new wrapper, because the gate already owns step 8 and one more run there is the smallest change; it
+roughly doubles step 8's time, which stays the last and dearest step.
+
+**`scripts/lib/deploy/VERSION` does not move.** No library file changed; only `test.sh` and the gate.
+
+**An app prints its own merge summary.** `deploy_git_or_refuse` captures git's stdout into
+`DEPLOY_GIT_OUT`, so an app whose `land()` routes `merge --ff-only` through it must print that itself.

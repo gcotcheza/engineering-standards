@@ -1978,7 +1978,7 @@ readback_drop=()
 [ "$(id -u)" != 0 ] || readback_drop=(setpriv '--bounding-set=-dac_override,-dac_read_search' --)
 for which in out err; do
     OUT=$(ROOT="${ROOT}" GIT="${CASE}/shim/git-${which}" "${readback_drop[@]}" \
-        bash -c '. "$1"; . "$2"; exec 3>&1; refuse_if_dirty; echo "PAST THE DIRTY CHECK"' _ "${LIB_DIR}/summary.sh" "${LIB_DIR}/preflight.sh" 2>&1)
+        bash -c '. "$1"; . "$2"; exec 3>&1; refuse_if_dirty; echo "PAST THE DIRTY CHECK"' _ "${CASE}/lib/summary.sh" "${CASE}/lib/preflight.sh" 2>&1)
     contains "bounded: a std${which} that cannot be read back is refused" "${OUT}" \
         "REFUSED: git output could not be read back: ${CASE}/shim/git-${which} --no-optional-locks status --porcelain"
     absent "bounded: and the tree is not read as clean (std${which})" "${OUT}" 'PAST THE DIRTY CHECK'
@@ -2024,7 +2024,7 @@ for caller in default own; do
     names="${CASE}/names-${caller}" marker="${CASE}/marker-${caller}"
     if [ "${caller}" = own ]; then term_trap="trap 'echo CALLER_TERM >>${marker}; exit 7' TERM"; else term_trap=:; fi
     bash -c '. "$1"; trap "echo CALLER_EXIT >>$3" EXIT; '"${term_trap}"'; DEPLOY_GIT_TIMEOUT=3; deploy_git_bounded "$2" "$4"' \
-        _ "${LIB_DIR}/summary.sh" "${CASE}/names-git" "${marker}" "${names}" 2>/dev/null &
+        _ "${CASE}/lib/summary.sh" "${CASE}/names-git" "${marker}" "${names}" 2>/dev/null &
     pid=$!
     for _ in $(seq 50); do [ -s "${names}" ] && break; sleep 0.2; done
     kill -TERM "${pid}"
@@ -2039,7 +2039,7 @@ for caller in default own; do
     fi
 done
 equals 'bounded: the caller'\''s traps come back after the call, an ignored one still ignored' \
-    "$(bash -c '. "$1"; trap "echo CALLER_EXIT" EXIT; trap "" TERM; deploy_git_bounded true; trap -p EXIT INT TERM' _ "${LIB_DIR}/summary.sh")" \
+    "$(bash -c '. "$1"; trap "echo CALLER_EXIT" EXIT; trap "" TERM; deploy_git_bounded true; trap -p EXIT INT TERM' _ "${CASE}/lib/summary.sh")" \
     "trap -- 'echo CALLER_EXIT' EXIT"$'\n'"trap -- '' SIGTERM"$'\n'"CALLER_EXIT"
 
 fixture record-other-owner

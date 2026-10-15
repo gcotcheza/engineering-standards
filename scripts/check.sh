@@ -12,7 +12,8 @@
 #   6) shellcheck, style severity, in the pinned image — a missing image is a
 #      loud failure here, never a silent skip (C9)
 #   7) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
-#   8) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh)
+#   8) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh), twice: from
+#      this tree, then from a copy owned by nobody, as an app's ci.sh runs it
 #
 #   scripts/check.sh            all eight steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
@@ -67,6 +68,7 @@ esac
 # shellcheck disable=SC2317
 cleanup() {
     local code=$?
+    [ -z "${APP_OWNED_LIB:-}" ] || rm -rf -- "${APP_OWNED_LIB}"
     if [ "${FULL_RUN}" -eq 1 ]; then
         gate_ledger_record ci "${code}" -
     else
@@ -146,6 +148,18 @@ step_7() {
 
 step_8() {
     "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 8
+    # An app vendors the lib into a tree it owns; a case that sources it in place is refused there.
+    APP_OWNED_LIB=$(mktemp -d -p /srv/worker-scratch deploy-lib-app-owned.XXXXXXXX) || fail_step 8
+    chmod 755 -- "${APP_OWNED_LIB}" || fail_step 8
+    cp -r -- "${REPO_ROOT}/scripts/lib/deploy" "${APP_OWNED_LIB}/deploy" || fail_step 8
+    chown -R nobody: -- "${APP_OWNED_LIB}/deploy" || fail_step 8
+    chmod -R a-w -- "${APP_OWNED_LIB}/deploy" || fail_step 8
+    if [ "$(stat -c %U "${APP_OWNED_LIB}/deploy/summary.sh")" != nobody ]; then
+        printf 'the app-owned copy of the deploy lib is not owned by nobody, so its run proves nothing.\n' >&2
+        fail_step 8
+    fi
+    printf -- '--- step 8: deploy-lib test.sh again, from %s/deploy (owner nobody, DEPLOY_LIB_DIR unset) ---\n' "${APP_OWNED_LIB}"
+    env -u DEPLOY_LIB_DIR bash "${APP_OWNED_LIB}/deploy/test.sh" || fail_step 8
 }
 
 for n in 1 2 3 4 5 6 7 8; do run_step "${n}"; done
