@@ -1631,7 +1631,7 @@ HALFRETIRED and counts as attention. A lib with no `scripts/deploy.sh` stays `no
 present but not compared rather than "not adopted": the deploy-lib row has always keyed on
 `deploy.sh`. A project with neither marker in an explicit `STANDARDS_PROJECTS` list is still MISSING.
 
-## Every deploy-time git call in summary, preflight, resolve, cleanup and compose runs under a timeout (2026-10-15, card 441)
+## Every deploy-time git call in summary, preflight, resolve, cleanup, compose and ledger runs under a timeout (2026-10-15, card 441)
 
 **The gap.** `deploy_git_plain` stats a fixed list of files, so it refuses the known FIFOs fast but
 cannot close the class (the **Not closed by this** list above: a FIFO at `objects/info/alternates`, a
@@ -1650,8 +1650,9 @@ alone: the clean-up keeps the tree on any non-zero exit and never fails the depl
 **Why files, not `$(...)`.** git can leave a `setsid` grandchild (a hook, an fsmonitor daemon) that
 inherits its stdout. A command substitution waits for every holder of its pipe to close it, so the
 timeout would kill git and the deploy would still wait. Stdout and stderr go to two root `mktemp`
-files in `/tmp` (not `$TMPDIR`, which the deploy inherits from whoever started it), are
-read back into `DEPLOY_GIT_OUT` and `DEPLOY_GIT_STDERR`, and are removed. Stdin is `/dev/null` and fd 3,
+files in `/tmp` (not `$TMPDIR`, which the deploy inherits from whoever started it), opened and then
+unlinked before git starts, and read back through `/dev/fd/N` into `DEPLOY_GIT_OUT` and
+`DEPLOY_GIT_STDERR`. Stdin is `/dev/null` and fd 3,
 the deploy's summary channel, is closed for git, since a grandchild holding it holds `fleet-deploy`'s
 reader. The cleanup's `status` and `ls-files` still count stderr as output, as their `2>&1` did.
 
@@ -1661,7 +1662,23 @@ reader. The cleanup's `status` and `ls-files` still count stderr as output, as t
 **The copy.** `compose.sh run` cannot source `summary.sh`, so it carries `deploy_compose_git_bounded`,
 body for body, as it carries `deploy_compose_git_plain`; `test.sh` compares the two.
 
-**Not covered.** `ledger.sh`'s deploy-time reads (`test_scope_of`, `github_e2e_same_tree`, `github_e2e`'s
-blob read, `gated`'s tree reads) still run git unbounded; they come after `resolve`'s bounded `fetch`
-and `cat-file`, which read the same object store first. `ledger.sh`'s gate-side reads
-(`gate_ledger_arm`, `gate_ledger_sha`, `gate_ledger_tree`) run in the gate's own checkout, not a deploy.
+**The ledger's reads.** `ledger.sh`'s deploy-time reads (`test_scope_of`'s four, `github_e2e_same_tree`,
+`github_e2e`'s workflow `rev-parse` and blob hash, `gated`'s tree read) go through
+`deploy_git_or_refuse`: a timeout stops the deploy, and every other failure reads as before (every
+path UI, not the same tree, tree `-`, no workflow). `summary.sh` is sourced before `ledger.sh` at
+deploy time, so no copy is needed. The blob is hashed inside the bounded call (`bash -c '… cat-file
+blob … | sha256sum'`), because read back through a variable it would lose its trailing newlines. The
+gate-side reads (`gate_ledger_arm`, `gate_ledger_sha`, `gate_ledger_tree`, through `GATE_LEDGER_GIT`)
+are left alone: they run in the gate's own checkout, not a deploy.
+
+**No temp file outlives a kill, and no trap is touched.** The files are unlinked while open, before git
+starts, so a deploy killed mid-git (TERM, INT, anything) leaves no `/tmp/deploy-git.*` name; only the
+few builtins between `mktemp` and the unlink can leave one. A trap that removed them was built first
+and dropped: saving a caller's traps with `trap -p` and putting them back is wrong in a subshell,
+where `trap -p` lists the parent's traps although none is active. Inside `$(deploy_head_file)` the
+restore armed `deploy_cleanup` as the subshell's EXIT trap; measured, 11 checks failed, the clean-up
+ran three times and its output landed in the HEAD the deploy read. **A TERM still waits for git:**
+bash runs a caller's TERM or INT trap only after the foreground `timeout` returns, so a trapped signal
+takes effect within N+5 seconds; with no trap, bash dies at once and `timeout` still ends git within
+N+5 seconds. `test.sh` kills a call mid-git with and without a caller's TERM trap and finds neither
+file, and checks that a caller's traps are the same after a call.

@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-15 sha256:ac62efaf26d9ea29e15a21b150830486b8b264570f80a68f93e6c9590392ccaa
+# fleet-deploy-lib 2026-10-15 sha256:79081a073fa2cf156165765c9e5b4659edc4eb1bfef045459880063f6c18a1ff
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -165,22 +165,24 @@ test_scope_classify() {
 }
 
 # What deploying $1 changes on this checkout, classified by the declaration $1 itself carries.
+# shellcheck disable=SC2086
 test_scope_of() {
     local sha=$1 live raw paths links decl
     SCOPE=ui
-    if ! live=$($GIT rev-parse HEAD 2>/dev/null); then
+    if ! deploy_git_or_refuse $GIT rev-parse HEAD 2>/dev/null; then
         SCOPE_WHY="git could not name the checkout's HEAD, so every path is UI"
-    elif ! raw=$($GIT diff --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --raw --no-abbrev "$live" "$sha" 2>/dev/null); then
+    elif live=$DEPLOY_GIT_OUT; ! deploy_git_or_refuse $GIT diff --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --raw --no-abbrev "$live" "$sha" 2>/dev/null; then
         SCOPE_WHY="git could not list what ${sha:0:7} changes on ${live:0:7}, so every path is UI"
-    elif paths=$(cut -s -f2- <<<"$raw") \
+    elif raw=$DEPLOY_GIT_OUT; paths=$(cut -s -f2- <<<"$raw") \
         && links=$(awk -F'\t' '!f && $1 ~ /^:(120000|160000) |^:[0-7]+ (120000|160000) / { f = $2 } END { printf "%s", f }' <<<"$raw") \
         && [ -n "$links" ]; then
         SCOPE_WHY="symlink or submodule: $links, so every path is UI"
-    elif ! $GIT cat-file -e "$sha:$TEST_SCOPE_FILE" 2>/dev/null; then
+    elif ! deploy_git_or_refuse $GIT cat-file -e "$sha:$TEST_SCOPE_FILE" 2>/dev/null; then
         SCOPE_WHY="${sha:0:7} declares no $TEST_SCOPE_FILE, so every path is UI"
-    elif ! decl=$($GIT show "$sha:$TEST_SCOPE_FILE" 2>/dev/null); then
+    elif ! deploy_git_or_refuse $GIT show "$sha:$TEST_SCOPE_FILE" 2>/dev/null; then
         SCOPE_WHY="git could not read ${sha:0:7}:$TEST_SCOPE_FILE, so every path is UI"
     else
+        decl=$DEPLOY_GIT_OUT
         test_scope_classify "$decl" <<<"$paths"
     fi
 }
@@ -224,7 +226,15 @@ github_e2e_api() {
         --arg suite "$suite" --arg w "$GITHUB_E2E_W" --arg r "$GITHUB_E2E_R" "$prog" <<<"$json"
 }
 
-github_e2e_same_tree() { local a b; [ -n "$2" ] && a=$($GIT rev-parse --verify -q "$1^{tree}" 2>/dev/null) && b=$($GIT rev-parse --verify -q "$2^{tree}" 2>/dev/null) && [ "$a" = "$b" ]; }
+# shellcheck disable=SC2086
+github_e2e_same_tree() {
+    local a
+    [ -n "$2" ] || return 1
+    deploy_git_or_refuse $GIT rev-parse --verify -q "$1^{tree}" 2>/dev/null || return 1
+    a=$DEPLOY_GIT_OUT
+    deploy_git_or_refuse $GIT rev-parse --verify -q "$2^{tree}" 2>/dev/null || return 1
+    [ "$a" = "$DEPLOY_GIT_OUT" ]
+}
 
 github_e2e_unreadable() { GH_E2E='e2e github: unreadable'; GH_E2E_WHY="gh or jq failed on $1, so it counts as not green"; }
 
@@ -261,8 +271,13 @@ github_e2e() {
     github_e2e_same_tree "$3" "$merge" || merge=''
     for target in "$4 $3" ${merge:+"merge $merge"}; do
         read -r GITHUB_E2E_WHAT GITHUB_E2E_SHA <<<"$target"
-        blob=$($GIT rev-parse --verify -q "$GITHUB_E2E_SHA:$GITHUB_E2E_W" 2>/dev/null) || { GH_E2E_WHY="${GITHUB_E2E_SHA:0:7} has no $GITHUB_E2E_W"; return 1; }
-        sum=$($GIT cat-file blob "$blob" 2>/dev/null | sha256sum)
+        # shellcheck disable=SC2086
+        deploy_git_or_refuse $GIT rev-parse --verify -q "$GITHUB_E2E_SHA:$GITHUB_E2E_W" 2>/dev/null || { GH_E2E_WHY="${GITHUB_E2E_SHA:0:7} has no $GITHUB_E2E_W"; return 1; }
+        blob=$DEPLOY_GIT_OUT
+        # Hashed inside the bounded call: read back through a variable, a blob loses its trailing newlines.
+        # shellcheck disable=SC2016,SC2086
+        deploy_git_or_refuse bash -c '"${@:2}" cat-file blob "$1" 2>/dev/null | sha256sum' _ "$blob" $GIT || :
+        sum=$DEPLOY_GIT_OUT
         [ "${sum%% *}" = "$GITHUB_E2E_WSUM" ] || { GH_E2E_WHY="$GITHUB_E2E_W at ${GITHUB_E2E_SHA:0:7} is not the workflow root pinned in W_SHA256"; return 1; }
         lines=$(github_e2e_api "$tok" "$GITHUB_E2E_CHECKS_JQ" '' "repos/$GITHUB_E2E_R/commits/$GITHUB_E2E_SHA/check-runs" -f check_name="$GITHUB_E2E_N" -f filter=all -f per_page=100) || rc=$?
         [ "$rc" = 0 ] || { github_e2e_unreadable "the check runs of ${GITHUB_E2E_SHA:0:7}"; return 1; }
@@ -310,7 +325,8 @@ gated() {
             verdict="NOT GREEN $what ${sha:0:7}: no gate ledger at $LEDGER"
             refusal="no gate ledger at $LEDGER, so no head was ever gated on this box."
         else
-            tree=$($GIT rev-parse --verify -q "$sha^{tree}" 2>/dev/null) || tree=-
+            # shellcheck disable=SC2086
+            if deploy_git_or_refuse $GIT rev-parse --verify -q "$sha^{tree}" 2>/dev/null; then tree=$DEPLOY_GIT_OUT; else tree=-; fi
             for kind in $owed; do
                 # Newest wins: the last row for (sha, kind); with none, the last 6-field row for (tree, kind).
                 v=$(awk -v sha="$sha" -v kind="$kind" -v tree="$tree" \

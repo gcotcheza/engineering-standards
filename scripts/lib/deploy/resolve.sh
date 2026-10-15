@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-15 sha256:e74ea978ccd6b6d3d5b514574556e9c438e5f7eb795088a619363513ecb17336
+# fleet-deploy-lib 2026-10-15 sha256:9424171fcf494f19c8937d33aab077a11fc4d88ea743483ce65bf8012841fe8f
 # shellcheck shell=bash
 # resolve <PR#> proves gh says MERGED and the merge commit IS origin/main, then sets
 # GATE_SHA: the commit whose tree deploys, and so the commit that must be gated.
@@ -11,6 +11,7 @@ json_value() {
 
 # REPO is root's to name, never the checkout's origin: fleet-deploy sets FLEET_DEPLOY_REPO, and the
 # merge commit it exported scripts/ at in FLEET_DEPLOY_MERGE_SHA. docs/DECISIONS.md (backlog 317)
+# shellcheck disable=SC2086
 resolve() {
     local json state tip diff_rc
     REPO="${FLEET_DEPLOY_REPO:-}"

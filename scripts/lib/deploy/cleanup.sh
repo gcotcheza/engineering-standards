@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-15 sha256:a5957dbe617710c21e9ed3e3350572e17e995f3a66321a39863bb678f9a705f0
+# fleet-deploy-lib 2026-10-15 sha256:75fd03a01547cb8b0ee2f5de177748ac07a0c82d30c274e7a5a6839d76964921
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -79,6 +79,7 @@ cleanup_rootfiles() {
     return 0
 }
 
+# shellcheck disable=SC2086
 cleanup_envfiles() {
     local wt=$1 rc=0 out
     # Any depth (api/.env, api/.env.d/prod), but not vendored packages' own .envrc files.
@@ -108,6 +109,7 @@ cleanup_lanekeep() {
     return 0
 }
 
+# shellcheck disable=SC2086
 cleanup_worktree() {
     local wt=$1 head=$2 rc=0 out
     cleanup_lanekeep "$wt" || return 0
@@ -136,6 +138,7 @@ cleanup_worktree() {
     return 0
 }
 
+# shellcheck disable=SC2086
 cleanup_worktrees() {
     local head_ref=$1 rc=0 list line block=0 path='' head='' entry
     local -a sel=()
@@ -235,6 +238,7 @@ deploy_cleanup() {
     deploy_git_plain "${ROOT-}/.git" \
         || { say "CLEANUP #${PR-} did not run: $(deploy_git_plain_refusal "${ROOT-}")."; return 0; }
     rc=0
+    # shellcheck disable=SC2086
     deploy_git_bounded ${GIT-} merge-base --is-ancestor "${merge_sha:-missing}" origin/main 2>/dev/null || rc=$?
     [ "$rc" = 0 ] \
         || { say "CLEANUP #${PR-} worktrees not examined (mergeInMain: merge ${merge_sha:-unreadable} is not an ancestor of origin/main) scratch not reaped (mergeInMain)"; return 0; }

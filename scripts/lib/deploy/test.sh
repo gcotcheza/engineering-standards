@@ -1945,6 +1945,64 @@ contains 'bounded: a timeout of 0, which timeout reads as none, is refused' "${O
     "REFUSED: DEPLOY_GIT_TIMEOUT '0' is not a whole number of seconds from 1 to 99999"
 absent 'bounded: and nothing after it runs (timeout 0)' "${OUT}" 'PAST THE DIRTY CHECK'
 
+# Every deploy-time read in ledger.sh: a git that hangs on that one read stops the deploy.
+hang_shim() { # the argv piece the shim hangs on; every other call is real git
+    mkdir -p "${CASE}/shim"
+    printf '#!/bin/bash\ncase " $* " in *%q*) exec sleep 600 ;; esac\nexec %q "$@"\n' "$1" "$(command -v git)" >"${CASE}/shim/git"
+    chmod 0755 "${CASE}/shim/git"
+}
+ledger_refused() { # label, the argv piece git hung on
+    local refusal
+    refusal=$(grep -m1 'REFUSED: git did not answer in 2s: ' <<<"${OUT}")
+    equals "bounded ledger ($1): a git hanging on [$2] stops the deploy" "RC=${RC}" 'RC=1'
+    contains "bounded ledger ($1): and the refusal names that read" "${refusal}" "$2"
+    absent "bounded ledger ($1): and nothing after it runs" "${OUT}" 'PAST THE LEDGER READ'
+}
+for read in 'test_scope_of:rev-parse HEAD' 'test_scope_of:diff --no-ext-diff' 'test_scope_of:cat-file -e' 'test_scope_of:show ' 'gated:^{tree}'; do
+    scope_fixture "git-bounded-ledger-${read%%:*}-${#read}" live ui
+    scope_rows ci e2e
+    hang_shim "${read#*:}"
+    LIB_TIMEOUT=30 run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2; gated; printf 'PAST THE LEDGER READ\n' >&3"
+    ledger_refused "${read%%:*}" "${read#*:}"
+done
+for read in ':.github/workflows/ci.yml' 'cat-file blob'; do
+    fixture "git-bounded-ledger-github-e2e-${#read}"
+    ghe_fixture "${HEAD_SHA}"
+    hang_shim "${read}"
+    LIB_TIMEOUT=30 run_lib "resolve; GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2; gated; printf 'PAST THE LEDGER READ\n' >&3"
+    ledger_refused github_e2e "${read}"
+done
+fixture git-bounded-ledger-same-tree
+hang_shim '^{tree}'
+LIB_TIMEOUT=30 run_lib "GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2; github_e2e_same_tree ${HEAD_SHA} ${MERGE_SHA}; printf 'PAST THE LEDGER READ\n' >&3"
+ledger_refused github_e2e_same_tree '^{tree}'
+
+# A TERM while git hangs leaves neither named temp file, with and without the caller's own TERM trap.
+fixture git-bounded-term
+printf '#!/bin/bash\nreadlink /proc/$$/fd/1 /proc/$$/fd/2 >"$1"\nexec sleep 600\n' >"${CASE}/names-git"
+chmod 0755 "${CASE}/names-git"
+for caller in default own; do
+    names="${CASE}/names-${caller}" marker="${CASE}/marker-${caller}"
+    if [ "${caller}" = own ]; then term_trap="trap 'echo CALLER_TERM >>${marker}; exit 7' TERM"; else term_trap=:; fi
+    bash -c '. "$1"; trap "echo CALLER_EXIT >>$3" EXIT; '"${term_trap}"'; DEPLOY_GIT_TIMEOUT=3; deploy_git_bounded "$2" "$4"' \
+        _ "${LIB_DIR}/summary.sh" "${CASE}/names-git" "${marker}" "${names}" 2>/dev/null &
+    pid=$!
+    for _ in $(seq 50); do [ -s "${names}" ] && break; sleep 0.2; done
+    kill -TERM "${pid}"
+    wait "${pid}"
+    rc=$?
+    equals "bounded TERM (${caller} TERM trap): git wrote to two named temp files" "$(grep -c '^/tmp/deploy-git\.' "${names}")" 2
+    equals "bounded TERM (${caller} TERM trap): and neither is left" "$(while read -r f; do f=${f% (deleted)}; [ ! -e "${f}" ] || printf '%s ' "${f}"; done <"${names}")" ''
+    if [ "${caller}" = own ]; then
+        equals 'bounded TERM: the caller'\''s TERM trap ran, then its EXIT trap' "rc=${rc} $(tr '\n' ' ' <"${marker}")" 'rc=7 CALLER_TERM CALLER_EXIT '
+    else
+        equals 'bounded TERM: with no TERM trap the deploy dies of TERM' "rc=${rc}" 'rc=143'
+    fi
+done
+equals 'bounded: the caller'\''s traps come back after the call, an ignored one still ignored' \
+    "$(bash -c '. "$1"; trap "echo CALLER_EXIT" EXIT; trap "" TERM; deploy_git_bounded true; trap -p EXIT INT TERM' _ "${LIB_DIR}/summary.sh")" \
+    "trap -- 'echo CALLER_EXIT' EXIT"$'\n'"trap -- '' SIGTERM"$'\n'"CALLER_EXIT"
+
 fixture record-other-owner
 mkdir -m 700 "${CASE}/records"
 ( umask 077; : >"${CASE}/records/root.record" )

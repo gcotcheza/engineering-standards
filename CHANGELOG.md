@@ -3,11 +3,14 @@
 ## 2026-10-15 — the deploy library's git calls run under a timeout (deploy-lib VERSION 2026-10-15; the standard is unchanged and VERSION is not bumped)
 **Card 441.** New `deploy_git_bounded` (`summary.sh`, copied as `deploy_compose_git_bounded` in
 `compose.sh`) runs git under `timeout -k 5 "${DEPLOY_GIT_TIMEOUT:-300}"` with its output read back
-from root temp files, and `deploy_git_or_refuse` refuses `git did not answer in Ns`. Every git call in
-`summary.sh`, `preflight.sh`, `resolve.sh`, `cleanup.sh` and `compose.sh` goes through it; the stat fast
-path `deploy_git_plain` stays. `ledger.sh`'s deploy-time reads are not covered yet. Cases: a git that
-never answers and leaves a `setsid` grandchild, a FIFO `objects/info/alternates` under real git, a
-`DEPLOY_GIT_TIMEOUT` of 0, a hanging cleanup `status`, and the compose copy's drift. Why: `docs/DECISIONS.md`.
+from root temp files unlinked before git starts, so a killed deploy leaves none, and
+`deploy_git_or_refuse` refuses `git did not answer in Ns`. Every deploy-time git call in `summary.sh`,
+`preflight.sh`, `resolve.sh`, `cleanup.sh`, `compose.sh` and `ledger.sh` goes through it (the ledger's
+gate-side reads excepted); the stat fast path `deploy_git_plain` stays. Cases: a git that never answers
+and leaves a `setsid` grandchild, a FIFO `objects/info/alternates` under real git, a
+`DEPLOY_GIT_TIMEOUT` of 0, a hanging cleanup `status`, a hang on each ledger read, a TERM mid-git with
+and without a caller's TERM trap, a caller's traps unchanged after a call, and the compose copy's
+drift. Why: `docs/DECISIONS.md`.
 
 ## 2026-10-14 — the fleet check finds a project by its deploy lib as well as its standards copy (tooling only; the standard is unchanged and VERSION is not bumped)
 **A project that retired its `docs/STANDARDS.md` copy stays in the report.** `scripts/fleet-versions.sh`

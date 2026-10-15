@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-15 sha256:70fda6b7e17250ffeb17e3702232afa688164cfa9c4a81c642b354b15ec58805
+# fleet-deploy-lib 2026-10-15 sha256:2238db6d81072a733445b940129e56688c149763ca29625c65d993def7680aef
 # shellcheck shell=bash
 # Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
 # this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)
@@ -59,18 +59,21 @@ deploy_git_plain() {
 }
 deploy_git_plain_refusal() { printf '%s/.git is not a plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it' "$1"; }
 
-# deploy_git_bounded <git argv…>: git under a timeout, its output read back from root files, never a
-# pipe a setsid grandchild can hold open; stdout in DEPLOY_GIT_OUT. docs/DECISIONS.md (card 441)
+# deploy_git_bounded <git argv…>: git under a timeout, its output read back from unlinked root files,
+# never a pipe a setsid grandchild can hold open; stdout in DEPLOY_GIT_OUT. docs/DECISIONS.md (card 441)
 deploy_git_bounded() {
-    local n=${DEPLOY_GIT_TIMEOUT:-300} o e rc=0
+    local n=${DEPLOY_GIT_TIMEOUT:-300} o e wo we rc=0
     DEPLOY_GIT_OUT='' DEPLOY_GIT_STDERR='' DEPLOY_GIT_ERR=''
     [[ $n =~ ^[1-9][0-9]{0,4}$ ]] || { DEPLOY_GIT_ERR="DEPLOY_GIT_TIMEOUT '$n' is not a whole number of seconds from 1 to 99999"; return 1; }
     o=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
-    e=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { rm -f -- "$o"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
-    /usr/bin/timeout -k 5 "$n" "$@" </dev/null >"$o" 2>"$e" 3>&- || rc=$?
-    DEPLOY_GIT_OUT=$(<"$o")
-    DEPLOY_GIT_STDERR=$(<"$e")
-    rm -f -- "$o" "$e"
+    e=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { rm -f -- "${o:?}"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    exec {wo}>"$o" {we}>"$e" || { rm -f -- "${o:?}" "${e:?}"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    # Unlinked while open, before git starts: a deploy killed mid-git leaves no file, and no trap is touched.
+    rm -f -- "${o:?}" "${e:?}"
+    /usr/bin/timeout -k 5 "$n" "$@" </dev/null >&"$wo" 2>&"$we" 3>&- {wo}>&- {we}>&- || rc=$?
+    DEPLOY_GIT_OUT=$(<"/dev/fd/$wo")
+    DEPLOY_GIT_STDERR=$(<"/dev/fd/$we")
+    exec {wo}>&- {we}>&-
     [ -z "$DEPLOY_GIT_STDERR" ] || printf '%s\n' "$DEPLOY_GIT_STDERR" >&2
     case $rc in 124|137) DEPLOY_GIT_ERR="git did not answer in ${n}s"; printf '%s: %s\n' "$DEPLOY_GIT_ERR" "$*" >&2 ;; esac
     return "$rc"

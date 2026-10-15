@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-15 sha256:7fba5bac75b5c57d2a0436e34f99c142821d8e73bce47ebdced3cf946175741e
+# fleet-deploy-lib 2026-10-15 sha256:a3472bbb7bf3ed57a8ff3f1a2431c412c58f5b6bb82d54f19af09c8332a9cc03
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -214,15 +214,18 @@ deploy_compose_git_plain() {
 
 # summary.sh's deploy_git_bounded, for the same reason; test.sh fails if the two drift.
 deploy_compose_git_bounded() {
-    local n=${DEPLOY_GIT_TIMEOUT:-300} o e rc=0
+    local n=${DEPLOY_GIT_TIMEOUT:-300} o e wo we rc=0
     DEPLOY_GIT_OUT='' DEPLOY_GIT_STDERR='' DEPLOY_GIT_ERR=''
     [[ $n =~ ^[1-9][0-9]{0,4}$ ]] || { DEPLOY_GIT_ERR="DEPLOY_GIT_TIMEOUT '$n' is not a whole number of seconds from 1 to 99999"; return 1; }
     o=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
-    e=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { rm -f -- "$o"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
-    /usr/bin/timeout -k 5 "$n" "$@" </dev/null >"$o" 2>"$e" 3>&- || rc=$?
-    DEPLOY_GIT_OUT=$(<"$o")
-    DEPLOY_GIT_STDERR=$(<"$e")
-    rm -f -- "$o" "$e"
+    e=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { rm -f -- "${o:?}"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    exec {wo}>"$o" {we}>"$e" || { rm -f -- "${o:?}" "${e:?}"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    # Unlinked while open, before git starts: a deploy killed mid-git leaves no file, and no trap is touched.
+    rm -f -- "${o:?}" "${e:?}"
+    /usr/bin/timeout -k 5 "$n" "$@" </dev/null >&"$wo" 2>&"$we" 3>&- {wo}>&- {we}>&- || rc=$?
+    DEPLOY_GIT_OUT=$(<"/dev/fd/$wo")
+    DEPLOY_GIT_STDERR=$(<"/dev/fd/$we")
+    exec {wo}>&- {we}>&-
     [ -z "$DEPLOY_GIT_STDERR" ] || printf '%s\n' "$DEPLOY_GIT_STDERR" >&2
     case $rc in 124|137) DEPLOY_GIT_ERR="git did not answer in ${n}s"; printf '%s: %s\n' "$DEPLOY_GIT_ERR" "$*" >&2 ;; esac
     return "$rc"
