@@ -1665,6 +1665,8 @@ one wait, not two. A `branch -r` that timed out says so too. `compose.sh`'s trac
 **A failed read-back is a failure.** If `$(<"/dev/fd/N")` cannot reopen a file, bash prints an error and
 the assignment is empty. Without a check, `refuse_if_dirty` read a dirty tree as clean. Both read-backs
 set `DEPLOY_GIT_ERR='git output could not be read back'` and rc 1, so `deploy_git_or_refuse` refuses.
+Under `set -e`, bash 5.2 exits on the failed `x=$(<f)` before the `||` runs, so such a deploy stops with
+rc 1 and no REFUSED line: still closed, only less plainly said. No code changes for it.
 `test.sh` makes the read-back fail with a fake git that sets its own output file to mode 000. As root,
 the case drops `CAP_DAC_OVERRIDE` and `CAP_DAC_READ_SEARCH` for that one shell, using `setpriv`.
 

@@ -1975,7 +1975,7 @@ printf '#!/bin/sh\necho " M app/feature.txt"\nchmod 000 /proc/self/fd/1\n' >"${C
 printf '#!/bin/sh\necho "warning: noise" >&2\nchmod 000 /proc/self/fd/2\n' >"${CASE}/shim/git-err"
 chmod 0755 "${CASE}/shim/git-out" "${CASE}/shim/git-err"
 readback_drop=()
-[ "$(id -u)" != 0 ] || readback_drop=(setpriv --bounding-set=-dac_override,-dac_read_search --)
+[ "$(id -u)" != 0 ] || readback_drop=(setpriv '--bounding-set=-dac_override,-dac_read_search' --)
 for which in out err; do
     OUT=$(ROOT="${ROOT}" GIT="${CASE}/shim/git-${which}" "${readback_drop[@]}" \
         bash -c '. "$1"; . "$2"; exec 3>&1; refuse_if_dirty; echo "PAST THE DIRTY CHECK"' _ "${LIB_DIR}/summary.sh" "${LIB_DIR}/preflight.sh" 2>&1)
