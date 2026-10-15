@@ -1631,7 +1631,12 @@ HALFRETIRED and counts as attention. A lib with no `scripts/deploy.sh` stays `no
 present but not compared rather than "not adopted": the deploy-lib row has always keyed on
 `deploy.sh`. A project with neither marker in an explicit `STANDARDS_PROJECTS` list is still MISSING.
 
-## Every deploy-time git call in summary, preflight, resolve, cleanup, compose and ledger runs under a timeout (2026-10-15, card 441)
+## The deploy library's own git calls run under a timeout (2026-10-15, card 441)
+
+**Scope.** The library's deploy-time git calls in `summary.sh`, `preflight.sh`, `resolve.sh`,
+`cleanup.sh`, `compose.sh` and `ledger.sh`. A project's own `deploy.sh` git calls (its
+`merge --ff-only`, its `rev-parse`) are not bounded by this: they are that project's to route through
+`deploy_git_or_refuse`.
 
 **The gap.** `deploy_git_plain` stats a fixed list of files, so it refuses the known FIFOs fast but
 cannot close the class (the **Not closed by this** list above: a FIFO at `objects/info/alternates`, a
@@ -1645,7 +1650,28 @@ the app user while root's deploy waits. It is self-DoS only: no privilege is gai
 `REFUSED: git did not answer in Ns: <argv>`; `resolve`, `refuse_if_dirty` and
 `deploy_refuse_if_tracked_dirty` use it. `deploy_head_file` and the clean-up use the bounded call
 alone: the clean-up keeps the tree on any non-zero exit and never fails the deploy, and
-`deploy_record_row` already refuses a HEAD it could not read. `deploy_git_plain` stays as the fast path.
+`deploy_record_row` refuses a HEAD it could not read. `deploy_git_plain` stays as the fast path.
+`test.sh` has a git that ignores TERM, so only the KILL ends it (137), and expects the same refusal
+as for 124.
+
+**A timeout is named as one.** `deploy_head_file` runs inside `$(...)`, so `DEPLOY_GIT_ERR` cannot
+reach its caller: it returns git's 124 or 137 instead of 1, and `deploy_record_row` says `git did not
+answer in Ns reading <ROOT>/.git/HEAD`, not "reads no main sha". In the clean-up, a merge-base that
+timed out is reported as `merge-base: git did not answer in Ns` (in `deploy_cleanup` and per
+worktree), not as a merge or a head outside main, and no `branch -r` follows it, so one hang costs
+one wait, not two. A `branch -r` that timed out says so too. `compose.sh`'s tracked check puts
+`DEPLOY_GIT_ERR` in its refusal.
+
+**A failed read-back is a failure.** If `$(<"/dev/fd/N")` cannot reopen a file, bash prints an error and
+the assignment is empty. Without a check, `refuse_if_dirty` read a dirty tree as clean. Both read-backs
+set `DEPLOY_GIT_ERR='git output could not be read back'` and rc 1, so `deploy_git_or_refuse` refuses.
+`test.sh` makes the read-back fail with a fake git that sets its own output file to mode 000. As root,
+the case drops `CAP_DAC_OVERRIDE` and `CAP_DAC_READ_SEARCH` for that one shell, using `setpriv`.
+
+**`$GIT` stays a string.** `GIT`, `WT_GIT` and `DEPLOY_GIT` are strings every project's `deploy.sh`
+sets, so turning them into arrays would change the vendored interface. Each call that splits them
+carries its own `# shellcheck disable=SC2086`. `test_scope_of`'s `if`/`elif` chain is the exception: a
+directive cannot sit inside the chain, so one directive sits above the `if`.
 
 **Why files, not `$(...)`.** git can leave a `setsid` grandchild (a hook, an fsmonitor daemon) that
 inherits its stdout. A command substitution waits for every holder of its pipe to close it, so the

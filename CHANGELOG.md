@@ -4,13 +4,26 @@
 **Card 441.** New `deploy_git_bounded` (`summary.sh`, copied as `deploy_compose_git_bounded` in
 `compose.sh`) runs git under `timeout -k 5 "${DEPLOY_GIT_TIMEOUT:-300}"` with its output read back
 from root temp files unlinked before git starts, so a killed deploy leaves none, and
-`deploy_git_or_refuse` refuses `git did not answer in Ns`. Every deploy-time git call in `summary.sh`,
-`preflight.sh`, `resolve.sh`, `cleanup.sh`, `compose.sh` and `ledger.sh` goes through it (the ledger's
-gate-side reads excepted); the stat fast path `deploy_git_plain` stays. Cases: a git that never answers
-and leaves a `setsid` grandchild, a FIFO `objects/info/alternates` under real git, a
-`DEPLOY_GIT_TIMEOUT` of 0, a hanging cleanup `status`, a hang on each ledger read, a TERM mid-git with
-and without a caller's TERM trap, a caller's traps unchanged after a call, and the compose copy's
-drift. Why: `docs/DECISIONS.md`.
+`deploy_git_or_refuse` refuses `git did not answer in Ns`. A read-back that fails is refused as
+`git output could not be read back`, never read as empty. The library's own deploy-time git calls in
+`summary.sh`, `preflight.sh`, `resolve.sh`, `cleanup.sh`, `compose.sh` and `ledger.sh` go through it
+(the ledger's gate-side reads excepted). A project's own `deploy.sh` git calls are not bounded by this.
+The stat fast path `deploy_git_plain` stays. Root's record and the clean-up name a timeout as a
+timeout, and the clean-up makes no second call after a timed-out merge-base. Cases:
+- a git that never answers and leaves a `setsid` grandchild;
+- a git that ignores TERM (137);
+- a FIFO `objects/info/alternates` under real git;
+- a `DEPLOY_GIT_TIMEOUT` of 0;
+- a stdout or stderr that cannot be read back;
+- a hanging HEAD read before the record;
+- a hanging cleanup `status`, `merge-base` (twice) and `branch -r`;
+- a hanging compose tracked check;
+- a hang on each ledger read;
+- a TERM mid-git with and without a caller's TERM trap;
+- a caller's traps unchanged after a call;
+- drift in the compose copy.
+
+Why: `docs/DECISIONS.md`.
 
 ## 2026-10-14 — the fleet check finds a project by its deploy lib as well as its standards copy (tooling only; the standard is unchanged and VERSION is not bumped)
 **A project that retired its `docs/STANDARDS.md` copy stays in the report.** `scripts/fleet-versions.sh`

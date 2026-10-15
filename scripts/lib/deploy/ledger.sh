@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-15 sha256:79081a073fa2cf156165765c9e5b4659edc4eb1bfef045459880063f6c18a1ff
+# fleet-deploy-lib 2026-10-15 sha256:95014c15bf1b86354c7dfbda6a00720777bb2cf235ad39430b80db5511ee1dfe
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -165,10 +165,10 @@ test_scope_classify() {
 }
 
 # What deploying $1 changes on this checkout, classified by the declaration $1 itself carries.
-# shellcheck disable=SC2086
 test_scope_of() {
     local sha=$1 live raw paths links decl
     SCOPE=ui
+    # shellcheck disable=SC2086
     if ! deploy_git_or_refuse $GIT rev-parse HEAD 2>/dev/null; then
         SCOPE_WHY="git could not name the checkout's HEAD, so every path is UI"
     elif live=$DEPLOY_GIT_OUT; ! deploy_git_or_refuse $GIT diff --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --raw --no-abbrev "$live" "$sha" 2>/dev/null; then
@@ -226,12 +226,13 @@ github_e2e_api() {
         --arg suite "$suite" --arg w "$GITHUB_E2E_W" --arg r "$GITHUB_E2E_R" "$prog" <<<"$json"
 }
 
-# shellcheck disable=SC2086
 github_e2e_same_tree() {
     local a
     [ -n "$2" ] || return 1
+    # shellcheck disable=SC2086
     deploy_git_or_refuse $GIT rev-parse --verify -q "$1^{tree}" 2>/dev/null || return 1
     a=$DEPLOY_GIT_OUT
+    # shellcheck disable=SC2086
     deploy_git_or_refuse $GIT rev-parse --verify -q "$2^{tree}" 2>/dev/null || return 1
     [ "$a" = "$DEPLOY_GIT_OUT" ]
 }

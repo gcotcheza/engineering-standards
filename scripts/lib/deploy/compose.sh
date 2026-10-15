@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-15 sha256:a3472bbb7bf3ed57a8ff3f1a2431c412c58f5b6bb82d54f19af09c8332a9cc03
+# fleet-deploy-lib 2026-10-15 sha256:289fe9f3555a4cc7c4be7d236d5e5eea16b82b8b589e4c773e3aee2e0cc2effe
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -223,8 +223,8 @@ deploy_compose_git_bounded() {
     # Unlinked while open, before git starts: a deploy killed mid-git leaves no file, and no trap is touched.
     rm -f -- "${o:?}" "${e:?}"
     /usr/bin/timeout -k 5 "$n" "$@" </dev/null >&"$wo" 2>&"$we" 3>&- {wo}>&- {we}>&- || rc=$?
-    DEPLOY_GIT_OUT=$(<"/dev/fd/$wo")
-    DEPLOY_GIT_STDERR=$(<"/dev/fd/$we")
+    DEPLOY_GIT_OUT=$(<"/dev/fd/$wo") || { DEPLOY_GIT_ERR='git output could not be read back'; rc=1; }
+    DEPLOY_GIT_STDERR=$(<"/dev/fd/$we") || { DEPLOY_GIT_ERR='git output could not be read back'; rc=1; }
     exec {wo}>&- {we}>&-
     [ -z "$DEPLOY_GIT_STDERR" ] || printf '%s\n' "$DEPLOY_GIT_STDERR" >&2
     case $rc in 124|137) DEPLOY_GIT_ERR="git did not answer in ${n}s"; printf '%s: %s\n' "$DEPLOY_GIT_ERR" "$*" >&2 ;; esac

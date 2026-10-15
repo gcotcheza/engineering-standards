@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-15 sha256:9424171fcf494f19c8937d33aab077a11fc4d88ea743483ce65bf8012841fe8f
+# fleet-deploy-lib 2026-10-15 sha256:70c835ee12ad9fd80df7cb21434c64e08dc49d28433f50a132b2aa6728867141
 # shellcheck shell=bash
 # resolve <PR#> proves gh says MERGED and the merge commit IS origin/main, then sets
 # GATE_SHA: the commit whose tree deploys, and so the commit that must be gated.
@@ -11,7 +11,6 @@ json_value() {
 
 # REPO is root's to name, never the checkout's origin: fleet-deploy sets FLEET_DEPLOY_REPO, and the
 # merge commit it exported scripts/ at in FLEET_DEPLOY_MERGE_SHA. docs/DECISIONS.md (backlog 317)
-# shellcheck disable=SC2086
 resolve() {
     local json state tip diff_rc
     REPO="${FLEET_DEPLOY_REPO:-}"
@@ -29,16 +28,21 @@ resolve() {
         || refuse "PR #$PR names no head commit and no merge commit."
     [ -z "${FLEET_DEPLOY_MERGE_SHA:-}" ] || [ "$MERGE_SHA" = "$FLEET_DEPLOY_MERGE_SHA" ] || refuse "gh names merge commit $MERGE_SHA for PR #$PR, not $FLEET_DEPLOY_MERGE_SHA, the one fleet-deploy exported scripts/ at."
     deploy_git_plain "$ROOT/.git" || refuse "$(deploy_git_plain_refusal "$ROOT")."
+    # shellcheck disable=SC2086
     deploy_git_or_refuse $GIT fetch origin || refuse "git fetch origin failed; a deploy does not read a stale remote."
     # Both commits are proved readable before any comparison: an unreadable one makes
     # `git diff` exit 128, which is not "the trees differ".
+    # shellcheck disable=SC2086
     deploy_git_or_refuse $GIT cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
         || refuse "git cannot read PR #$PR's head commit ${HEAD_SHA}: run 'git fetch origin refs/pull/$PR/head', then deploy."
+    # shellcheck disable=SC2086
     deploy_git_or_refuse $GIT cat-file -e "${MERGE_SHA}^{commit}" 2>/dev/null \
         || refuse "git cannot read PR #$PR's merge commit ${MERGE_SHA}: run 'git fetch origin ${MERGE_SHA}', then deploy."
+    # shellcheck disable=SC2086
     deploy_git_or_refuse $GIT rev-parse origin/main || :
     tip=$DEPLOY_GIT_OUT
     [ "$tip" = "$MERGE_SHA" ] || refuse "main moved since the merge: re-gate."
+    # shellcheck disable=SC2086
     if deploy_git_or_refuse $GIT diff --quiet "$HEAD_SHA" "$MERGE_SHA"; then
         diff_rc=0
     else
