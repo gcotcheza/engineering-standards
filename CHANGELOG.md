@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-15 — the deploy library's git calls run under a timeout (deploy-lib VERSION 2026-10-15; the standard is unchanged and VERSION is not bumped)
+**Card 441.** New `deploy_git_bounded` (`summary.sh`, copied as `deploy_compose_git_bounded` in
+`compose.sh`) runs git under `timeout -k 5 "${DEPLOY_GIT_TIMEOUT:-300}"` with its output read back
+from root temp files, and `deploy_git_or_refuse` refuses `git did not answer in Ns`. Every git call in
+`summary.sh`, `preflight.sh`, `resolve.sh`, `cleanup.sh` and `compose.sh` goes through it; the stat fast
+path `deploy_git_plain` stays. `ledger.sh`'s deploy-time reads are not covered yet. Cases: a git that
+never answers and leaves a `setsid` grandchild, a FIFO `objects/info/alternates` under real git, a
+`DEPLOY_GIT_TIMEOUT` of 0, a hanging cleanup `status`, and the compose copy's drift. Why: `docs/DECISIONS.md`.
+
 ## 2026-10-14 — the fleet check finds a project by its deploy lib as well as its standards copy (tooling only; the standard is unchanged and VERSION is not bumped)
 **A project that retired its `docs/STANDARDS.md` copy stays in the report.** `scripts/fleet-versions.sh`
 now discovers projects by `docs/STANDARDS.md` or `scripts/lib/deploy/VERSION`, de-duplicated and

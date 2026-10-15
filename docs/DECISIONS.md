@@ -1543,7 +1543,7 @@ sentences.
 - the race: the check and git's open are two steps, so a plant between them stalls the deploy, with no
   privilege gained.
 The fix for all of them is a bounded timeout on root's git calls, a design change left to its own
-follow-up card, not built here.
+follow-up card, not built here. Card 441 built it (2026-10-15): see its entry below.
 
 **The sweep: every read the lib makes in an app tree, or through git, as of 2026-10-11.1.** Behind the
 check, each with a case and a guard-deleted mutant: `deploy_head_file`, `refuse_if_dirty`,
@@ -1630,3 +1630,38 @@ summary adds "(K retired)". If the link is still there the copy was half-removed
 HALFRETIRED and counts as attention. A lib with no `scripts/deploy.sh` stays `none`, worded as
 present but not compared rather than "not adopted": the deploy-lib row has always keyed on
 `deploy.sh`. A project with neither marker in an explicit `STANDARDS_PROJECTS` list is still MISSING.
+
+## Every deploy-time git call in summary, preflight, resolve, cleanup and compose runs under a timeout (2026-10-15, card 441)
+
+**The gap.** `deploy_git_plain` stats a fixed list of files, so it refuses the known FIFOs fast but
+cannot close the class (the **Not closed by this** list above: a FIFO at `objects/info/alternates`, a
+pack `.idx`, `commit-graph`, `shallow` or `info/grafts`; a `core.fsmonitor` command; a worktree gitfile
+naming a directory with a FIFO `HEAD`; the race between the stat and git's open). Each hangs git as
+the app user while root's deploy waits. It is self-DoS only: no privilege is gained.
+
+**The rule.** `deploy_git_bounded <git argv…>` runs git under `/usr/bin/timeout -k 5
+"${DEPLOY_GIT_TIMEOUT:-300}"` and returns git's exit code; a timeout (124, or 137 after the KILL) sets
+`DEPLOY_GIT_ERR="git did not answer in Ns"`. `deploy_git_or_refuse` stops the deploy on it with
+`REFUSED: git did not answer in Ns: <argv>`; `resolve`, `refuse_if_dirty` and
+`deploy_refuse_if_tracked_dirty` use it. `deploy_head_file` and the clean-up use the bounded call
+alone: the clean-up keeps the tree on any non-zero exit and never fails the deploy, and
+`deploy_record_row` already refuses a HEAD it could not read. `deploy_git_plain` stays as the fast path.
+
+**Why files, not `$(...)`.** git can leave a `setsid` grandchild (a hook, an fsmonitor daemon) that
+inherits its stdout. A command substitution waits for every holder of its pipe to close it, so the
+timeout would kill git and the deploy would still wait. Stdout and stderr go to two root `mktemp`
+files in `/tmp` (not `$TMPDIR`, which the deploy inherits from whoever started it), are
+read back into `DEPLOY_GIT_OUT` and `DEPLOY_GIT_STDERR`, and are removed. Stdin is `/dev/null` and fd 3,
+the deploy's summary channel, is closed for git, since a grandchild holding it holds `fleet-deploy`'s
+reader. The cleanup's `status` and `ls-files` still count stderr as output, as their `2>&1` did.
+
+**The timeout.** 300 seconds: a `fetch` on a slow link must not be refused. `DEPLOY_GIT_TIMEOUT` must be
+1 to 99999: GNU `timeout` reads 0 as no limit, so 0 is refused, not honoured.
+
+**The copy.** `compose.sh run` cannot source `summary.sh`, so it carries `deploy_compose_git_bounded`,
+body for body, as it carries `deploy_compose_git_plain`; `test.sh` compares the two.
+
+**Not covered.** `ledger.sh`'s deploy-time reads (`test_scope_of`, `github_e2e_same_tree`, `github_e2e`'s
+blob read, `gated`'s tree reads) still run git unbounded; they come after `resolve`'s bounded `fetch`
+and `cat-file`, which read the same object store first. `ledger.sh`'s gate-side reads
+(`gate_ledger_arm`, `gate_ledger_sha`, `gate_ledger_tree`) run in the gate's own checkout, not a deploy.

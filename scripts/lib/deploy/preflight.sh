@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-14 sha256:75e2bbe6bbb38c51742b45943eb14e7df3926aebd5a4d512fbf788c3ee1253bb
+# fleet-deploy-lib 2026-10-15 sha256:477ef2aac885d16fe7d4e63d435bebb399f45cd3f7473f9f445820950ec3b40a
 # shellcheck shell=bash
 # preflight prints what the box looked like and never refuses; refuse_if_dirty sits ahead of every
 # command that moves the checkout. Both checks refuse a git status that fails.
@@ -14,7 +14,8 @@ preflight() {
 refuse_if_dirty() {
     local status rc=0
     deploy_git_plain "$ROOT/.git" || refuse "$(deploy_git_plain_refusal "$ROOT")."
-    status=$($GIT --no-optional-locks status --porcelain) || rc=$?
+    deploy_git_or_refuse $GIT --no-optional-locks status --porcelain || rc=$?
+    status=$DEPLOY_GIT_OUT
     [ "$rc" = 0 ] || refuse "git status exited $rc in $ROOT, so the checkout is not known to be clean; a deploy never fast-forwards over it."
     [ -z "$status" ] || refuse "the checkout is dirty; a deploy never fast-forwards over uncommitted work."
 }
@@ -23,7 +24,8 @@ refuse_if_dirty() {
 deploy_refuse_if_tracked_dirty() {
     local tracked rc=0
     deploy_git_plain "$ROOT/.git" || refuse "$(deploy_git_plain_refusal "$ROOT")."
-    tracked=$($GIT --no-optional-locks status --porcelain --untracked-files=no) || rc=$?
+    deploy_git_or_refuse $GIT --no-optional-locks status --porcelain --untracked-files=no || rc=$?
+    tracked=$DEPLOY_GIT_OUT
     [ "$rc" = 0 ] || refuse "git status exited $rc in $ROOT, so the tracked files are not known to be the merge and nothing runs over them."
     [ -z "$tracked" ] || {
         detail "$tracked"

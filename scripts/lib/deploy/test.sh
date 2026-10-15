@@ -1913,6 +1913,38 @@ summary_plain_sentence=$(sed -n "s/^deploy_git_plain_refusal() { printf '%s\(\/\
 equals 'compose.sh refuses a planted .git in summary.sh'\''s sentence, word for word' "${compose_plain_sentence}" "${summary_plain_sentence}"
 contains 'and that sentence was read, not two empty reads' "${compose_plain_sentence}" '/.git is not a plain git directory'
 
+# --- card 441: every deploy-time git call runs under a timeout, its output through a file ---
+equals 'compose.sh carries summary.sh'\''s deploy_git_bounded unchanged (it cannot source it)' \
+    "$(sed -n '/^deploy_compose_git_bounded() {$/,/^}$/p' "${LIB_DIR}/compose.sh" | tail -n +2)" \
+    "$(sed -n '/^deploy_git_bounded() {$/,/^}$/p' "${LIB_DIR}/summary.sh" | tail -n +2)"
+contains 'and that copy is the real function, not two empty reads' "$(sed -n '/^deploy_compose_git_bounded() {$/,/^}$/p' "${LIB_DIR}/compose.sh")" '/usr/bin/timeout -k 5'
+
+fixture git-bounded-hang
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\nsetsid sleep 20 &\nexec sleep 600\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+started=${SECONDS}
+LIB_TIMEOUT=60 run_lib "GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2; refuse_if_dirty; printf 'PAST THE DIRTY CHECK\n' >&3"
+took=$((SECONDS - started))
+equals 'bounded: a git that never answers is refused' "RC=${RC}" 'RC=1'
+contains 'bounded: and the refusal says git did not answer' "${OUT}" \
+    "REFUSED: git did not answer in 2s: ${CASE}/shim/git -C ${ROOT} --no-optional-locks status --porcelain"
+absent 'bounded: and nothing after it runs' "${OUT}" 'PAST THE DIRTY CHECK'
+if [ "${took}" -lt 15 ]; then pass "bounded: and it took ${took}s, not the git's setsid grandchild's 20"; else fail "bounded: a hanging git held the deploy ${took}s"; fi
+
+fixture git-bounded-alternates-fifo
+fifo_at objects/info/alternates
+LIB_TIMEOUT=60 run_lib 'DEPLOY_GIT_TIMEOUT=2; resolve'
+equals 'bounded: a FIFO at objects/info/alternates, past the fast path, is refused' "RC=${RC}" 'RC=1'
+contains 'bounded: and real git is named as the one that did not answer' "${OUT}" \
+    "REFUSED: git did not answer in 2s: git -C ${ROOT} fetch origin"
+
+fixture git-bounded-zero
+LIB_TIMEOUT=60 run_lib 'DEPLOY_GIT_TIMEOUT=0; refuse_if_dirty; printf "PAST THE DIRTY CHECK\n" >&3'
+contains 'bounded: a timeout of 0, which timeout reads as none, is refused' "${OUT}" \
+    "REFUSED: DEPLOY_GIT_TIMEOUT '0' is not a whole number of seconds from 1 to 99999"
+absent 'bounded: and nothing after it runs (timeout 0)' "${OUT}" 'PAST THE DIRTY CHECK'
+
 fixture record-other-owner
 mkdir -m 700 "${CASE}/records"
 ( umask 077; : >"${CASE}/records/root.record" )
@@ -2284,6 +2316,20 @@ run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; GIT=\"${CASE}/s
 contains 'a worktree listed with no HEAD line is kept on doubt, not judged' "${OUT}" \
     'CLEANUP #73 worktrees removed 0 kept 1 (headInMain)'
 equals 'and that worktree is still on disk' "$(on_disk "${WT}")" 'there'
+
+cleanup_fixture cleanup-status-hangs
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ncase " $* " in *" status "*) setsid sleep 20 & exec sleep 600 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+WT_GIT_SEAM="${CASE}/shim/git"
+started=${SECONDS}
+LIB_TIMEOUT=60 run_lib "REPO=gcotcheza/fixture; set -eo pipefail; GATED=ledger; DEPLOY_GIT_TIMEOUT=2; trap deploy_cleanup EXIT; DEPLOY_SUCCEEDED=1; ${LAND}finish \"\$MERGE_SHA\""
+took=$((SECONDS - started))
+contains 'cleanup: a worktree whose git status never answers is kept, not waited on' "${OUT}" \
+    'CLEANUP #73 worktrees removed 0 kept 1 (status)'
+contains 'cleanup: and the deploy still reports DONE' "${OUT}" "DONE #73 live ${MERGE_SHA}"
+equals 'cleanup: and that worktree is still on disk' "$(on_disk "${WT}")" 'there'
+if [ "${took}" -lt 15 ]; then pass "cleanup: and it took ${took}s, not the git's setsid grandchild's 20"; else fail "cleanup: a hanging git status held the clean-up ${took}s"; fi
 
 cleanup_fixture cleanup-reaper-error
 REAP_DRY_RC=2

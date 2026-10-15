@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-14 sha256:19a78ce99b4c8d55f855b01b7fb06dcfdf4da0379df0b20d649b1037ad159666
+# fleet-deploy-lib 2026-10-15 sha256:70fda6b7e17250ffeb17e3702232afa688164cfa9c4a81c642b354b15ec58805
 # shellcheck shell=bash
 # Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
 # this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)
@@ -59,15 +59,40 @@ deploy_git_plain() {
 }
 deploy_git_plain_refusal() { printf '%s/.git is not a plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it' "$1"; }
 
+# deploy_git_bounded <git argv…>: git under a timeout, its output read back from root files, never a
+# pipe a setsid grandchild can hold open; stdout in DEPLOY_GIT_OUT. docs/DECISIONS.md (card 441)
+deploy_git_bounded() {
+    local n=${DEPLOY_GIT_TIMEOUT:-300} o e rc=0
+    DEPLOY_GIT_OUT='' DEPLOY_GIT_STDERR='' DEPLOY_GIT_ERR=''
+    [[ $n =~ ^[1-9][0-9]{0,4}$ ]] || { DEPLOY_GIT_ERR="DEPLOY_GIT_TIMEOUT '$n' is not a whole number of seconds from 1 to 99999"; return 1; }
+    o=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    e=$(mktemp -p /tmp deploy-git.XXXXXXXX) || { rm -f -- "$o"; DEPLOY_GIT_ERR='no temp file could hold git output'; return 1; }
+    /usr/bin/timeout -k 5 "$n" "$@" </dev/null >"$o" 2>"$e" 3>&- || rc=$?
+    DEPLOY_GIT_OUT=$(<"$o")
+    DEPLOY_GIT_STDERR=$(<"$e")
+    rm -f -- "$o" "$e"
+    [ -z "$DEPLOY_GIT_STDERR" ] || printf '%s\n' "$DEPLOY_GIT_STDERR" >&2
+    case $rc in 124|137) DEPLOY_GIT_ERR="git did not answer in ${n}s"; printf '%s: %s\n' "$DEPLOY_GIT_ERR" "$*" >&2 ;; esac
+    return "$rc"
+}
+
+# deploy_git_or_refuse <git argv…>: deploy_git_bounded, where a git that did not answer stops the deploy.
+deploy_git_or_refuse() {
+    local rc=0
+    deploy_git_bounded "$@" || rc=$?
+    [ -z "$DEPLOY_GIT_ERR" ] || refuse "$DEPLOY_GIT_ERR: $*"
+    return "$rc"
+}
+
 # The live commit, read by git as the app user through git-as: root opens nothing under ROOT/.git.
 deploy_head_file() {
-    local as=${DEPLOY_GIT_AS:-git-as} user ref sha
+    local as=${DEPLOY_GIT_AS:-git-as} user
     user=$(deploy_app_user)
     deploy_git_plain "$ROOT/.git" || return 1
-    ref=$("$as" "$user" -C "$ROOT" symbolic-ref -q HEAD) || return 1
-    [ "$ref" = refs/heads/main ] || return 1
-    sha=$("$as" "$user" -C "$ROOT" rev-parse --verify -q 'refs/heads/main^{commit}') || return 1
-    printf '%s' "$sha"
+    deploy_git_bounded "$as" "$user" -C "$ROOT" symbolic-ref -q HEAD || return 1
+    [ "$DEPLOY_GIT_OUT" = refs/heads/main ] || return 1
+    deploy_git_bounded "$as" "$user" -C "$ROOT" rev-parse --verify -q 'refs/heads/main^{commit}' || return 1
+    printf '%s' "$DEPLOY_GIT_OUT"
 }
 
 # deploy_build_hash <dir>: one sha256 over every regular file under <dir> and its path, read as the
