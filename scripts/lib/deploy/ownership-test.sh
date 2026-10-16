@@ -117,6 +117,46 @@ orun "${OROOT}" "${TO}"
 contains 'fail: a chown that fails refuses' "${OUT}" "REFUSED: chown_root_owned: find or chown failed under ${OROOT}, so root-owned paths may remain"
 contains 'fail: and returns 1' "${OUT}" 'RC=1'
 
+# root_owned_count: the uid standing in for root owns every fixture path; .claude/** is not counted.
+crun() {
+    OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID="${C_UID:-${ME}}" \
+        bash -c '. "$1"; shift; root_owned_count "$@"; printf "RC=%s\n" "$?"' _ "${LIB_DIR}/ownership.sh" "$@" 2>&1)"
+    C_UID=''
+}
+CROOT="${WORK}/count/root"
+mkdir -p "${CROOT}/.claude/skills" "${CROOT}/app"
+ln -s "${CROOT}" "${WORK}/count/root-link"
+: >"${CROOT}/.claude/settings.json"; : >"${CROOT}/.claude/skills/s.md"; : >"${CROOT}/app/a.php"
+crun "${CROOT}"
+equals 'count: root, .claude and app/ and its file count; nothing under .claude does' "${OUT}" $'4\nRC=0'
+crun "${CROOT}/"
+equals 'count: a trailing slash still leaves .claude/** out' "${OUT}" $'4\nRC=0'
+NROOT="${WORK}/count-nested/root"
+mkdir -p "${NROOT}/app/x/.claude"; : >"${NROOT}/app/x/.claude/f"
+crun "${NROOT}"
+equals 'count: a .claude below the top (app/x/.claude/f) is counted, only <dir>/.claude/** is skipped' "${OUT}" $'5\nRC=0'
+for g in 'star*' 'what?' '[set' 'back\slash'; do
+    mkdir -p "${WORK}/count-glob/${g}"
+    crun "${WORK}/count-glob/${g}"
+    contains "count: a dir holding a glob character [${g}] refuses" "${OUT}" "REFUSED: root_owned_count: ${WORK}/count-glob/${g} holds a glob character"
+    contains "count: [${g}] returns 1" "${OUT}" 'RC=1'
+done
+if root_only_case 'count: one root-owned .claude file and one root-owned app file'; then
+    chown -h nobody "${CROOT}" "${CROOT}/.claude" "${CROOT}/.claude/skills" "${CROOT}/.claude/skills/s.md" "${CROOT}/app"
+    crun "${CROOT}"
+    equals 'count: one root-owned .claude file and one root-owned app file count 1' "${OUT}" $'1\nRC=0'
+fi
+C_UID='no-such-user-c527'
+crun "${CROOT}"
+contains 'count: a find that fails refuses' "${OUT}" "REFUSED: root_owned_count: find failed under ${CROOT}, so the count of root-owned paths is unknown"
+equals 'count: and prints no count, only RC=1' "$(grep -cx '[0-9]*' <<<"${OUT}")" 0
+contains 'count: and returns 1' "${OUT}" 'RC=1'
+for d in root "${WORK}/count/root-link" "${WORK}/count/missing" ''; do
+    crun "${d}"
+    contains "count: [${d}] refuses" "${OUT}" "REFUSED: root_owned_count: ${d} is not a plain absolute directory"
+    contains "count: [${d}] returns 1" "${OUT}" 'RC=1'
+done
+
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 if [ "${fails}" -eq 0 ]; then printf '\nownership-test: all checks passed\n'; exit 0; fi
 printf '\nownership-test: %s check(s) failed\n' "${fails}" >&2

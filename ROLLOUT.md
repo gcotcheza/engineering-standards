@@ -218,6 +218,15 @@ them: the library never sees a step.
 |---|---|---|
 | A step that exits 75 ends the gate with `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exit 75, never `GATE FAILED` | Each adopter's `check.sh`/`ci.sh` still turns a give-up into its ordinary failure banner, which sends someone looking for a failure that never ran. Each takes the convention when it next re-vendors `scripts/lib/deploy/`, where the header comment names it and `docs/DECISIONS.md` carries the full text. | each project, in its own re-vendor PR |
 
+## Root-owned count — each app switches at its next re-vendor
+
+`root_owned_count` (card 527) is in the library from deploy-lib `2026-10-16`; kidsquest adopts it
+in the same change. Nothing breaks for the rest: each keeps its own count until it re-vendors.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| fineprint, ghiecode, ghie-writes, moneywise, reflection and scribly count root-owned paths through `root_owned_count` | Each vendors `ownership.sh` but counts with its own `find`; when it next re-vendors `scripts/lib/deploy/`, its verify step and `ROOT-OWNED` line call `root_owned_count "$ROOT"` instead, so a failing `find` refuses rather than reading as 0. | each project, in its own re-vendor PR |
+
 ## Standards-text change — merge order
 
 **Merge order.** The exception is text, and a project reads it when it re-vendors
