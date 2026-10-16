@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-16 — the deploy library counts root-owned paths, `.claude/**` aside (deploy-lib VERSION 2026-10-16; the standard is unchanged and VERSION is not bumped)
+**Card 527.** New `root_owned_count <dir>` in `ownership.sh` prints how many paths under `<dir>` root
+owns, leaving `<dir>/.claude/*` out, for an app's verify step and its `ROOT-OWNED` line. A `find` that
+fails refuses (`root_owned_count: find failed under <dir>, so the count of root-owned paths is
+unknown`, return 1) and prints no count; a dir that is not a plain absolute directory is refused as
+`chown_root_owned` refuses one. Cases in `ownership-test.sh`: the `.claude` skip (with and without a
+trailing slash), the exact one-`.claude`-file-one-app-file fixture as root, a failing find, and the
+refusals.
+
+Why: `docs/DECISIONS.md`.
+
 ## 2026-10-15 — the deploy library's git calls run under a timeout (deploy-lib VERSION 2026-10-15; the standard is unchanged and VERSION is not bumped)
 **Card 441.** New `deploy_git_bounded` (`summary.sh`, copied as `deploy_compose_git_bounded` in
 `compose.sh`) runs git under `timeout -k 5 "${DEPLOY_GIT_TIMEOUT:-300}"` with its output read back

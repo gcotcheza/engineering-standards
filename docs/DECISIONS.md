@@ -1732,3 +1732,11 @@ roughly doubles step 8's time, which stays the last and dearest step.
 
 **An app prints its own merge summary.** `deploy_git_or_refuse` captures git's stdout into
 `DEPLOY_GIT_OUT`, so an app whose `land()` routes `merge --ff-only` through it must print that itself.
+
+## The deploy lib counts root-owned paths with `.claude/**` left out (2026-10-16, card 527)
+
+`ownership.sh` gains `root_owned_count <dir>`: the number of paths under `<dir>` owned by root
+(`DEPLOY_ROOT_UID` in tests), skipping `<dir>/.claude/*` in the exact shape orbit's and reflection's
+deploys already use, because agent sessions write there as root and that is not a deploy fault. A
+failing `find` refuses and prints no number (C9): kidsquest's old `find … 2>/dev/null | wc -l` read a
+find error as 0. Its cases live in `ownership-test.sh`. deploy-lib `VERSION` moves to `2026-10-16`.
