@@ -1739,4 +1739,5 @@ roughly doubles step 8's time, which stays the last and dearest step.
 (`DEPLOY_ROOT_UID` in tests), skipping `<dir>/.claude/*` in the exact shape orbit's and reflection's
 deploys already use, because agent sessions write there as root and that is not a deploy fault. A
 failing `find` refuses and prints no number (C9): kidsquest's old `find … 2>/dev/null | wc -l` read a
-find error as 0. Its cases live in `ownership-test.sh`. deploy-lib `VERSION` moves to `2026-10-16`.
+find error as 0. `-ignore_readdir_race` keeps a file deleted mid-walk (a cache file) from failing a
+deploy; any other find error still refuses. Its cases live in `ownership-test.sh`. deploy-lib `VERSION` moves to `2026-10-16`.

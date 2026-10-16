@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-16 sha256:44d5bfbd302c0ac07caa3df6fd750e755f9c9595409cf7ccdfaa77816a2f011d
+# fleet-deploy-lib 2026-10-16 sha256:d5cdbdbbc5cad47d289f290da5275e249a76889241d4091cb52d7724673e3360
 # shellcheck shell=bash
 # Root hands its own paths in an app tree back to the app user, never through a link. docs/DECISIONS.md (card 363)
 
@@ -17,7 +17,7 @@ chown_root_owned() {
 root_owned_count() {
     local dir=${1:-} found
     [[ $dir == /* && -d $dir && ! -L $dir ]] || { printf 'REFUSED: root_owned_count: %s is not a plain absolute directory\n' "$dir" >&2; return 1; }
-    found=$(/usr/bin/find -P "$dir" -user "${DEPLOY_ROOT_UID:-0}" -not -path "${dir%/}/.claude/*" -printf .) \
+    found=$(/usr/bin/find -P "$dir" -ignore_readdir_race -user "${DEPLOY_ROOT_UID:-0}" -not -path "${dir%/}/.claude/*" -printf .) \
         || { printf 'REFUSED: root_owned_count: find failed under %s, so the count of root-owned paths is unknown\n' "$dir" >&2; return 1; }
     printf '%s\n' "${#found}"
 }
