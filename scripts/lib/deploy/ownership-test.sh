@@ -131,6 +131,16 @@ crun "${CROOT}"
 equals 'count: root, .claude and app/ and its file count; nothing under .claude does' "${OUT}" $'4\nRC=0'
 crun "${CROOT}/"
 equals 'count: a trailing slash still leaves .claude/** out' "${OUT}" $'4\nRC=0'
+NROOT="${WORK}/count-nested/root"
+mkdir -p "${NROOT}/app/x/.claude"; : >"${NROOT}/app/x/.claude/f"
+crun "${NROOT}"
+equals 'count: a .claude below the top (app/x/.claude/f) is counted, only <dir>/.claude/** is skipped' "${OUT}" $'5\nRC=0'
+for g in 'star*' 'what?' '[set' 'back\slash'; do
+    mkdir -p "${WORK}/count-glob/${g}"
+    crun "${WORK}/count-glob/${g}"
+    contains "count: a dir holding a glob character [${g}] refuses" "${OUT}" "REFUSED: root_owned_count: ${WORK}/count-glob/${g} holds a glob character"
+    contains "count: [${g}] returns 1" "${OUT}" 'RC=1'
+done
 if root_only_case 'count: one root-owned .claude file and one root-owned app file'; then
     chown -h nobody "${CROOT}" "${CROOT}/.claude" "${CROOT}/.claude/skills" "${CROOT}/.claude/skills/s.md" "${CROOT}/app"
     crun "${CROOT}"

@@ -5,9 +5,10 @@
 owns, leaving `<dir>/.claude/*` out, for an app's verify step and its `ROOT-OWNED` line. A `find` that
 fails refuses (`root_owned_count: find failed under <dir>, so the count of root-owned paths is
 unknown`, return 1) and prints no count; a dir that is not a plain absolute directory is refused as
-`chown_root_owned` refuses one. Cases in `ownership-test.sh`: the `.claude` skip (with and without a
-trailing slash), the exact one-`.claude`-file-one-app-file fixture as root, a failing find, and the
-refusals.
+`chown_root_owned` refuses one, and so is one holding `*`, `?`, `[` or `\`. It walks with `-xdev`,
+as `chown_root_owned` does. Cases in `ownership-test.sh`: the `.claude` skip (with and without a
+trailing slash), a nested `app/x/.claude/f` that is counted, the exact
+one-`.claude`-file-one-app-file fixture as root, a failing find, and the refusals.
 
 Why: `docs/DECISIONS.md`.
 

@@ -1740,4 +1740,11 @@ roughly doubles step 8's time, which stays the last and dearest step.
 deploys already use, because agent sessions write there as root and that is not a deploy fault. A
 failing `find` refuses and prints no number (C9): kidsquest's old `find … 2>/dev/null | wc -l` read a
 find error as 0. `-ignore_readdir_race` keeps a file deleted mid-walk (a cache file) from failing a
-deploy; any other find error still refuses. Its cases live in `ownership-test.sh`. deploy-lib `VERSION` moves to `2026-10-16`.
+deploy; any other find error still refuses. It has no case: a test cannot time a file vanishing
+between find's readdir and its stat without a ptrace or FUSE hook, so it rests on review.
+The count walks with `-xdev`, as `chown_root_owned` does, so it counts only what that repair can
+reach; a root-owned path on a mount inside the tree is the mount's business. No case either: a
+mount needs `CAP_SYS_ADMIN`, which the suite run as nobody does not have.
+The skip goes into a `find -path` glob, so a `<dir>` holding `*`, `?`, `[` or `\` is refused rather
+than escaped: no app tree has one. Its cases live in `ownership-test.sh`, the nested
+`app/x/.claude/f` (counted) among them. deploy-lib `VERSION` moves to `2026-10-16`.
