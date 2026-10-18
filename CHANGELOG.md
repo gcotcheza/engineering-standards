@@ -3,13 +3,16 @@
 ## 2026-10-18 — a test's HOME through `guarded_home`, the one HOME form the hook-bypass scan passes (deploy-lib VERSION 2026-10-18; the standard is unchanged and VERSION is not bumped)
 **Card 540.** New `guarded-home.sh`: `HOME="$(guarded_home)"` gives a command under test a fresh,
 empty, mode-700 directory of the caller's own under `GUARDED_HOME_PARENT` (else `TMPDIR`, else
-`/tmp`); anything else (a `.gitconfig`, a `.config/git`, another owner or mode, a link, a failed
-`mktemp` or `find`) is refused with return 1 and a HOME under `/proc`. `test.sh`'s scan gains
-`HOOK_BYPASS_EXEMPT`, which lets that exact text through at a word boundary and nothing wider, and
-`HOOK_BYPASS` gains a definition or alias of `guarded_home`. A project that vendors the patterns
-(Reflection's `hook-bypass-scan.sh`) copies the new lines when it re-vendors. Cases in `test.sh`: the
-sanctioned form, alone and inside `env -i`; nine forms that stay red; a made HOME that is empty and
-under its parent; eight refusals.
+`/tmp`); anything else (a `.gitconfig`, a `.config/git`, another owner, permission bits other than
+700, a link, a failed `mktemp` or `find`, `GUARDED_HOME_REFUSALS` unset) is refused with return 1, a
+HOME under `/proc` and a line appended to `GUARDED_HOME_REFUSALS`; `home_refusals_none` is red while
+that file holds one, and a suite ends on it. `test.sh`'s scan gains `HOOK_BYPASS_EXEMPT`, which lets
+that exact text through only when whitespace, `;`, `&`, `|` or the line end follows it, and
+`HOOK_BYPASS_TOKEN`: any `guarded_home` left after that, quote marks removed, is red. A project that
+vendors the patterns (Reflection's `hook-bypass-scan.sh`) copies the new lines when it re-vendors.
+Cases in `test.sh`: the sanctioned form in four positions; seventeen forms that stay red; a made HOME
+that is empty and under its parent; a setgid home taken; nine refusals, each recorded; a refused
+call turning the suite end red.
 
 Why: `docs/DECISIONS.md` (ruling 265, amended).
 

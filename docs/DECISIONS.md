@@ -925,17 +925,23 @@ bypass built at runtime (a flag in a variable, a `-c` key assembled from pieces,
 seen, and review stays the check for those. Two false positives are known and fail loudly rather
 than pass quietly: merge's own `-n` (no-stat) and a dash-n inside a `-m` message. Rephrase the
 line; never widen the scan's exemptions.
+An unreadable suite file, or any of its greps exiting above 1 (a pattern grep cannot compile), fails the
+scan: grep's "no match" and "could not run" must never both read as clean.
 **Amended 2026-10-18 (card 540): one HOME form passes, the guarded one.** A suite whose script under
 test needs its own HOME writes exactly `HOME="$(guarded_home)"` (`guarded-home.sh`). `guarded_home`
-makes a fresh `mktemp -d` under `GUARDED_HOME_PARENT` and refuses it unless it is a plain directory of
-mode 700 owned by the caller and holds nothing at all, so no `.gitconfig` or `.config/git` that drops
-the hook can be in it; a refusal returns 1 and prints a HOME under `/proc`, where no config can exist,
-because a failed `$(...)` in an assignment cannot stop the command. The scan deletes that exact text,
-at a word boundary, before it matches (`HOOK_BYPASS_EXEMPT`); every other `HOME=` stays red, the
-same text after `XDG_CONFIG_` included, and a suite that defines or aliases `guarded_home`
-fails the scan. A HOME that must be empty or unset is `env -u HOME`, not `HOME=`.
-An unreadable suite file, or either grep exiting above 1 (a pattern grep cannot compile), fails the
-scan: grep's "no match" and "could not run" must never both read as clean.
+makes a fresh `mktemp -d` under `GUARDED_HOME_PARENT` and refuses it unless it is a plain directory
+owned by the caller whose permission bits are 700 (a setgid bit inherited from the parent is not
+judged) and holds nothing at all, so no `.gitconfig` or `.config/git` that drops the hook can be in
+it. The parent must be sticky (like `/tmp`) or private to the caller, or another user could swap the
+directory between the check and the command (TOCTOU). A refusal prints a HOME under `/proc`, where no
+config can exist, and returns 1, but a failed `$(...)` in an assignment cannot stop the command, so
+the refusal also appends its reason to `GUARDED_HOME_REFUSALS` (unset is itself a refusal) and the
+suite ends on `home_refusals_none`, which is red while that file holds a line. The scan deletes that
+exact text before it matches (`HOOK_BYPASS_EXEMPT`) only between a non-word character or line start
+and whitespace, `;`, `&`, `|` or line end; then any `guarded_home` left anywhere, with quote marks and
+backslashes removed first (`HOOK_BYPASS_TOKEN`), is red: a definition in any shape, `BASH_FUNC_`,
+`unset -f`, an executable of that name, an alias. Every other `HOME=` stays red, the same text after
+`XDG_CONFIG_` included. A HOME that must be empty or unset is `env -u HOME`, not `HOME=`.
 
 **Built once per kind, then copied.** Committing through the hook per case meant 245 calls to the
 personal-data checker per run and took the suite from 14 s to 145 s. The checker caps every caller

@@ -56,18 +56,21 @@ git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
 
 # S1: fixture commits go through the real fleet hook; bracketed letters keep these lines off their own list.
 # What is covered, and the loud false positives (merge's no-stat flag, a dash-n in a message): docs/DECISIONS.md.
-HOOK_BYPASS='--no[-]v(e(r(i(fy?)?)?)?)?([^A-Za-z-]|$)|HUSK[Y]=0|GIT_CONFI[G]_[A-Z0-9_]+|(^|[^A-Za-z0-9_])HOM[E]=|XDG_CONFIG_HOM[E]=|commit-tre[e]|fast-impor[t]|hash-objec[t][^;|&]*[[:space:]]-[A-Za-z]*w|(commi[t]|merg[e])[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:]]|$)|guarded_hom[e][[:space:]]*([(]|[{]|=)'
+HOOK_BYPASS='--no[-]v(e(r(i(fy?)?)?)?)?([^A-Za-z-]|$)|HUSK[Y]=0|GIT_CONFI[G]_[A-Z0-9_]+|(^|[^A-Za-z0-9_])HOM[E]=|XDG_CONFIG_HOM[E]=|commit-tre[e]|fast-impor[t]|hash-objec[t][^;|&]*[[:space:]]-[A-Za-z]*w|(commi[t]|merg[e])[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:]]|$)'
 HOOK_BYPASS_ANY_CASE='core[.]hooks[p]ath'
-HOOK_BYPASS_EXEMPT='(^|[^A-Za-z0-9_])HOM[E]="[$][(]guarded_hom[e][)]"'
+HOOK_BYPASS_EXEMPT='(^|[^A-Za-z0-9_])HOM[E]="[$][(]guarded_hom[e][)]"([[:space:];&|]|$)'
+HOOK_BYPASS_TOKEN='guarded_hom[e]'
 scan_bypasses() {
-    local joined any_case
+    local joined any_case token
     joined="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0 " "; next } print start ":" buf $0; buf = "" }' "$1")" || return 2
-    joined="$(printf '%s\n' "${joined}" | sed -E "s/${HOOK_BYPASS_EXEMPT}/\\1/g")" || return 2
+    joined="$(printf '%s\n' "${joined}" | sed -E "s/${HOOK_BYPASS_EXEMPT}/\\1\\2/g")" || return 2
     BYPASSES="$(printf '%s\n' "${joined}" | grep -E -- "$2")"
     case $? in 0|1) ;; *) return 2 ;; esac
     any_case="$(printf '%s\n' "${joined}" | grep -iE -- "$3")"
     case $? in 0|1) ;; *) return 2 ;; esac
-    BYPASSES+=$'\n'"${any_case}"
+    token="$(printf '%s\n' "${joined}" | tr -d "\"'\\\\" | grep -E -- "${HOOK_BYPASS_TOKEN}")"
+    case $? in 0|1) ;; *) return 2 ;; esac
+    BYPASSES+=$'\n'"${any_case}"$'\n'"${token}"
 }
 scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}" \
     || fail "the hook-bypass scan could not read ${BASH_SOURCE[0]} or run its grep"
@@ -80,37 +83,52 @@ scan_bypasses "${BASH_SOURCE[0]}.missing" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CA
 equals 'an unreadable file in the bypass scan fails it' "$?" 2
 HOOK_BYPASS_EXEMPT='(' scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}" 2>/dev/null
 equals 'a broken exemption in the bypass scan fails it' "$?" 2
+HOOK_BYPASS_TOKEN='(' scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}" 2>/dev/null
+equals 'a broken token grep in the bypass scan fails it' "$?" 2
 
-# --- 0b. guarded_home: a test's HOME, the scan's one HOME form (card 540) ------------
+# --- 0b. a guarded HOME: the scan's one HOME form (card 540) ------------
 # shellcheck source=scripts/lib/deploy/guarded-home.sh
 . "${LIB_DIR}/guarded-home.sh"
-export GUARDED_HOME_PARENT="${WORK}"
+export GUARDED_HOME_PARENT="${WORK}" GUARDED_HOME_REFUSALS="${WORK}/guarded-home.refusals"
 H='HO''ME'
-G='guarded''_home'
+G=guarded_hom
+G+=e
+Gq="${G%me}\"\"me"
 scan_sample() {
     printf '%s\n' "$1" >"${WORK}/scan-sample.sh"
     scan_bypasses "${WORK}/scan-sample.sh" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}"
-    printf '%s' "${BYPASSES}" | grep -c ':'
+    printf '%s\n' "${BYPASSES}" | grep -o '^[0-9]*:' | sort -u | wc -l
 }
-equals 'the sanctioned form passes the scan' "$(scan_sample "${H}=\"\$(guarded_home)\" git status")" 0
-equals 'the sanctioned form inside env -i passes the scan' "$(scan_sample "env -i PATH=/bin ${H}=\"\$(guarded_home)\" git status")" 0
+equals 'the sanctioned form passes the scan' "$(scan_sample "${H}=\"\$(${G})\" git status")" 0
+equals 'the sanctioned form inside env -i passes the scan' "$(scan_sample "env -i PATH=/bin ${H}=\"\$(${G})\" git status")" 0
+equals 'the sanctioned form before a semicolon passes the scan' "$(scan_sample "${H}=\"\$(${G})\"; git status")" 0
+equals 'the sanctioned form at the end of a line passes the scan' "$(scan_sample "export ${H}=\"\$(${G})\"")" 0
 while IFS= read -r form; do
     form="${form//<H>/${H}}"
+    form="${form//<Gq>/${Gq}}"
     form="${form//<G>/${G}}"
     equals "the scan still fails [${form}]" "$(scan_sample "${form}")" 1
 done <<'FORMS'
 <H>=/root git status
-<H>="$(guarded_home)/x" git status
-<H>="$(guarded_home) " git status
-<H>=$(guarded_home) git status
-XDG_CONFIG_<H>="$(guarded_home)" git status
-MY<H>="$(guarded_home)" <H>=/root git status
+<H>="$(<G>)/x" git status
+<H>="$(<G>) " git status
+<H>=$(<G>) git status
+<H>="$(<G>)"/../../root git status
+<H>="$(<G>)"'/x' git status
+<H>="$(<G>)"$EVIL git status
+XDG_CONFIG_<H>="$(<G>)" git status
+MY<H>="$(<G>)" <H>=/root git status
 <G>() { printf /root; }
+<G>() ( printf /root )
 function <G> { printf /root; }
-alias <G>='printf /root'
+export BASH_FUNC_<G>%%='() { printf /root; }'
+unset -f <G>
+printf '#!/bin/sh\necho /root\n' >"${BIN}/<G>"
+alias <Gq>='printf /root'
 FORMS
+equals 'the scan still fails a function whose brace is on the next line' "$(scan_sample "function ${G}"$'\n''{ printf /root; }')" 1
 OUT="$(HOME="$(guarded_home)" bash -c 'printf "%s|%s" "${HOME%/*}" "$(ls -A -- "${HOME}")"' 2>&1)"
-equals 'guarded_home makes an empty HOME under GUARDED_HOME_PARENT' "${OUT}" "${WORK}|"
+equals 'a guarded HOME is empty and under GUARDED_HOME_PARENT' "${OUT}" "${WORK}|"
 GH_BIN="${WORK}/guarded-home-bin"
 mkdir -p "${GH_BIN}"
 cat >"${GH_BIN}/mktemp" <<SH
@@ -124,6 +142,7 @@ case "\${FAKE_HOME_MODE}" in
     owner) mkdir -m 700 "\$d" && chown nobody "\$d" ;;
     link) mkdir -m 700 "\$d.real" && ln -s "\$d.real" "\$d" ;;
     file) : >"\$d" && chmod 700 "\$d" ;;
+    setgid) mkdir -m 2700 "\$d" ;;
     *) exec $(command -v mktemp) "\$@" ;;
 esac
 printf '%s\n' "\$d"
@@ -135,21 +154,43 @@ exec $(command -v find) "\$@"
 SH
 chmod 0755 "${GH_BIN}/mktemp" "${GH_BIN}/find"
 while IFS='|' read -r mode why; do
-    OUT="$(PATH="${GH_BIN}:${PATH}" FAKE_HOME_MODE="${mode}" FAKE_HOME_DIR="${WORK}/gh-${mode}" guarded_home 2>&1)"
+    if [ "${mode}" = owner ] && [ "$(id -u)" != 0 ]; then
+        printf 'skip %s owner case: only root can hand the directory to nobody\n' "${G}"
+        continue
+    fi
+    rf="${WORK}/gh-${mode}.refusals"
+    [ "${mode}" != unset ] || rf=''
+    OUT="$(PATH="${GH_BIN}:${PATH}" FAKE_HOME_MODE="${mode}" FAKE_HOME_DIR="${WORK}/gh-${mode}" GUARDED_HOME_REFUSALS="${rf}" "${G}" 2>&1)"
     RC=$?
-    equals "guarded_home refuses a ${mode} home" "${RC}" 1
-    contains "and says why (${mode})" "${OUT}" "guarded_home refused: ${why//<D>/${WORK}/gh-${mode}}"
+    why="${why//<D>/${WORK}/gh-${mode}}"
+    why="${why//<U>/$(id -u)}"
+    equals "${G} refuses a ${mode} home" "${RC}" 1
+    contains "and says why (${mode})" "${OUT}" "${G} refused: ${why}"
     contains "and hands back a HOME no config can exist in (${mode})" "${OUT}" '/proc/guarded-home-refused'
+    [ -z "${rf}" ] || contains "and records the refusal for the suite's end (${mode})" "$(cat -- "${rf}" 2>&1)" "${why}"
 done <<'CASES'
+unset|GUARDED_HOME_REFUSALS is not set
 fail|mktemp could not make a directory
 gitconfig|<D> is not empty: it holds <D>/.gitconfig
 xdg|<D> is not empty: it holds <D>/.config
-mode|<D> is not a plain directory of mode 700 owned by uid 0
-owner|<D> is not a plain directory of mode 700 owned by uid 0
-link|<D> is not a plain directory of mode 700 owned by uid 0
-file|<D> is not a plain directory of mode 700 owned by uid 0
+mode|<D> does not have permission bits 700
+owner|<D> is not owned by uid <U>
+link|<D> is not a plain directory
+file|<D> is not a plain directory
 findfail|find could not list
 CASES
+OUT="$(PATH="${GH_BIN}:${PATH}" FAKE_HOME_MODE=setgid FAKE_HOME_DIR="${WORK}/gh-setgid" "${G}" 2>&1)"
+equals 'a setgid home is judged on its permission bits only' "$?:${OUT}:$(stat -c '%a' -- "${WORK}/gh-setgid")" "0:${WORK}/gh-setgid:2700"
+OUT="$(
+    export GUARDED_HOME_REFUSALS="${WORK}/red.refusals"
+    : "$(PATH="${GH_BIN}:${PATH}" FAKE_HOME_MODE=fail "${G}" 2>/dev/null)"
+    printf 'cmd=%s ' "$?"
+    home_refusals_none 2>/dev/null
+    printf 'end=%s' "$?"
+)"
+equals 'a refused HOME keeps the command status but turns the suite end red' "${OUT}" 'cmd=0 end=1'
+OUT="$(GUARDED_HOME_REFUSALS='' home_refusals_none 2>&1)"
+equals 'the suite end is red when GUARDED_HOME_REFUSALS is unset' "$?:${OUT}" '1:GUARDED_HOME_REFUSALS is not set'
 
 write_driver() {
     mkdir -p "${CASE}/lib"
@@ -2824,6 +2865,9 @@ equals 'a name that is not a variable name fails the guard' "$?:${OUT}" '1:LITER
 
 grew 'the fixture commits added caller=root result=clean lines' \
     "${SUITE_CLEAN_BEFORE}" "$(clean_lines)"
+
+home_refusals_none
+equals 'no guarded HOME was refused during the suite' "$?" 0
 
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 
