@@ -227,6 +227,16 @@ in the same change. Nothing breaks for the rest: each keeps its own count until 
 |---|---|---|
 | fineprint, ghiecode, ghie-writes, moneywise, reflection and scribly count root-owned paths through `root_owned_count` | Each vendors `ownership.sh` but counts with its own `find`; when it next re-vendors `scripts/lib/deploy/`, its verify step and `ROOT-OWNED` line call `root_owned_count "$ROOT"` instead, so a failing `find` refuses rather than reading as 0. | each project, in its own re-vendor PR |
 
+## Guarded test HOME — two apps take it at their next re-vendor
+
+`guarded_home` (card 540) is in the library from deploy-lib `2026-10-18`. Until a project re-vendors,
+its scan is the old one and any `HOME=` in its suites stays red.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| health-tracker's `deploy-test.sh` runs the hook-bypass scan | Its cases set `HOME="${CASE}"` for the script under test, so #140 shipped without the scan; at re-vendor each becomes `HOME="$(guarded_home)"` (the empty-HOME case `env -u HOME`) and the suite runs the scan. | health-tracker, in its own re-vendor PR |
+| reflection's `hook-bypass-scan.sh` carries the new pattern lines | `assert_patterns_match_lib` compares only `HOOK_BYPASS` and `HOOK_BYPASS_ANY_CASE`; at re-vendor it copies the new `HOOK_BYPASS` and `HOOK_BYPASS_EXEMPT`, its `scan_bypasses` gains the exemption line, and the comparison covers all three. | reflection, in its own re-vendor PR |
+
 ## Standards-text change — merge order
 
 **Merge order.** The exception is text, and a project reads it when it re-vendors

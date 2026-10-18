@@ -69,8 +69,8 @@ it could not read is a refusal (exit 1), not a note under a green run; a line th
 everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (which commit a pull
 request number means), `ledger.sh` (the gate ledger), `preflight.sh`, `cleanup.sh` (the
 after-deploy worktree reaper), `compose.sh` (root's compose, from `fleet-deploy`'s export only),
-`literal.sh` (a gate's literal guard, below) and `ownership.sh` (root's ownership repair, which follows
-no link). A project copies those files and `VERSION` into its own `scripts/lib/deploy/`,
+`literal.sh` (a gate's literal guard, below), `ownership.sh` (root's ownership repair, which follows
+no link) and `guarded-home.sh` (a test's HOME, the one form the hook-bypass scan passes). A project copies those files and `VERSION` into its own `scripts/lib/deploy/`,
 byte-identical, and sources them. Four of root's reads in the app tree go through the app user:
 `deploy_head_file` and the pre-build tracked-file check through `git-as`, `deploy_app_env_value` and
 `deploy_build_hash` through `sudo -u`; `deploy_compose_buildcheck`'s `cmp` still reads as root (card 320).

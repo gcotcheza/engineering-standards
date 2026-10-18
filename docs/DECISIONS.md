@@ -925,6 +925,15 @@ bypass built at runtime (a flag in a variable, a `-c` key assembled from pieces,
 seen, and review stays the check for those. Two false positives are known and fail loudly rather
 than pass quietly: merge's own `-n` (no-stat) and a dash-n inside a `-m` message. Rephrase the
 line; never widen the scan's exemptions.
+**Amended 2026-10-18 (card 540): one HOME form passes, the guarded one.** A suite whose script under
+test needs its own HOME writes exactly `HOME="$(guarded_home)"` (`guarded-home.sh`). `guarded_home`
+makes a fresh `mktemp -d` under `GUARDED_HOME_PARENT` and refuses it unless it is a plain directory of
+mode 700 owned by the caller and holds nothing at all, so no `.gitconfig` or `.config/git` that drops
+the hook can be in it; a refusal returns 1 and prints a HOME under `/proc`, where no config can exist,
+because a failed `$(...)` in an assignment cannot stop the command. The scan deletes that exact text,
+at a word boundary, before it matches (`HOOK_BYPASS_EXEMPT`); every other `HOME=` stays red, the
+same text after `XDG_CONFIG_` included, and a suite that defines or aliases `guarded_home`
+fails the scan. A HOME that must be empty or unset is `env -u HOME`, not `HOME=`.
 An unreadable suite file, or either grep exiting above 1 (a pattern grep cannot compile), fails the
 scan: grep's "no match" and "could not run" must never both read as clean.
 

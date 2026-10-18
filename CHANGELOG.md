@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-18 — a test's HOME through `guarded_home`, the one HOME form the hook-bypass scan passes (deploy-lib VERSION 2026-10-18; the standard is unchanged and VERSION is not bumped)
+**Card 540.** New `guarded-home.sh`: `HOME="$(guarded_home)"` gives a command under test a fresh,
+empty, mode-700 directory of the caller's own under `GUARDED_HOME_PARENT` (else `TMPDIR`, else
+`/tmp`); anything else (a `.gitconfig`, a `.config/git`, another owner or mode, a link, a failed
+`mktemp` or `find`) is refused with return 1 and a HOME under `/proc`. `test.sh`'s scan gains
+`HOOK_BYPASS_EXEMPT`, which lets that exact text through at a word boundary and nothing wider, and
+`HOOK_BYPASS` gains a definition or alias of `guarded_home`. A project that vendors the patterns
+(Reflection's `hook-bypass-scan.sh`) copies the new lines when it re-vendors. Cases in `test.sh`: the
+sanctioned form, alone and inside `env -i`; nine forms that stay red; a made HOME that is empty and
+under its parent; eight refusals.
+
+Why: `docs/DECISIONS.md` (ruling 265, amended).
+
 ## 2026-10-16 — the deploy library counts root-owned paths, `.claude/**` aside (deploy-lib VERSION 2026-10-16; the standard is unchanged and VERSION is not bumped)
 **Card 527.** New `root_owned_count <dir>` in `ownership.sh` prints how many paths under `<dir>` root
 owns, leaving `<dir>/.claude/*` out, for an app's verify step and its `ROOT-OWNED` line. A `find` that

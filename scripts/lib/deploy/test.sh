@@ -56,11 +56,13 @@ git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
 
 # S1: fixture commits go through the real fleet hook; bracketed letters keep these lines off their own list.
 # What is covered, and the loud false positives (merge's no-stat flag, a dash-n in a message): docs/DECISIONS.md.
-HOOK_BYPASS='--no[-]v(e(r(i(fy?)?)?)?)?([^A-Za-z-]|$)|HUSK[Y]=0|GIT_CONFI[G]_[A-Z0-9_]+|(^|[^A-Za-z0-9_])HOM[E]=|XDG_CONFIG_HOM[E]=|commit-tre[e]|fast-impor[t]|hash-objec[t][^;|&]*[[:space:]]-[A-Za-z]*w|(commi[t]|merg[e])[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:]]|$)'
+HOOK_BYPASS='--no[-]v(e(r(i(fy?)?)?)?)?([^A-Za-z-]|$)|HUSK[Y]=0|GIT_CONFI[G]_[A-Z0-9_]+|(^|[^A-Za-z0-9_])HOM[E]=|XDG_CONFIG_HOM[E]=|commit-tre[e]|fast-impor[t]|hash-objec[t][^;|&]*[[:space:]]-[A-Za-z]*w|(commi[t]|merg[e])[^;|&]*[[:space:]]-[A-Za-z]*n[A-Za-z]*([[:space:]]|$)|guarded_hom[e][[:space:]]*([(]|[{]|=)'
 HOOK_BYPASS_ANY_CASE='core[.]hooks[p]ath'
+HOOK_BYPASS_EXEMPT='(^|[^A-Za-z0-9_])HOM[E]="[$][(]guarded_hom[e][)]"'
 scan_bypasses() {
     local joined any_case
     joined="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0 " "; next } print start ":" buf $0; buf = "" }' "$1")" || return 2
+    joined="$(printf '%s\n' "${joined}" | sed -E "s/${HOOK_BYPASS_EXEMPT}/\\1/g")" || return 2
     BYPASSES="$(printf '%s\n' "${joined}" | grep -E -- "$2")"
     case $? in 0|1) ;; *) return 2 ;; esac
     any_case="$(printf '%s\n' "${joined}" | grep -iE -- "$3")"
@@ -76,6 +78,78 @@ scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" '(' 2>/dev/null
 equals 'a broken any-case grep in the bypass scan fails it' "$?" 2
 scan_bypasses "${BASH_SOURCE[0]}.missing" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}" 2>/dev/null
 equals 'an unreadable file in the bypass scan fails it' "$?" 2
+HOOK_BYPASS_EXEMPT='(' scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}" 2>/dev/null
+equals 'a broken exemption in the bypass scan fails it' "$?" 2
+
+# --- 0b. guarded_home: a test's HOME, the scan's one HOME form (card 540) ------------
+# shellcheck source=scripts/lib/deploy/guarded-home.sh
+. "${LIB_DIR}/guarded-home.sh"
+export GUARDED_HOME_PARENT="${WORK}"
+H='HO''ME'
+G='guarded''_home'
+scan_sample() {
+    printf '%s\n' "$1" >"${WORK}/scan-sample.sh"
+    scan_bypasses "${WORK}/scan-sample.sh" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}"
+    printf '%s' "${BYPASSES}" | grep -c ':'
+}
+equals 'the sanctioned form passes the scan' "$(scan_sample "${H}=\"\$(guarded_home)\" git status")" 0
+equals 'the sanctioned form inside env -i passes the scan' "$(scan_sample "env -i PATH=/bin ${H}=\"\$(guarded_home)\" git status")" 0
+while IFS= read -r form; do
+    form="${form//<H>/${H}}"
+    form="${form//<G>/${G}}"
+    equals "the scan still fails [${form}]" "$(scan_sample "${form}")" 1
+done <<'FORMS'
+<H>=/root git status
+<H>="$(guarded_home)/x" git status
+<H>="$(guarded_home) " git status
+<H>=$(guarded_home) git status
+XDG_CONFIG_<H>="$(guarded_home)" git status
+MY<H>="$(guarded_home)" <H>=/root git status
+<G>() { printf /root; }
+function <G> { printf /root; }
+alias <G>='printf /root'
+FORMS
+OUT="$(HOME="$(guarded_home)" bash -c 'printf "%s|%s" "${HOME%/*}" "$(ls -A -- "${HOME}")"' 2>&1)"
+equals 'guarded_home makes an empty HOME under GUARDED_HOME_PARENT' "${OUT}" "${WORK}|"
+GH_BIN="${WORK}/guarded-home-bin"
+mkdir -p "${GH_BIN}"
+cat >"${GH_BIN}/mktemp" <<SH
+#!/bin/sh
+d="\${FAKE_HOME_DIR}"
+case "\${FAKE_HOME_MODE}" in
+    fail) exit 1 ;;
+    gitconfig) mkdir -m 700 "\$d" && : >"\$d/.gitconfig" ;;
+    xdg) mkdir -p "\$d/.config/git" && : >"\$d/.config/git/config" && chmod 700 "\$d" ;;
+    mode) mkdir -m 755 "\$d" ;;
+    owner) mkdir -m 700 "\$d" && chown nobody "\$d" ;;
+    link) mkdir -m 700 "\$d.real" && ln -s "\$d.real" "\$d" ;;
+    file) : >"\$d" && chmod 700 "\$d" ;;
+    *) exec $(command -v mktemp) "\$@" ;;
+esac
+printf '%s\n' "\$d"
+SH
+cat >"${GH_BIN}/find" <<SH
+#!/bin/sh
+[ "\${FAKE_HOME_MODE}" != findfail ] || exit 2
+exec $(command -v find) "\$@"
+SH
+chmod 0755 "${GH_BIN}/mktemp" "${GH_BIN}/find"
+while IFS='|' read -r mode why; do
+    OUT="$(PATH="${GH_BIN}:${PATH}" FAKE_HOME_MODE="${mode}" FAKE_HOME_DIR="${WORK}/gh-${mode}" guarded_home 2>&1)"
+    RC=$?
+    equals "guarded_home refuses a ${mode} home" "${RC}" 1
+    contains "and says why (${mode})" "${OUT}" "guarded_home refused: ${why//<D>/${WORK}/gh-${mode}}"
+    contains "and hands back a HOME no config can exist in (${mode})" "${OUT}" '/proc/guarded-home-refused'
+done <<'CASES'
+fail|mktemp could not make a directory
+gitconfig|<D> is not empty: it holds <D>/.gitconfig
+xdg|<D> is not empty: it holds <D>/.config
+mode|<D> is not a plain directory of mode 700 owned by uid 0
+owner|<D> is not a plain directory of mode 700 owned by uid 0
+link|<D> is not a plain directory of mode 700 owned by uid 0
+file|<D> is not a plain directory of mode 700 owned by uid 0
+findfail|find could not list
+CASES
 
 write_driver() {
     mkdir -p "${CASE}/lib"
@@ -415,7 +489,7 @@ esac
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date, with an optional same-day serial' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$'
 EMPTY_SET="$(printf '' | sha256sum | cut -d' ' -f1)"
-for f in summary resolve ledger preflight cleanup compose literal ownership; do
+for f in summary resolve ledger preflight cleanup compose literal ownership guarded-home; do
     line1="$(head -1 "${LIB_DIR}/${f}.sh")"
     body="$(tail -n +2 "${LIB_DIR}/${f}.sh" | sha256sum | cut -d' ' -f1)"
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
