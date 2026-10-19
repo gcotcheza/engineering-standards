@@ -60,7 +60,7 @@ HOOK_BYPASS='--no[-]v(e(r(i(fy?)?)?)?)?([^A-Za-z-]|$)|HUSK[Y]=0|GIT_CONFI[G]_[A-
 HOOK_BYPASS_ANY_CASE='core[.]hooks[p]ath'
 scan_bypasses() {
     local joined any_case
-    joined="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0 " "; next } print start ":" buf $0; buf = "" }' "$1")" || return 2
+    joined="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0 " "; next } print start ":" buf $0; buf = "" } END { if (buf != "") print start ":" buf }' "$1")" || return 2
     BYPASSES="$(printf '%s\n' "${joined}" | grep -E -- "$2")"
     case $? in 0|1) ;; *) return 2 ;; esac
     any_case="$(printf '%s\n' "${joined}" | grep -iE -- "$3")"
@@ -76,6 +76,12 @@ scan_bypasses "${BASH_SOURCE[0]}" "${HOOK_BYPASS}" '(' 2>/dev/null
 equals 'a broken any-case grep in the bypass scan fails it' "$?" 2
 scan_bypasses "${BASH_SOURCE[0]}.missing" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}" 2>/dev/null
 equals 'an unreadable file in the bypass scan fails it' "$?" 2
+printf 'echo ok\n%s=/root git status \\\n' HOME >"${WORK}/scan-last-line"
+scan_bypasses "${WORK}/scan-last-line" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}"
+matches 'a bypass on a backslash-ended last line is caught' "${BYPASSES}" '^2:HOM[E]=/root git status'
+printf 'echo ok\ngit status \\\n' >"${WORK}/scan-last-line-clean"
+scan_bypasses "${WORK}/scan-last-line-clean" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}"
+absent 'a clean backslash-ended last line passes the bypass scan' "${BYPASSES}" ':'
 
 write_driver() {
     mkdir -p "${CASE}/lib"
