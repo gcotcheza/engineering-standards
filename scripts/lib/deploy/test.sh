@@ -62,7 +62,7 @@ HOOK_BYPASS_EXEMPT='(^|[^A-Za-z0-9_])HOM[E]="[$][(]guarded_hom[e][)]"([[:space:]
 HOOK_BYPASS_TOKEN='guarded_hom[e]'
 scan_bypasses() {
     local joined any_case token
-    joined="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0 " "; next } print start ":" buf $0; buf = "" }' "$1")" || return 2
+    joined="$(awk '{ if (buf == "") start = NR; if (sub(/\\$/, "")) { buf = buf $0; next } print start ":" buf $0; buf = "" }' "$1")" || return 2
     joined="$(printf '%s\n' "${joined}" | sed -E "s/${HOOK_BYPASS_EXEMPT}/\\1\\2/g")" || return 2
     BYPASSES="$(printf '%s\n' "${joined}" | grep -E -- "$2")"
     case $? in 0|1) ;; *) return 2 ;; esac
@@ -116,6 +116,7 @@ done <<'FORMS'
 <H>="$(<G>)"/../../root git status
 <H>="$(<G>)"'/x' git status
 <H>="$(<G>)"$EVIL git status
+w;<H>="$(<G>)";<H>=/srv/x git status
 XDG_CONFIG_<H>="$(<G>)" git status
 MY<H>="$(<G>)" <H>=/root git status
 <G>() { printf /root; }
@@ -127,6 +128,8 @@ printf '#!/bin/sh\necho /root\n' >"${BIN}/<G>"
 alias <Gq>='printf /root'
 FORMS
 equals 'the scan still fails a function whose brace is on the next line' "$(scan_sample "function ${G}"$'\n''{ printf /root; }')" 1
+equals 'the scan joins a continued line as bash does, adding nothing' "$(scan_sample "${H}=\"\$(${G})\"\\"$'\n''/../../root git status')" 1
+equals 'an indented continuation keeps its own whitespace and passes' "$(scan_sample "${H}=\"\$(${G})\"\\"$'\n''    git status')" 0
 OUT="$(HOME="$(guarded_home)" bash -c 'printf "%s|%s" "${HOME%/*}" "$(ls -A -- "${HOME}")"' 2>&1)"
 equals 'a guarded HOME is empty and under GUARDED_HOME_PARENT' "${OUT}" "${WORK}|"
 GH_BIN="${WORK}/guarded-home-bin"
@@ -182,13 +185,13 @@ CASES
 OUT="$(PATH="${GH_BIN}:${PATH}" FAKE_HOME_MODE=setgid FAKE_HOME_DIR="${WORK}/gh-setgid" "${G}" 2>&1)"
 equals 'a setgid home is judged on its permission bits only' "$?:${OUT}:$(stat -c '%a' -- "${WORK}/gh-setgid")" "0:${WORK}/gh-setgid:2700"
 OUT="$(
-    export GUARDED_HOME_REFUSALS="${WORK}/red.refusals"
-    : "$(PATH="${GH_BIN}:${PATH}" FAKE_HOME_MODE=fail "${G}" 2>/dev/null)"
-    printf 'cmd=%s ' "$?"
-    home_refusals_none 2>/dev/null
+    exec 2>/dev/null
+    export GUARDED_HOME_REFUSALS="${WORK}/red.refusals" GUARDED_HOME_PARENT="${WORK}/no-such-parent"
+    HOME="$(guarded_home)" sh -c 'printf "home=%s " "${HOME}"'
+    home_refusals_none
     printf 'end=%s' "$?"
 )"
-equals 'a refused HOME keeps the command status but turns the suite end red' "${OUT}" 'cmd=0 end=1'
+equals 'a refused HOME still runs the command, under /proc, and turns the suite end red' "${OUT}" 'home=/proc/guarded-home-refused end=1'
 OUT="$(GUARDED_HOME_REFUSALS='' home_refusals_none 2>&1)"
 equals 'the suite end is red when GUARDED_HOME_REFUSALS is unset' "$?:${OUT}" '1:GUARDED_HOME_REFUSALS is not set'
 

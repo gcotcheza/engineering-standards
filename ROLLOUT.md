@@ -234,7 +234,7 @@ its scan is the old one and any `HOME=` in its suites stays red.
 
 | Open work | What is missing | Owner |
 |---|---|---|
-| health-tracker's `deploy-test.sh` runs the hook-bypass scan | Its cases set `HOME="${CASE}"` for the script under test, so #140 shipped without the scan; at re-vendor each becomes `HOME="$(guarded_home)"` (the empty-HOME case `env -u HOME`), the suite sets `GUARDED_HOME_REFUSALS` and ends on `home_refusals_none`, and it runs the scan. | health-tracker, in its own re-vendor PR |
+| health-tracker's `deploy-test.sh` runs the hook-bypass scan | Its cases set `HOME="${CASE}"` for the script under test, so #140 shipped without the scan; at re-vendor each becomes `HOME="$(guarded_home)"` (the empty-HOME case `env -u HOME`), the suite sets `GUARDED_HOME_REFUSALS` and ends on `home_refusals_none`, and it runs the scan. No case may override or unset `GUARDED_HOME_REFUSALS` (an `env -i` child included): a refusal there fails safe but is not recorded. | health-tracker, in its own re-vendor PR |
 | reflection's `hook-bypass-scan.sh` carries the new pattern lines | `assert_patterns_match_lib` compares only `HOOK_BYPASS` and `HOOK_BYPASS_ANY_CASE`; at re-vendor it copies the new `HOOK_BYPASS`, `HOOK_BYPASS_EXEMPT` and `HOOK_BYPASS_TOKEN`, its `scan_bypasses` gains the exemption and token lines, and the comparison covers all four. | reflection, in its own re-vendor PR |
 
 ## Standards-text change — merge order

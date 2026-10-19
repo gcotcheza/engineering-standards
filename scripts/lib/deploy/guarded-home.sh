@@ -1,7 +1,8 @@
-# fleet-deploy-lib 2026-10-18 sha256:5394de699b5330e586e1bf82cc9eb2a136b8867b21eae2728105673e41895a4c
+# fleet-deploy-lib 2026-10-18 sha256:44115a68df9e542571d1aab0ea870eaecec7bdc048d013f61df98f48370992df
 # shellcheck shell=bash
 # A test's HOME, in the one form the hook-bypass scan lets through: HOME="$(guarded_home)". docs/DECISIONS.md (card 540)
 # A refusal appends to GUARDED_HOME_REFUSALS (unset is itself a refusal); a suite ends red unless home_refusals_none returns 0.
+# Overridden or unset for one call (env -i too), a refusal goes unrecorded; it still fails safe with the /proc HOME.
 
 _guarded_home_refuse() {
     printf 'guarded_home refused: %s\n' "$1" >&2

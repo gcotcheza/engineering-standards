@@ -8,11 +8,16 @@ empty, mode-700 directory of the caller's own under `GUARDED_HOME_PARENT` (else 
 HOME under `/proc` and a line appended to `GUARDED_HOME_REFUSALS`; `home_refusals_none` is red while
 that file holds one, and a suite ends on it. `test.sh`'s scan gains `HOOK_BYPASS_EXEMPT`, which lets
 that exact text through only when whitespace, `;`, `&`, `|` or the line end follows it, and
-`HOOK_BYPASS_TOKEN`: any `guarded_home` left after that, quote marks removed, is red. A project that
+`HOOK_BYPASS_TOKEN`: any `guarded_home` left after that, quote marks and backslashes removed, is
+red (a name built at runtime, `$'...'` or `"${G}"`, is left to review). Continued lines now join as
+bash joins them, with nothing added where the backslash-newline was. A project that
 vendors the patterns (Reflection's `hook-bypass-scan.sh`) copies the new lines when it re-vendors.
-Cases in `test.sh`: the sanctioned form in four positions; seventeen forms that stay red; a made HOME
-that is empty and under its parent; a setgid home taken; nine refusals, each recorded; a refused
-call turning the suite end red.
+Cases in `test.sh`: the sanctioned form in four positions and on an indented continuation; nineteen
+forms that stay red, a two-line `"$(guarded_home)"\` + `/../../root` among them; a made HOME that is
+empty and under its parent; a setgid home taken; nine refusals, each refused with its reason, the
+eight with `GUARDED_HOME_REFUSALS` set also recorded (the owner case runs only as root); a refused
+call still running its command under `/proc` and turning the suite end red. A refusal is recorded
+only while `GUARDED_HOME_REFUSALS` reaches the call: overridden or unset there, it fails safe unrecorded.
 
 Why: `docs/DECISIONS.md` (ruling 265, amended).
 

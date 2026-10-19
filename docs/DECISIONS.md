@@ -936,11 +936,16 @@ it. The parent must be sticky (like `/tmp`) or private to the caller, or another
 directory between the check and the command (TOCTOU). A refusal prints a HOME under `/proc`, where no
 config can exist, and returns 1, but a failed `$(...)` in an assignment cannot stop the command, so
 the refusal also appends its reason to `GUARDED_HOME_REFUSALS` (unset is itself a refusal) and the
-suite ends on `home_refusals_none`, which is red while that file holds a line. The scan deletes that
+suite ends on `home_refusals_none`, which is red while that file holds a line. That record is only as
+loud as the variable: a call that overrides `GUARDED_HOME_REFUSALS`, or a subshell or `env -i` child
+that unsets it, refuses without recording, so the suite end stays green; the command still runs with
+the `/proc` HOME, which fails safe (no config, so the hook runs), and review is the check for that. The scan deletes that
 exact text before it matches (`HOOK_BYPASS_EXEMPT`) only between a non-word character or line start
 and whitespace, `;`, `&`, `|` or line end; then any `guarded_home` left anywhere, with quote marks and
-backslashes removed first (`HOOK_BYPASS_TOKEN`), is red: a definition in any shape, `BASH_FUNC_`,
-`unset -f`, an executable of that name, an alias. Every other `HOME=` stays red, the same text after
+backslashes removed first (`HOOK_BYPASS_TOKEN`), is red: a definition (`name()`, `function name`,
+brace on the next line), `BASH_FUNC_`, `unset -f`, an executable of that name, an alias. A name built
+at runtime (ANSI-C `$'...'`, indirection like `"${G}"`) is not seen; review is the check for those.
+Continued lines are joined as bash joins them, the backslash-newline removed and nothing added. Every other `HOME=` stays red, the same text after
 `XDG_CONFIG_` included. A HOME that must be empty or unset is `env -u HOME`, not `HOME=`.
 
 **Built once per kind, then copied.** Committing through the hook per case meant 245 calls to the
