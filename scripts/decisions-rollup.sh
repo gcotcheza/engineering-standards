@@ -32,7 +32,7 @@ files=()
 dirty=$("${GIT}" status --porcelain -- "${LOG}" "${DIR}") || refuse "git status failed"
 [ -z "${dirty}" ] || refuse "uncommitted changes: $(tr '\n' ' ' <<<"${dirty}")"
 base=$("${GIT}" merge-base HEAD "${BASE_REF}" 2>/dev/null) || refuse "${BASE_REF} is not in this clone, so changes on main cannot be judged"
-on_main=$("${GIT}" diff --no-ext-diff --name-only "${base}" "${BASE_REF}" -- "${DIR}") || refuse "git diff against ${BASE_REF} failed"
+on_main=$("${GIT}" diff --name-only --no-ext-diff --no-textconv "${base}" "${BASE_REF}" -- "${DIR}") || refuse "the changed-file list against ${BASE_REF} could not be read"
 
 declare -A seen=()
 dates=(); slugs=()
