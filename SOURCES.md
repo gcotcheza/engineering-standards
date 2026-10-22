@@ -49,6 +49,7 @@ shared memory (the owner's standing instructions to the AI sessions).
 | S4 CSP, proved to reach the browser | A Laravel project's `docs/DECISIONS.md`: "`csp.spec.js`'s negative test… proves the detector can fail" |
 | S5 Pin what you depend on | A Laravel/Livewire project's `composer.json` (`config.platform.php`) and `CLAUDE.md` (Playwright driver pinned to the image tag — "Playwright refuses a mismatched pair"); `.nvmrc` in three projects; committed lockfiles in every PHP/JS project |
 | S6 Production checkouts are not workspaces | A Laravel project's `CLAUDE.md` ("This checkout IS production"); a Laravel/Livewire project's gate ("It refuses to run in the main working tree, which is the live site"); another project's gate script; the fleet's shared memory |
+| S8 A security finding is fixed first | The owner's direct instruction, 2026-10-22: "Make this a fleet rule, security updates are top prio"; the box's nightly `fleet-dep-audit` health row |
 
 ## Workflow
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-22 — S8: a security finding is fixed first (VERSION 2026-10-22.1)
+**New rule S8; the standard now has 40 rules** (Ghie, 2026-10-22). An advisory on an app's
+dependencies or runtime, dev-only packages included, is started by its owning session the same day,
+ahead of feature and card work, as its own pull request through the usual W2 review and gate, then
+to Ghie as soon as it is reviewed, never batched; dependabot-only pull requests stay under W3.
+Checked by review of the nightly `fleet-dep-audit` row until it is mechanised, with a full-severity
+audit including dev packages on a finding, because the gate's audits are scoped. `README.md` says
+40 rules and `SOURCES.md` has an S8 row. The standards text moved, so `VERSION` moves with it.
+
 ## 2026-10-22 — W7: decisions are one file each, rolled up by the change that adds the 10th (VERSION 2026-10-22)
 **Card 576.** W7 now asks for one file per decision in `docs/decisions/YYYY-MM-DD-HHMM-<slug>.md`;
 the change that adds the 10th file runs `scripts/decisions-rollup.sh`, which appends each as
