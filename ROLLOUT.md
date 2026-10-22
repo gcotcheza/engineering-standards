@@ -237,3 +237,15 @@ that clone is pulled to the new text, not when the pull request merges. The orde
 prepare the three re-vendor branches first, merge this change, pull the canonical clone, then gate
 and merge the three re-vendors back to back. The rest notice nothing until they bump, and
 `scripts/fleet-versions.sh` reports them `STALE` until then.
+
+## Decisions one file each (W7, card 576) — each app migrates by its owner
+
+The check and the roll-up run from the central checkout, so an app needs no vendored code: its
+owner (`/etc/fleet/app-owners`) adds the opening line to `docs/DECISIONS.md`, writes new decisions
+as files, moves its pointers to `decision: <slug>`, and adds `scripts/decisions-check.sh <root>` to
+its gate as an early step. KidsQuest goes first as the worked example.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| every app adopts W7's files and check | Each app's `## Title` entries and `docs/DECISIONS.md: <slug>` pointers do not resolve against `### <slug>`; its migration PR renames or rolls them, then wires the check into its gate. | each app's owner, KidsQuest first |
+| the W4 closing line in fleet briefs | `BRIEF-COMMON` rule 5 and each project's PR-body notes still quote `docs/DECISIONS.md.` and its old `sed` pattern. | the advisor (briefs), each owner (projects) |

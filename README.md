@@ -32,14 +32,25 @@ watchdog's line parser already reads.
 `scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script and
 `fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then the one
 step that judges this repo's own tree — VERSION and ENGINEERING-STANDARDS.md moved together,
-or neither moved — the five fixture-only tests and shellcheck (the pinned image, style
+or neither moved, W7's decisions check passes on this tree and W4's closing line still matches its
+word-count `sed` — the five fixture-only tests and shellcheck (the pinned image, style
 severity — a missing image is a loud failure, never a skip) in measured cost order, cheapest
 first. The order is a measurement, not a list to keep in your head; `scripts/check.sh` prints each step
 with its number and name as it runs. A full run records to the fleet gate ledger
 (`scripts/lib/deploy/ledger.sh`); `scripts/check.sh --only N` runs one step alone and
 records nothing, so debugging a step never pollutes the ledger. The long-form why —
 including the measurement behind the step order — is in `docs/DECISIONS.md`, because
-W7 applies to this repository too.
+W7 applies to this repository too: new decisions are files in `docs/decisions/`. The last step,
+W7's two fixture suites, is placed last unmeasured.
+
+`scripts/decisions-check.sh <project-root>` is W7's check and `scripts/decisions-rollup.sh
+<project-root>` its roll-up; both run from this checkout against an app root and are not vendored.
+The check is read-only and names every pointer that resolves nowhere, every line-number pointer,
+every duplicate slug or malformed file, a missing opening line, 10 unrolled files, and a roll-up
+that collided with another branch's. The roll-up folds every file into the bottom of
+`docs/DECISIONS.md`, `git rm`s each by name, stages the log and runs the check; it refuses, writing
+nothing, on uncommitted decision files, a file changed on main since the branch point, or a slug
+collision, and a second run is a no-op.
 
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and one of this repo's gate steps
 runs its fixtures. Point it at a project root and it names the compose files it read, the image

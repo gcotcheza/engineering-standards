@@ -1,5 +1,7 @@
 # Decisions
 
+> Newer decisions are one file each in docs/decisions/, until the change that adds the 10th folds them in at the bottom of this file (W7).
+
 Why this repository is shaped the way it is, where the reason is too long for a
 comment (C5) and too easy to lose (W7). One entry per decision, newest last; the
 code carries a one-line pointer here, never the argument itself.

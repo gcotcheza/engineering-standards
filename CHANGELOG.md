@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-22 — W7: decisions are one file each, rolled up by the change that adds the 10th (VERSION 2026-10-22)
+**Card 576.** W7 now asks for one file per decision in `docs/decisions/YYYY-MM-DD-HHMM-<slug>.md`;
+the change that adds the 10th file runs `scripts/decisions-rollup.sh`, which appends each as
+`### <slug>` to the bottom of `docs/DECISIONS.md` and `git rm`s it. Code points at a decision by
+`decision: <slug>`; line-number pointers are rejected. New `scripts/decisions-check.sh` (read-only)
+and `scripts/decisions-rollup.sh`, run from this checkout against an app root, not vendored, with
+fixture suites in `check.sh` step 9; the check runs on this tree in step 2. C5 and C9 point at a
+decision (W7) instead of `DECISIONS.md`, and W6 names the decisions. W4's closing line is now
+*Technical detail: commits and docs/decisions/.*, its `sed` pattern matches it, and
+`scripts/w4-closing-line-test.sh` holds the two together. This repo adopts the form: its first
+decision file explains the cadence. `README.md` and `SOURCES.md` follow. The standards text moved,
+so `VERSION` moves with it.
+
+Why: `docs/decisions/2026-10-22-2050-decisions-are-one-file-each.md`.
+
 ## 2026-10-16 — the deploy library counts root-owned paths, `.claude/**` aside (deploy-lib VERSION 2026-10-16; the standard is unchanged and VERSION is not bumped)
 **Card 527.** New `root_owned_count <dir>` in `ownership.sh` prints how many paths under `<dir>` root
 owns, leaving `<dir>/.claude/*` out, for an app's verify step and its `ROOT-OWNED` line. A `find` that
