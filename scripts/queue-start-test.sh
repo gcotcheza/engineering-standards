@@ -299,6 +299,9 @@ equals  'case 10f: nothing is recorded for a foreign line' "$( [ -e "${WORK}/sta
 rm -f "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed"
 
 # --- 10g-10k. card 581: the shared dialog check (scripts/lib/dialog-lib.sh) ---
+# The FX_ screens are read only by name, through ${!v} below.
+# shellcheck disable=SC2034
+{
 FX_list=$'⏺ MoneyWise upgrade is ready for you to merge: PR #19\n\n  - Nothing changes in how the app behaves for you. Merging doesn\'t deploy; orbit deploys afterwards.\n\n  Your asks:\n  1. Merge PR #19 when you are happy with it.\n  2. No rush: fill in ~/.config/fleet/personal-identifiers so the secrets check also blocks your personal details.\n\n────────────\n❯ \n────────────\n  ⏵⏵ auto mode on'
 FX_frame=$'╭──────────╮\n│ Do you want to make this edit to a.txt?\n│ ❯ 1. Yes\n│   2. No, and tell Claude what to do differently\n╰──────────╯'
 FX_footer=$' Do you want to make this edit to a.txt?\n   1. Yes\n   2. No, and tell Claude what to do differently\n\n Esc to cancel · Tab to amend'
@@ -325,6 +328,7 @@ FX_dotnbsp=$' Bash command\n ❯ 1.\xc2\xa0Yes'
 FX_nbspclass=$'⏺ Notes\n  \xc2\xa01. Yes we did\n❯ '
 FX_pickescfirst=$' Pick one\n   2. b\n   3. c\n Esc to cancel · Enter to select'
 FX_framedblockcut=$'│ ❯ 1. Postgres\n│   2. SQLite'
+}
 
 # Every dialog screen, verdict 0; NO_DIALOG_FX, verdict 1. A new FX_ literal is added here by name.
 DIALOG_FX='frame footer cursor dialog sgr edite nbsp framecursor proceed ulcolon osc8 block confirm
@@ -365,6 +369,7 @@ rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK
 
 # The verdicts themselves: a reply's list is no dialog (1), every real dialog is (0),
 # and a missing pinned locale fails closed (2).
+# shellcheck source=scripts/lib/dialog-lib.sh
 verdict() { ( . "${DLIB}"; DIALOG_LOCALE="${2:-${DIALOG_LOCALE}}"; dialog_on "$1" >/dev/null ); printf '%s' "$?"; }
 for fx in ${NO_DIALOG_FX}; do
     v="FX_${fx}"
