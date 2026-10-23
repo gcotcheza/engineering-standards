@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-23 — one shared dialog check for queue-start and the Pi autoclear (the standard is unchanged and VERSION is not bumped)
+**Card 581.** New `scripts/lib/dialog-lib.sh`, the master copy of the fleet's one dialog check:
+`dialog_on <screen>` returns 0 (a dialog, its lines on stdout), 1 (none) or 2 (no C.UTF-8 locale).
+It strips CSI (colon parameters too) and OSC 8 escapes, pins its own locale, reads a numbered
+Yes/No line only beside a dialog's own chrome, and also sees option blocks and exit
+confirmations. `scripts/queue-start.sh` drops its own `DIALOG_RE` and sources the lib through the
+new `QS_DIALOG_LIB` seam (default `/usr/local/lib/fleet/dialog-lib.sh`) before it touches any pane;
+a lib that does not load, or defines no `dialog_on`, logs one line, types nothing and exits 1. Both
+former checks go through `dialog_on`, and any rc but 1 defers. The retired `health` session leaves
+`KNOWN_SESSIONS`, as on the box. `scripts/queue-start-test.sh` gains the load failures, a defer and
+a delivery through the fake tmux, and the verdicts on the autoclear's screens; `scripts/queue-start-mutants.txt`
+is the T5 table for the new guards. `README.md` names the second install copy. The Pi's
+session-autoclear vendors the lib byte-identical.
+
+Why: `docs/decisions/2026-10-23-1950-one-shared-dialog-check.md`.
+
 ## 2026-10-23 — one shared runner for guard mutants (the standard is unchanged and VERSION is not bumped)
 **Card 578.** New `scripts/guard-mutants.sh <target> <table>`: per table row it changes one exact line in a copy of the target on disk and runs the row's case with `MUTANT_TARGET` set to the copy. Each case runs in its own fresh directory under a time limit (`GUARD_MUTANTS_TIMEOUT`, default 120s). The case must be green on an unmutated copy (else exit 2) and red on the mutant; a survivor, a mutant that does not parse and a timeout each exit 1, named. A row matching no line or several is refused before any case runs. Its own suite, `scripts/guard-mutants-test.sh`, is gate step 3; the old steps 3 to 8 are now 4 to 9.
 
