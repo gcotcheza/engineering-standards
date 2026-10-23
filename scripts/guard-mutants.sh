@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # T5's guard-deletion sweep: each table row changes one exact line of the target in a copy on disk, and the
-# row's case must pass on an unmutated copy and fail on the mutant. Why it is shaped this way: docs/DECISIONS.md.
+# row's case must pass on an unmutated copy and fail on the mutant. decision: one-guard-mutant-runner
 #
 #   scripts/guard-mutants.sh <target> <table>
 #   a row is   id@@case@@exact line@@replacement   (an empty replacement deletes the line; blank and # lines skip)

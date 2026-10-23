@@ -3,7 +3,38 @@
 ## 2026-10-23 — one shared runner for guard mutants (the standard is unchanged and VERSION is not bumped)
 **Card 578.** New `scripts/guard-mutants.sh <target> <table>`: per table row it changes one exact line in a copy of the target on disk and runs the row's case with `MUTANT_TARGET` set to the copy. Each case runs in its own fresh directory under a time limit (`GUARD_MUTANTS_TIMEOUT`, default 120s). The case must be green on an unmutated copy (else exit 2) and red on the mutant; a survivor, a mutant that does not parse and a timeout each exit 1, named. A row matching no line or several is refused before any case runs. Its own suite, `scripts/guard-mutants-test.sh`, is gate step 3; the old steps 3 to 8 are now 4 to 9.
 
-Why: `docs/DECISIONS.md`.
+Why: `docs/decisions/2026-10-23-0117-one-guard-mutant-runner.md`.
+
+## 2026-10-22 — S8: a security finding is fixed first (VERSION 2026-10-22.1)
+**New rule S8; the standard now has 40 rules** (Ghie, 2026-10-22). An advisory on an app's
+dependencies or runtime, dev-only packages included, is started by its owning session the same day,
+ahead of feature and card work, as its own pull request through the usual W2 review and gate, then
+to Ghie as soon as it is reviewed, never batched; a dependabot-only pull request may be merged by a
+session under W3's conditions. Checked by review of the nightly `fleet-dep-audit` row until it is
+mechanised (a `ROLLOUT.md` row); the checked-by names the audits' reach (composer production
+packages and npm in the gate, composer dev packages a personal-vps card, base image and OS by review
+only), with a full-severity audit including dev packages on a finding. `README.md` says
+40 rules and `SOURCES.md` has an S8 row. The standards text moved, so `VERSION` moves with it.
+
+## 2026-10-22 — W7: decisions are one file each, rolled up by the change that adds the 10th (VERSION 2026-10-22)
+**Card 576.** W7 now asks for one file per decision in `docs/decisions/YYYY-MM-DD-HHMM-<slug>.md`;
+the change that adds the 10th file runs `scripts/decisions-rollup.sh`, which appends each as
+`### <slug>` to the bottom of `docs/DECISIONS.md` and `git rm`s it. Code points at a decision by
+`decision: <slug>` (a comma list names each, and `DECISIONS:`/`DECISIONS.md:` spellings count);
+line-number pointers are rejected. Both scripts take a several-word git seam
+(`DECISIONS_GIT="git-as <app> -C <tree>"`), refuse a root that is not the top of its work tree,
+allow `docs/decisions/.gitkeep` and name CRLF endings; the roll-up also refuses a symlink and any
+file not in the full form, so it never drops line-2 prose. New `scripts/decisions-check.sh` (read-only)
+and `scripts/decisions-rollup.sh`, run from this checkout against an app root, not vendored, with
+fixture suites in `check.sh` step 10; the check runs on this tree in step 2. C5 and C9 point at a
+decision (W7) instead of `DECISIONS.md`, and W6 names the decisions. W4's closing line is now
+*Technical detail: commits and docs/decisions/.*, its `sed` pattern matches it, and
+`scripts/w4-closing-line-test.sh` holds the two together. This repo adopts the form: its first
+decision file explains the cadence, and #57's guard-mutant entry moves out of `DECISIONS.md` into a
+file of its own. `README.md` and `SOURCES.md` follow. The standards text moved,
+so `VERSION` moves with it.
+
+Why: `docs/decisions/2026-10-22-2050-decisions-are-one-file-each.md`.
 
 ## 2026-10-16 — the deploy library counts root-owned paths, `.claude/**` aside (deploy-lib VERSION 2026-10-16; the standard is unchanged and VERSION is not bumped)
 **Card 527.** New `root_owned_count <dir>` in `ownership.sh` prints how many paths under `<dir>` root

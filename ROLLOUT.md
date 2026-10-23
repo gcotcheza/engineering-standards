@@ -237,3 +237,27 @@ that clone is pulled to the new text, not when the pull request merges. The orde
 prepare the three re-vendor branches first, merge this change, pull the canonical clone, then gate
 and merge the three re-vendors back to back. The rest notice nothing until they bump, and
 `scripts/fleet-versions.sh` reports them `STALE` until then.
+
+## Decisions one file each (W7, card 576) — each app migrates by its owner
+
+The check and the roll-up run from the central checkout, so an app needs no vendored code: its
+owner (`/etc/fleet/app-owners`) adds `scripts/decisions-check.sh <root>` to its gate as an early
+step, with `DECISIONS_GIT="git-as <app> -C <root>"` where root's git refuses the app-owned tree
+(the seam takes several words), and writes new decisions as files. Measured 2026-10-23 with this
+branch's check against fresh clones of each app's GitHub main.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| `fleet-pr-lint` accepts both W4 closing lines | It must accept *Technical detail: commits and docs/decisions/.* beside the old line, as a separately stamped root packet. **Installed before #56 leaves draft**, or every PR written to the new W4 fails the lint. | the moderator (packet), Ghie (install) |
+| KidsQuest wires the check | Passes already (`ok (0 unrolled, 39 rolled up)`); its gate does not run it yet. | kidsquest |
+| Orbit wires the check | Passes already (`ok (0 unrolled, 51 rolled up)`); its gate does not run it yet. | orbit |
+| Fineprint migrates, a named case | 102 unrolled files (7 findings): its log is frozen since 2026-09-05 ("never append here") and lacks the opening line, and its `DECISIONS.md: <slug>` pointers name `## Title` entries. Its owner unfreezes the log (the opening line replaces the frozen note), renames or rolls the pointers, then runs the roll-up in one change. | fineprint's owner |
+| every other app | Not measured; each owner runs the check on a clone before wiring it. | each app's owner |
+| the W4 closing line in fleet briefs | `BRIEF-COMMON` rule 5 and each project's PR-body notes still quote `docs/DECISIONS.md.` and its old `sed` pattern. | the advisor (briefs), each owner (projects) |
+
+## S8 mechanised (card 576 round 2)
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| a red `fleet-dep-audit` row older than a day with no open fix PR alerts by itself | S8 is checked by review of the nightly row; nothing yet joins the row to open PRs. | personal-vps |
+| composer dev packages are audited | The gate's `composer audit --no-dev` skips them; a full-severity audit with dev packages runs only by hand on a finding. | personal-vps |

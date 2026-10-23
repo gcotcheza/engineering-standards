@@ -49,6 +49,7 @@ shared memory (the owner's standing instructions to the AI sessions).
 | S4 CSP, proved to reach the browser | A Laravel project's `docs/DECISIONS.md`: "`csp.spec.js`'s negative test… proves the detector can fail" |
 | S5 Pin what you depend on | A Laravel/Livewire project's `composer.json` (`config.platform.php`) and `CLAUDE.md` (Playwright driver pinned to the image tag — "Playwright refuses a mismatched pair"); `.nvmrc` in three projects; committed lockfiles in every PHP/JS project |
 | S6 Production checkouts are not workspaces | A Laravel project's `CLAUDE.md` ("This checkout IS production"); a Laravel/Livewire project's gate ("It refuses to run in the main working tree, which is the live site"); another project's gate script; the fleet's shared memory |
+| S8 A security finding is fixed first | The owner's direct instruction, 2026-10-22: "Make this a fleet rule, security updates are top prio"; the box's nightly `fleet-dep-audit` health row |
 
 ## Workflow
 
@@ -60,7 +61,7 @@ shared memory (the owner's standing instructions to the AI sessions).
 | W4 A title that is the action, then the four literal PR headings, ≤150 words | The fleet's shared memory (comment-style note: the template, and "The four headings are LITERAL… not a vibe"; and the owner's 2026-09-20 note on a PR named after its fault: "title should be action, 'what was done?'"); a Laravel project's `CLAUDE.md`, which holds the canonical wording |
 | W5 Avoid stacks; retarget before merging | The fleet's shared memory (git-workflow note), recording a PR that merged into an already-merged branch and never shipped |
 | W6 Stage by name; detail in the commit | The fleet's shared memory (git-workflow and comment-style notes: "Technical content belongs in commit messages, DECISIONS entries and the diff") |
-| W7 `docs/DECISIONS.md` per project | A Laravel project's `docs/DECISIONS.md` preamble; another project's equivalent `docs/rationale-*.md` |
+| W7 Decisions one file each, rolled into `docs/DECISIONS.md` at the 10th | A Laravel project's `docs/DECISIONS.md` preamble; another project's equivalent `docs/rationale-*.md`; a Symfony project's `docs/decisions/` (one file per decision since 2026-09-05); the owner's 2026-10-22 cadence: the change that adds the 10th file rolls them up, with no separate pull request |
 | W8 One deploy runbook per project | The `.claude/commands/deploy.md` runbooks of seven projects; the fleet's shared memory ("follow it literally; it encodes hard-won ordering") |
 | W9 Exercise, don't read the config | The fleet's shared memory (two standing instructions: prove a mechanism by running it, and execute rather than narrate) |
 | W10 Clean up after merge | The box's own disk incident: the health check's disk row sat red for ten days at 89% with 117 lanes and ~80 unused images left behind |

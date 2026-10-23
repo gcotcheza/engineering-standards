@@ -4,7 +4,7 @@ One engineering standard for a small fleet of production web apps — Laravel, S
 a couple of static sites — built and maintained by one person with an AI-assisted
 workflow, where most of the code is written by AI sessions and reviewed before it ships.
 
-`ENGINEERING-STANDARDS.md` is the standard itself: 39 rules in four groups (Code, Tests,
+`ENGINEERING-STANDARDS.md` is the standard itself: 40 rules in four groups (Code, Tests,
 Security & privacy, Workflow). Each rule is stated three ways — **the rule**, *why it
 exists*, and **how it is checked** — on the principle that a rule nothing checks is a
 preference, and preferences drift.
@@ -32,14 +32,22 @@ watchdog's line parser already reads.
 `scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script and
 `fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then the one
 step that judges this repo's own tree — VERSION and ENGINEERING-STANDARDS.md moved together,
-or neither moved — the six fixture-only tests and shellcheck (the pinned image, style
+or neither moved, W7's decisions check passes on this tree and W4's closing line still matches its
+word-count `sed` — the six fixture-only tests and shellcheck (the pinned image, style
 severity — a missing image is a loud failure, never a skip) in measured cost order, cheapest
 first. The order is a measurement, not a list to keep in your head; `scripts/check.sh` prints each step
 with its number and name as it runs. A full run records to the fleet gate ledger
 (`scripts/lib/deploy/ledger.sh`); `scripts/check.sh --only N` runs one step alone and
 records nothing, so debugging a step never pollutes the ledger. The long-form why —
 including the measurement behind the step order — is in `docs/DECISIONS.md`, because
-W7 applies to this repository too.
+W7 applies to this repository too: new decisions are files in `docs/decisions/`. The last step,
+W7's two fixture suites, is placed last unmeasured.
+
+`scripts/decisions-check.sh <project-root>` is W7's check and `scripts/decisions-rollup.sh
+<project-root>` its roll-up; both run from this checkout against an app root and are not vendored.
+The check is read-only; the roll-up folds every file into the bottom of `docs/DECISIONS.md`,
+`git rm`s each by name, stages the log and runs the check. What each fails or refuses on is listed
+in its own header.
 
 `scripts/guard-mutants.sh <target> <table>` is rule T5's guard-deletion sweep. Each table row,
 `id@@case@@exact line@@replacement` (an empty replacement deletes the line), changes that one line

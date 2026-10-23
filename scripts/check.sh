@@ -5,7 +5,8 @@
 #   1) bash -n on every tracked .sh file, then fleet-lint-guard-diff over scripts/ and a
 #      canary it must flag — a missing lint is a loud failure, never a skip (C9)
 #   2) scripts/version-text-pair.sh and its own test — VERSION and
-#      ENGINEERING-STANDARDS.md move together, or neither moves
+#      ENGINEERING-STANDARDS.md move together, or neither moves — then W7's
+#      decisions-check.sh on this tree and the W4 closing-line test
 #   3) scripts/guard-mutants-test.sh, the T5 guard-mutant runner's own test
 #   4) scripts/fleet-versions-test.sh, the fleet check's own test
 #   5) scripts/fleet-budget-test.sh, the budget gate's own test
@@ -15,8 +16,9 @@
 #   8) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
 #   9) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh), twice: from
 #      this tree, then from a copy owned by nobody, as an app's ci.sh runs it
+#  10) scripts/decisions-check-test.sh and decisions-rollup-test.sh, W7's fixtures
 #
-#   scripts/check.sh            all nine steps; records a FULL run to the fleet ledger
+#   scripts/check.sh            all ten steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
 #                                so nothing is recorded (the ledger only hears
 #                                about a full gate run)
@@ -54,6 +56,7 @@ step_name() {
         7) printf 'shellcheck' ;;
         8) printf 'gate-image-tags-test.sh' ;;
         9) printf 'deploy-lib test.sh' ;;
+        10) printf 'decisions tests' ;;
     esac
 }
 
@@ -62,8 +65,8 @@ ONLY=0
 case "${1:-}" in
     "") ;;
     --only)
-        case "${2:-}" in 1|2|3|4|5|6|7|8|9) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 9)" >&2; exit 2 ;; esac ;;
-    *) echo "usage: check.sh [--only N]  (N is 1 to 9)" >&2; exit 2 ;;
+        case "${2:-}" in 1|2|3|4|5|6|7|8|9|10) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 10)" >&2; exit 2 ;; esac ;;
+    *) echo "usage: check.sh [--only N]  (N is 1 to 10)" >&2; exit 2 ;;
 esac
 
 # Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
@@ -88,7 +91,7 @@ fail_step() {
 run_step() {
     [ "${FULL_RUN}" -eq 1 ] || [ "${ONLY}" -eq "$1" ] || return 0
     printf -- '--- step %s: %s ---\n' "$1" "$(step_name "$1")"
-    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; esac
+    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; 10) step_10 ;; esac
 }
 
 step_1() {
@@ -116,6 +119,8 @@ step_1() {
 step_2() {
     VERSION_PAIR_GIT="${GIT}" "${REPO_ROOT}/scripts/version-text-pair.sh" "${REPO_ROOT}" || fail_step 2
     "${REPO_ROOT}/scripts/version-text-pair-test.sh" || fail_step 2
+    DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 2
+    bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 2
 }
 
 step_3() {
@@ -168,7 +173,12 @@ step_9() {
     env -u DEPLOY_LIB_DIR bash "${APP_OWNED_LIB}/deploy/test.sh" || fail_step 9
 }
 
-for n in 1 2 3 4 5 6 7 8 9; do run_step "${n}"; done
+step_10() {
+    bash "${REPO_ROOT}/scripts/decisions-check-test.sh" || fail_step 10
+    bash "${REPO_ROOT}/scripts/decisions-rollup-test.sh" || fail_step 10
+}
+
+for n in 1 2 3 4 5 6 7 8 9 10; do run_step "${n}"; done
 
 # shellcheck disable=SC2034  # the EXIT trap's gate_ledger_record reads it
 GATE_SUITE_PASSED=1
