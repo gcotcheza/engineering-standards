@@ -26,6 +26,8 @@ half-installed box never reaches the typing code. It installs beside the fleet l
 like the others.
 
 **The T5 table is run by hand.** `scripts/queue-start-mutants.txt` holds the guard mutants
-(both load guards, the defer, rc 2 counting as a dialog, and the dialog checks after typing), all red on 2026-10-23. Each mutant
+(both load guards, the defer, rc 2 counting as a dialog, and the dialog checks after typing). On
+2026-10-23 all are red but qs-busy-no-dialog: the Enter loop now checks the same screen first,
+so that post-loop check cannot fire, and its fate is open in review round 2. Each mutant
 runs the whole queue-start suite, so the sweep is several times its cost; it stays out of
 `scripts/check.sh` until the step order is re-measured with it.
