@@ -125,6 +125,10 @@ deliver(){
   while :; do
     sleep "$SETTLE"
     screen="$(tmux_ capture-pane -peJ -S 0 -t "$pane" 2>/dev/null)" || screen=''
+    # An unread screen is not a dialog-free one: dialog_on "" says 1.
+    if [ -z "$screen" ]; then
+      log "transport: pane $pane unreadable after $try Enter(s) — no further keys sent, not recorded"; return 3
+    fi
     drc=0; dialog_on "$screen" >/dev/null || drc=$?
     if [ "$drc" -ne 1 ]; then
       log "defer: pane $pane is showing a dialog (dialog check rc $drc) after $try Enter(s) — no further keys sent, not recorded"

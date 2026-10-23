@@ -262,6 +262,7 @@ case "$sub" in
       busydialog) [ -s "$d/typed" ] && { cat "$d/screen"; printf '❯ %s\n' "$(cat "$d/typed")"; } || printf '❯ \n' ;;
       enterdialog) if grep -qx Enter "$d/keys" 2>/dev/null; then cat "$d/screen"
                    else [ -s "$d/typed" ] && printf '❯ %s\n' "$(cat "$d/typed")" || printf '❯ \n'; fi ;;
+      capfail) [ -s "$d/typed" ] && exit 1; printf '❯ \n' ;;
       *)       printf '❯ \n' ;;
     esac ;;
   send-keys)
@@ -403,6 +404,15 @@ live --once advisor
 contains 'case 10n: a dialog before the first Enter defers' "${OUT}" 'is showing a dialog (dialog check rc 0) after 0 Enter(s)'
 equals   'case 10n: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" ''
 equals   'case 10n: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
+rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
+
+# A pane that cannot be read once our sentence is in: no Enter into a screen nobody saw.
+echo capfail >"${WORK}/tmuxstate/mode"
+live --once advisor
+contains 'case 10o: an unreadable pane after typing is a transport failure' "${OUT}" 'transport: pane advisor:0.0 unreadable after 0 Enter(s) — no further keys sent'
+contains 'case 10o: it is not delivered' "${OUT}" 'not delivered advisor: item 71 (rc 3)'
+equals   'case 10o: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" ''
+equals   'case 10o: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
 rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
 
 # --- 11. the owners lint ------------------------------------------------------
