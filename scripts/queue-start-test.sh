@@ -313,9 +313,16 @@ FX_ulcolon=$' Do you want to make this edit to a.txt?\n \e[4:3m❯\e[24m 1. Yes\
 FX_osc8=$' Do you want to make this edit to a.txt?\n \e]8;;file:///a\e\\❯\e]8;;\e\\ 1. Yes\n   2. No'
 FX_block=$' Choose a model\n ❯ 1. Opus\n   2. Sonnet'
 FX_confirm=$' Exit Claude Code?\n Enter to confirm · Esc to cancel'
+FX_blocknbsp=$' Choose a model\n ❯\xc2\xa01. Opus\n   2. Sonnet'
+FX_framedblock=$'│ ❯ 1. Postgres\n│   2. SQLite\n│ Enter to select · Esc to cancel'
+FX_framenbsp=$'│ Bash command\n│ ❯\xc2\xa01. Yes'
+FX_cursorNo=$' Bash command\n ❯ 2. No'
+FX_badutf8=$' Bash command\n ❯ 1. Yes \xe2\x9d'
+FX_cursornbsp=$' Bash command\n ❯\xc2\xa01. Yes'
 
 # Every dialog screen, verdict 0; FX_list alone is 1. A new FX_ literal is added here by name.
-DIALOG_FX='frame footer cursor dialog sgr edite nbsp framecursor proceed ulcolon osc8 block confirm'
+DIALOG_FX='frame footer cursor dialog sgr edite nbsp framecursor proceed ulcolon osc8 block confirm
+  blocknbsp framedblock framenbsp cursorNo badutf8 cursornbsp'
 typed() { [ -e "${WORK}/tmuxstate/typed" ] && echo yes || echo no; }
 
 QS_LIB="${WORK}/no-such-dialog-lib.sh" live --once advisor
