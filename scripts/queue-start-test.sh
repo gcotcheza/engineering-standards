@@ -319,10 +319,18 @@ FX_framenbsp=$'│ Bash command\n│ ❯\xc2\xa01. Yes'
 FX_cursorNo=$' Bash command\n ❯ 2. No'
 FX_badutf8=$' Bash command\n ❯ 1. Yes \xe2\x9d'
 FX_cursornbsp=$' Bash command\n ❯\xc2\xa01. Yes'
+FX_pickcrop=$' Which database?\n   2. SQLite\n   3. Type something.\n Enter to select · ↑/↓ to navigate · Esc to cancel'
+FX_pickclose=$' Pick a session\n   4. old-run\n   5. other-run\n ↑/↓ to navigate · Enter to select · Esc to close'
+FX_dotnbsp=$' Bash command\n ❯ 1.\xc2\xa0Yes'
+FX_nbspclass=$'⏺ Notes\n  \xc2\xa01. Yes we did\n❯ '
+FX_pickescfirst=$' Pick one\n   2. b\n   3. c\n Esc to cancel · Enter to select'
+FX_framedblockcut=$'│ ❯ 1. Postgres\n│   2. SQLite'
 
-# Every dialog screen, verdict 0; FX_list alone is 1. A new FX_ literal is added here by name.
+# Every dialog screen, verdict 0; NO_DIALOG_FX, verdict 1. A new FX_ literal is added here by name.
 DIALOG_FX='frame footer cursor dialog sgr edite nbsp framecursor proceed ulcolon osc8 block confirm
-  blocknbsp framedblock framenbsp cursorNo badutf8 cursornbsp'
+  blocknbsp framedblock framenbsp cursorNo badutf8 cursornbsp
+  pickcrop pickclose pickescfirst dotnbsp framedblockcut'
+NO_DIALOG_FX='list nbspclass'
 typed() { [ -e "${WORK}/tmuxstate/typed" ] && echo yes || echo no; }
 
 QS_LIB="${WORK}/no-such-dialog-lib.sh" live --once advisor
@@ -358,7 +366,10 @@ rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK
 # The verdicts themselves: a reply's list is no dialog (1), every real dialog is (0),
 # and a missing pinned locale fails closed (2).
 verdict() { ( . "${DLIB}"; DIALOG_LOCALE="${2:-${DIALOG_LOCALE}}"; dialog_on "$1" >/dev/null ); printf '%s' "$?"; }
-equals 'case 10l: FX_list' "$(verdict "${FX_list}")" 1
+for fx in ${NO_DIALOG_FX}; do
+    v="FX_${fx}"
+    equals "case 10l: FX_${fx}" "$(verdict "${!v}")" 1
+done
 for fx in ${DIALOG_FX}; do
     v="FX_${fx}"
     equals "case 10l: FX_${fx}" "$(verdict "${!v}")" 0

@@ -21,17 +21,18 @@ dialog_on(){
   # A numbered Yes/No line is an option only beside a dialog's own chrome (card 574):
   # a ❯ cursor and/or │ frame on an option row, or the Esc-to-cancel footer. A reply's list is not.
   printf '%s\n' "$s" | grep -aqE '^[[:space:]]*❯'"$w"'*[0-9]+\.|^[[:space:]]*│('"$w"'|❯)*[0-9]+\.|Esc to cancel' \
-    && re="$re"'|^[[:space:]]*([^[:alnum:]]'"$w"'*){0,2}[0-9]+\.[[:space:]]+(Yes|No)([[:space:],]|$)'
+    && re="$re"'|^[[:space:]]*([^[:alnum:]]'"$w"'*){0,2}[0-9]+\.'"$w"'+(Yes|No)([[:space:],]|$)'
   out="$(printf '%s\n' "$s" | grep -aE "$re" || true)"
   # An option block: a `❯ n.` marker, framed or not, with a second numbered option under it.
   if [ -z "$out" ] && printf '%s\n' "$s" | grep -aqE '^[[:space:]]*(│'"$w"'*)?❯'"$w"'*[0-9]+\.[[:space:]]*[^[:space:]]'; then
     out="$(printf '%s\n' "$s" | grep -aE '^[[:space:]]*(│'"$w"'*)?❯?'"$w"'*[0-9]+\.[[:space:]]*[^[:space:]]' || true)"
     [ "$(printf '%s\n' "$out" | grep -ac .)" -ge 2 ] || out=''
   fi
-  # An exit confirmation: Enter-to-confirm beside Esc-to-cancel.
-  if [ -z "$out" ] && printf '%s\n' "$s" | grep -aq 'Enter to confirm' \
-     && printf '%s\n' "$s" | grep -aq 'Esc to cancel'; then
-    out="$(printf '%s\n' "$s" | grep -aE 'Enter to confirm|Esc to cancel' || true)"
+  # An exit confirmation or a picker cropped above its ❯ row: its footer's Enter to
+  # confirm/select beside Esc to cancel/close.
+  if [ -z "$out" ] && printf '%s\n' "$s" | grep -aqE 'Enter to (confirm|select)' \
+     && printf '%s\n' "$s" | grep -aqE 'Esc to (cancel|close)'; then
+    out="$(printf '%s\n' "$s" | grep -aE 'Enter to (confirm|select)|Esc to (cancel|close)' || true)"
   fi
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
