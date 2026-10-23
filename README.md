@@ -220,5 +220,6 @@ sources that lib; if it is missing or defines no `dialog_on`, the tick logs one 
 nothing and exits 1. `scripts/lib/dialog-lib.sh` is the master copy of the fleet's one "is a
 dialog on this pane?" check: `dialog_on <screen>` returns 0 (a dialog, its lines on stdout), 1
 (none) or 2 (no C.UTF-8 locale), and anything but 1 counts as a dialog. The Pi's session-autoclear
-vendors it byte-identical, so a change here is re-vendored there. The T5 table for queue-start's
-guards is `scripts/queue-start-mutants.txt`, run by hand with `scripts/guard-mutants.sh`.
+vendors it byte-identical, so a change here is re-vendored there. The T5 tables for queue-start's
+guards and the owners lint's sessions are `scripts/queue-start-mutants.txt` and
+`scripts/backlog-owners-lint-mutants.txt`, run by hand with `scripts/guard-mutants.sh`.

@@ -8,6 +8,7 @@
 #   scripts/queue-start-test.sh
 #   QUEUE_START_SH=/tmp/mutant.sh scripts/queue-start-test.sh   the red proofs
 #   scripts/guard-mutants.sh scripts/queue-start.sh scripts/queue-start-mutants.txt   T5's sweep
+#   scripts/guard-mutants.sh scripts/backlog-owners-lint.py scripts/backlog-owners-lint-mutants.txt
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -258,10 +259,12 @@ case "$sub" in
       busy)    [ -s "$d/typed" ] && printf '❯ %s\n' "$(cat "$d/typed")" || printf '❯ \n' ;;
       foreign) [ -s "$d/typed" ] && printf '❯ some other pending thought\n' || printf '❯ \n' ;;
       screen)  cat "$d/screen" ;;
+      busydialog) [ -s "$d/typed" ] && { cat "$d/screen"; printf '❯ %s\n' "$(cat "$d/typed")"; } || printf '❯ \n' ;;
       *)       printf '❯ \n' ;;
     esac ;;
   send-keys)
-    if [ "${@: -1}" = Enter ]; then :; else printf '%s' "${@: -1}" >"$d/typed"; fi ;;
+    printf '%s\n' "${@: -1}" >>"$d/keys"
+    case "${@: -1}" in Enter) ;; C-u) rm -f "$d/typed" ;; *) printf '%s' "${@: -1}" >"$d/typed" ;; esac ;;
   display-message) printf '2' ;;
 esac
 SH
@@ -355,6 +358,18 @@ for fx in ${DIALOG_FX}; do
 done
 equals 'case 10l: no pinned locale' "$(LC_ALL=C verdict "${FX_list}" xx_XX.UTF-8)" 2
 
+# Our sentence stuck in the row while a dialog came up: not queued, so not recorded,
+# and after the Enters only our own line is cleared (C-u), nothing else is typed.
+rm -f "${WORK}/tmuxstate/keys"
+echo busydialog >"${WORK}/tmuxstate/mode"
+printf '%s\n' "${FX_frame}" >"${WORK}/tmuxstate/screen"
+live --once advisor
+lacks    'case 10m: a stuck line under a dialog is not called queued' "${OUT}" 'queued in a busy pane'
+contains 'case 10m: it is not delivered' "${OUT}" 'not delivered advisor: item 71 (rc 3)'
+equals   'case 10m: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" 'Enter Enter Enter C-u '
+equals   'case 10m: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
+rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
+
 # --- 11. the owners lint ------------------------------------------------------
 lint() { LOUT="$("${LINT}" "${WORK}/backlog.md" "$1" 2>&1)"; LRC=$?; }
 
@@ -385,6 +400,11 @@ matches 'case 11d: an item that is not in the backlog is red' "${LOUT}" 'item 40
 { cat "${WORK}/owners-good"; printf 'advisor 33 please\n'; } >"${WORK}/owners-malformed"
 lint "${WORK}/owners-malformed"
 matches 'case 11e: a malformed line is red' "${LOUT}" 'line 5: not .<item> <session> \[hold\].'
+
+sed 's/^33 advisor/33 health/' "${WORK}/owners-good" >"${WORK}/owners-health"
+lint "${WORK}/owners-health"
+matches 'case 11f: the retired health session is refused' "${LOUT}" "item 33 names unknown session 'health'"
+equals  'case 11f: exit code' "${LRC}" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nqueue-start-test: all checks passed\n'

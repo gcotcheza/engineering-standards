@@ -1,0 +1,3 @@
+# T5 mutant for scripts/backlog-owners-lint.py (card 581), for scripts/guard-mutants.sh.
+#   QUEUE_START_TEST=$PWD/scripts/queue-start-test.sh scripts/guard-mutants.sh scripts/backlog-owners-lint.py scripts/backlog-owners-lint-mutants.txt
+lint-health-retired@@OWNERS_LINT_PY="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@SESSIONS = {"advisor", "personal-vps", "orbit", "kidsquest"}@@SESSIONS = {"advisor", "personal-vps", "orbit", "health", "kidsquest"}
