@@ -5,3 +5,4 @@ qs-lib-dialog-on@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@decl
 qs-defer@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  if [ "$drc" -ne 1 ]; then@@  if false; then
 qs-non1-is-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  if [ "$drc" -ne 1 ]; then@@  if [ "$drc" -eq 0 ]; then
 qs-busy-no-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@     && no_dialog "$screen"; then@@     && true; then
+qs-loop-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@    if [ "$drc" -ne 1 ]; then@@    if false; then

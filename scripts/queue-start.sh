@@ -121,13 +121,19 @@ deliver(){
     log "defer: pane $pane has text in the input line"; return 4
   fi
   tmux_ send-keys -t "$pane" -l -- "$text" || { log "transport: send-keys text failed for $pane"; return 3; }
-  while [ "$try" -lt "$ENTER_TRIES" ]; do
-    sleep "$SETTLE"
-    tmux_ send-keys -t "$pane" Enter || { log "transport: send-keys Enter failed for $pane"; return 3; }
+  # Every capture is checked before the next key: an Enter on a dialog answers it "1. Yes".
+  while :; do
     sleep "$SETTLE"
     screen="$(tmux_ capture-pane -peJ -S 0 -t "$pane" 2>/dev/null)" || screen=''
+    drc=0; dialog_on "$screen" >/dev/null || drc=$?
+    if [ "$drc" -ne 1 ]; then
+      log "defer: pane $pane is showing a dialog (dialog check rc $drc) after $try Enter(s) — no further keys sent, not recorded"
+      return 4
+    fi
     row="$(prompt_row "$screen")"
-    if [ -n "$row" ] && [ -z "$(input_text "$row")" ]; then return 0; fi
+    if [ "$try" -gt 0 ] && [ -n "$row" ] && [ -z "$(input_text "$row")" ]; then return 0; fi
+    [ "$try" -lt "$ENTER_TRIES" ] || break
+    tmux_ send-keys -t "$pane" Enter || { log "transport: send-keys Enter failed for $pane"; return 3; }
     try=$((try + 1))
   done
   if [ -z "$row" ]; then

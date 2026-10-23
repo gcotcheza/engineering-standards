@@ -260,6 +260,8 @@ case "$sub" in
       foreign) [ -s "$d/typed" ] && printf '❯ some other pending thought\n' || printf '❯ \n' ;;
       screen)  cat "$d/screen" ;;
       busydialog) [ -s "$d/typed" ] && { cat "$d/screen"; printf '❯ %s\n' "$(cat "$d/typed")"; } || printf '❯ \n' ;;
+      enterdialog) if grep -qx Enter "$d/keys" 2>/dev/null; then cat "$d/screen"
+                   else [ -s "$d/typed" ] && printf '❯ %s\n' "$(cat "$d/typed")" || printf '❯ \n'; fi ;;
       *)       printf '❯ \n' ;;
     esac ;;
   send-keys)
@@ -381,16 +383,26 @@ for fx in ${DIALOG_FX}; do
 done
 equals 'case 10l: no pinned locale' "$(LC_ALL=C verdict "${FX_list}" xx_XX.UTF-8)" 2
 
-# Our sentence stuck in the row while a dialog came up: not queued, so not recorded,
-# and after the Enters only our own line is cleared (C-u), nothing else is typed.
+# A dialog that comes up after the first Enter: no further key at all (an Enter would
+# answer it "1. Yes", and even C-u lands on it), deferred like any dialog, not recorded.
 rm -f "${WORK}/tmuxstate/keys"
+echo enterdialog >"${WORK}/tmuxstate/mode"
+printf '%s\n' "${FX_dialog}" >"${WORK}/tmuxstate/screen"
+live --once advisor
+contains 'case 10m: a dialog after the first Enter defers' "${OUT}" 'defer: pane advisor:0.0 is showing a dialog (dialog check rc 0) after 1 Enter(s) — no further keys sent'
+lacks    'case 10m: it is not called queued' "${OUT}" 'queued in a busy pane'
+contains 'case 10m: it is not delivered' "${OUT}" 'not delivered advisor: item 71 (rc 4)'
+equals   'case 10m: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" 'Enter '
+equals   'case 10m: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
+rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
+
+# A dialog already up when our sentence lands: not one Enter.
 echo busydialog >"${WORK}/tmuxstate/mode"
 printf '%s\n' "${FX_frame}" >"${WORK}/tmuxstate/screen"
 live --once advisor
-lacks    'case 10m: a stuck line under a dialog is not called queued' "${OUT}" 'queued in a busy pane'
-contains 'case 10m: it is not delivered' "${OUT}" 'not delivered advisor: item 71 (rc 3)'
-equals   'case 10m: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" 'Enter Enter Enter C-u '
-equals   'case 10m: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
+contains 'case 10n: a dialog before the first Enter defers' "${OUT}" 'is showing a dialog (dialog check rc 0) after 0 Enter(s)'
+equals   'case 10n: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" ''
+equals   'case 10n: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
 rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
 
 # --- 11. the owners lint ------------------------------------------------------

@@ -8,7 +8,9 @@ Yes/No line only beside a dialog's own chrome, and also sees option blocks and e
 confirmations. `scripts/queue-start.sh` drops its own `DIALOG_RE` and sources the lib through the
 new `QS_DIALOG_LIB` seam (default `/usr/local/lib/fleet/dialog-lib.sh`) before it touches any pane;
 a lib that does not load, or defines no `dialog_on`, logs one line, types nothing and exits 1. Both
-former checks go through `dialog_on`, and any rc but 1 defers. The retired `health` session leaves
+former checks go through `dialog_on`, and any rc but 1 defers. The Enter loop runs the check on every
+capture before its next key: a dialog that comes up after our line is typed stops it with no
+further key, not even C-u, and the item is deferred, not recorded. The retired `health` session leaves
 `KNOWN_SESSIONS`, as on the box, and `scripts/backlog-owners-lint.py` now refuses a `health` line. `scripts/queue-start-test.sh` gains the load failures, a defer and
 a delivery through the fake tmux, and the verdicts on the autoclear's screens; `scripts/queue-start-mutants.txt`
 is the T5 table for the new guards. `README.md` names the second install copy. The Pi's

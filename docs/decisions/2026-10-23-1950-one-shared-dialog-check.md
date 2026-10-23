@@ -13,7 +13,9 @@ none, 2 no C.UTF-8 locale); the autoclear vendors it byte-identical, and the dia
 `scripts/queue-start-test.sh` are the same literals as the autoclear's suite.
 
 **Only rc 1 means no dialog.** A check that cannot read the pane (rc 2, or any surprise) defers,
-because typing into a dialog answers it and waiting costs one tick.
+because typing into a dialog answers it and waiting costs one tick. That holds inside the Enter
+loop too: every capture is checked before the next key, and a dialog stops the loop with no
+further key at all, since an Enter answers it "1. Yes" and even a C-u lands on it.
 
 **A lib that does not load stops the tick, with exit 1.** queue-start otherwise exits 0, since a
 cron job that fails loudly at 3am is a pager. Without the lib it cannot tell a dialog from a reply,
@@ -23,7 +25,7 @@ half-installed box never reaches the typing code. It installs beside the fleet l
 `/usr/local/lib/fleet/`, in the same packet as the queue-start copy, behind a `QS_DIALOG_LIB` seam
 like the others.
 
-**The T5 table is run by hand.** `scripts/queue-start-mutants.txt` holds the four guard mutants
-(both load guards, the defer, and rc 2 counting as a dialog), all red on 2026-10-23. Each mutant
+**The T5 table is run by hand.** `scripts/queue-start-mutants.txt` holds the guard mutants
+(both load guards, the defer, rc 2 counting as a dialog, and the dialog checks after typing), all red on 2026-10-23. Each mutant
 runs the whole queue-start suite, so the sweep is several times its cost; it stays out of
 `scripts/check.sh` until the step order is re-measured with it.
