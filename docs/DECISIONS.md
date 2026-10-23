@@ -1750,3 +1750,34 @@ mount needs `CAP_SYS_ADMIN`, which the suite run as nobody does not have.
 The skip goes into a `find -path` glob, so a `<dir>` holding `*`, `?`, `[` or `\` is refused rather
 than escaped: no app tree has one. Its cases live in `ownership-test.sh`, the nested
 `app/x/.claude/f` (counted) among them. deploy-lib `VERSION` moves to `2026-10-16`.
+
+## One guard-mutant runner, holding only what every packet's copy meant the same way (2026-10-23, card 578)
+
+Six hand-written T5 sweeps existed (card 434b `run-mutants.sh` and `run-install-mutants.sh`, their
+434c copies and `run-reap-mutants.sh`, card 491 `guard-mutants.sh`). `scripts/guard-mutants.sh` takes
+what all six do the same way (C1) and nothing that only some do (C2):
+
+| | every copy | where they differ — left to the caller |
+|---|---|---|
+| mutation | one line changed in a copy saved on disk | exact-line text (434b/c) or a grep-picked line number (install, 491) |
+| no-op | a copy equal to the original is not a mutant | it exits (434b/c) or counts as not red (install, reap, 491) |
+| verdict | the suite run against the mutant | named `FAIL <case>` lines (434b/c) or a last line not `0 failed` (install, 491) |
+| result | a line per mutant, a count, non-zero unless all red | serial or `xargs -P 3`; root (reap) or nobody; temp under `TMPDIR`, `/tmp` or a dir aside |
+
+**The table is exact text, never a line number.** A number cannot be refused when it hits the wrong
+line; text that matches no line, or more than one, is refused before any case runs, so a mutant can
+never silently no-op. A target with two identical guard lines needs one of them reworded first.
+
+**A case is a shell command and its verdict is its exit code**, run with `MUTANT_TARGET` set to the
+copy. That covers both verdict styles (a case can grep a log for `^FAIL T3 `) and both ways a suite
+was handed its mutant (an env var, or the copy dropped into a packet tree). Who runs it and how
+parallel is the caller's: a sweep of a script that copies, chmods or deletes still runs as `nobody`.
+
+**New: the case must be green on an unmutated copy.** No source copy checked this, and a case already
+red on the original makes every mutant "red" and proves nothing. Each distinct case runs once on the
+original, and a red one refuses the run.
+
+**Step 2, by measurement.** `guard-mutants-test.sh` timed 0.22, 0.23 and 0.42s, under step 3's
+0.59–0.66s, so it runs second and the old steps 2–8 are now 3–9. It runs as `bash <file>`, since the
+file is not executable. Proven on card 491's 40-line selection, converted in a lane: `40, 40 red`,
+matching that packet's own sweep. Moving the packets onto the runner is later work.
