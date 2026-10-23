@@ -4,9 +4,9 @@
 # are in docs/DECISIONS.md. Re-measure before reordering.
 #   1) bash -n on every tracked .sh file, then fleet-lint-guard-diff over scripts/ and a
 #      canary it must flag — a missing lint is a loud failure, never a skip (C9)
-#   2) scripts/guard-mutants-test.sh, the T5 guard-mutant runner's own test
-#   3) scripts/version-text-pair.sh and its own test — VERSION and
+#   2) scripts/version-text-pair.sh and its own test — VERSION and
 #      ENGINEERING-STANDARDS.md move together, or neither moves
+#   3) scripts/guard-mutants-test.sh, the T5 guard-mutant runner's own test
 #   4) scripts/fleet-versions-test.sh, the fleet check's own test
 #   5) scripts/fleet-budget-test.sh, the budget gate's own test
 #   6) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
@@ -46,8 +46,8 @@ gate_ledger_arm
 step_name() {
     case "$1" in
         1) printf 'bash -n, guard-diff lint' ;;
-        2) printf 'guard-mutants-test.sh' ;;
-        3) printf 'version-text-pair' ;;
+        2) printf 'version-text-pair' ;;
+        3) printf 'guard-mutants-test.sh' ;;
         4) printf 'fleet-versions-test.sh' ;;
         5) printf 'fleet-budget-test.sh' ;;
         6) printf 'queue-start-test.sh' ;;
@@ -114,12 +114,12 @@ step_1() {
 }
 
 step_2() {
-    bash "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 2
+    VERSION_PAIR_GIT="${GIT}" "${REPO_ROOT}/scripts/version-text-pair.sh" "${REPO_ROOT}" || fail_step 2
+    "${REPO_ROOT}/scripts/version-text-pair-test.sh" || fail_step 2
 }
 
 step_3() {
-    VERSION_PAIR_GIT="${GIT}" "${REPO_ROOT}/scripts/version-text-pair.sh" "${REPO_ROOT}" || fail_step 3
-    "${REPO_ROOT}/scripts/version-text-pair-test.sh" || fail_step 3
+    bash "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 3
 }
 
 step_4() {

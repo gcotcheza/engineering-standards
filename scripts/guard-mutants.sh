@@ -4,8 +4,9 @@
 #
 #   scripts/guard-mutants.sh <target> <table>
 #   a row is   id@@case@@exact line@@replacement   (an empty replacement deletes the line; blank and # lines skip)
-#   a case is a bash command run with MUTANT_TARGET set to the copy: exit 0 is green, anything else is red
-#   exit 0: every mutant went red; 1: a mutant survived; 2: usage, or a refused row or original
+#   a case is a bash command run in a fresh empty directory with MUTANT_TARGET set to the copy: exit 0 is
+#   green, anything else is red, except a case over GUARD_MUTANTS_TIMEOUT seconds (default 120), a failure
+#   exit 0: every mutant went red; 1: a mutant survived, timed out or does not parse; 2: usage, or a refused row or original
 set -euo pipefail
 
 usage() { printf 'usage: guard-mutants.sh <target> <table>\n' >&2; exit 2; }
@@ -16,6 +17,8 @@ TARGET=$1
 TABLE=$2
 [ -f "${TARGET}" ] || refuse "the target is not a regular file: ${TARGET}"
 [ -f "${TABLE}" ] || refuse "the table is not a regular file: ${TABLE}"
+LIMIT=${GUARD_MUTANTS_TIMEOUT:-120}
+[[ ${LIMIT} =~ ^(0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(\.[0-9]+)?)$ ]] || refuse "GUARD_MUTANTS_TIMEOUT is not a number of seconds above 0: ${LIMIT}"
 NAME=${TARGET##*/}
 SEP='@@'
 
@@ -40,8 +43,31 @@ while IFS= read -r row || [ -n "${row}" ]; do
 done <"${TABLE}"
 [ "${#ids[@]}" -gt 0 ] || refuse "the table names no mutant: ${TABLE}"
 
+child=''
+cleanup() {
+    [ -z "${child}" ] || { kill -TERM "${child}" 2>/dev/null || true; wait "${child}" 2>/dev/null || true; }
+    rm -rf -- "${WORK:?}"
+}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/guard-mutants.XXXXXX")
-trap 'rm -rf -- "${WORK:?}"' EXIT
+trap cleanup EXIT
+
+# run_case <dir> <case>: sets rc; the case's cwd is a fresh <dir>/cwd, its output <dir>/case.log
+run_case() {
+    mkdir -- "$1/cwd"
+    (
+        cd -- "$1/cwd" || exit 125
+        MUTANT_TARGET=$1/${NAME} exec timeout -k 5 "${LIMIT}" bash -c "$2"
+    ) >"$1/case.log" 2>&1 &
+    child=$!
+    rc=0
+    wait "${child}" || rc=$?
+    child=''
+}
+timed_out() { [ "$1" -eq 124 ] || [ "$1" -eq 137 ]; }
+last_line() { tail -n 1 -- "$1/case.log"; }
+
+parse_check=1
+bash -n -- "${TARGET}" 2>/dev/null || { parse_check=0; printf 'guard-mutants: the target is not bash, so mutants are not parse-checked\n'; }
 
 declare -A original_green=()
 for i in "${!ids[@]}"; do
@@ -49,13 +75,13 @@ for i in "${!ids[@]}"; do
     d=${WORK}/original-${ids[i]}
     mkdir -- "${d}"
     cp -p -- "${TARGET}" "${d}/${NAME}"
-    rc=0
-    MUTANT_TARGET=${d}/${NAME} bash -c "${cases[i]}" >"${d}/case.log" 2>&1 || rc=$?
-    [ "${rc}" -eq 0 ] || refuse "mutant ${ids[i]}: its case is red (exit ${rc}) on the unmutated original, so a red mutant would prove nothing; last line: $(tail -n 1 -- "${d}/case.log")"
+    run_case "${d}" "${cases[i]}"
+    ! timed_out "${rc}" || refuse "mutant ${ids[i]}: its case timed out after ${LIMIT}s on the unmutated original"
+    [ "${rc}" -eq 0 ] || refuse "mutant ${ids[i]}: its case is red (exit ${rc}) on the unmutated original, so a red mutant would prove nothing; last line: $(last_line "${d}")"
     original_green[${cases[i]}]=1
 done
 
-red=0 survived=0
+red=0 survived=0 unparsed=0 slow=0
 for i in "${!ids[@]}"; do
     d=${WORK}/m-${ids[i]}
     mkdir -- "${d}"
@@ -63,12 +89,15 @@ for i in "${!ids[@]}"; do
     OLD=${olds[i]} NEW=${news[i]} awk '($0 "") == ENVIRON["OLD"] { if (ENVIRON["NEW"] != "") print ENVIRON["NEW"]; next } { print }' \
         "${TARGET}" >"${d}/mutant"
     cat -- "${d}/mutant" >"${d}/${NAME}"
-    rc=0
-    MUTANT_TARGET=${d}/${NAME} bash -c "${cases[i]}" >"${d}/case.log" 2>&1 || rc=$?
+    if [ "${parse_check}" -eq 1 ] && ! bash -n -- "${d}/${NAME}" 2>/dev/null; then
+        unparsed=$((unparsed + 1)); printf 'MUTANT %s: REFUSED, does not parse: %s\n' "${ids[i]}" "${olds[i]}"; continue
+    fi
+    run_case "${d}" "${cases[i]}"
+    ! timed_out "${rc}" || { slow=$((slow + 1)); printf 'MUTANT %s: TIMED OUT after %ss, which is not red: %s\n' "${ids[i]}" "${LIMIT}" "${olds[i]}"; continue; }
     [ "${rc}" -ne 0 ] || { survived=$((survived + 1)); printf 'MUTANT %s: SURVIVED, its case stayed green with this line changed: %s\n' "${ids[i]}" "${olds[i]}"; continue; }
     red=$((red + 1))
-    printf 'MUTANT %s: red (case exit %s): %s\n' "${ids[i]}" "${rc}" "${olds[i]}"
+    printf 'MUTANT %s: red (case exit %s): %s\n    last line: %s\n' "${ids[i]}" "${rc}" "${olds[i]}" "$(last_line "${d}")"
 done
 
-printf 'guard mutants: %s, %s red, %s survived\n' "${#ids[@]}" "${red}" "${survived}"
-[ "${survived}" -eq 0 ] || exit 1
+printf 'guard mutants: %s, %s red, %s survived, %s do not parse, %s timed out\n' "${#ids[@]}" "${red}" "${survived}" "${unparsed}" "${slow}"
+[ "$((survived + unparsed + slow))" -eq 0 ] || exit 1

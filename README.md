@@ -44,9 +44,11 @@ W7 applies to this repository too.
 `scripts/guard-mutants.sh <target> <table>` is rule T5's guard-deletion sweep. Each table row,
 `id@@case@@exact line@@replacement` (an empty replacement deletes the line), changes that one line
 in a copy of the target saved on disk and runs the case, a bash command with `MUTANT_TARGET` set to
-the copy. The case must pass on an unmutated copy and fail on the mutant; a mutant whose case stays
-green fails the run (exit 1) and is named. A row whose line matches no line, or more than one, is
-refused (exit 2) before any case runs. Run it as `nobody` when the target copies, chmods or deletes.
+the copy, in a fresh empty directory of its own. The case must pass on an unmutated copy and fail on
+the mutant; a mutant whose case stays green, whose bash copy does not parse, or whose case runs past
+`GUARD_MUTANTS_TIMEOUT` seconds (default 120) fails the run (exit 1) and is named. A row whose line
+matches no line, or more than one, is refused (exit 2) before any case runs. Run it as `nobody` when
+the target copies, chmods or deletes.
 
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and one of this repo's gate steps
 runs its fixtures. Point it at a project root and it names the compose files it read, the image

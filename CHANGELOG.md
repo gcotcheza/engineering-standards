@@ -1,7 +1,7 @@
 # Changelog
 
 ## 2026-10-23 — one shared runner for guard mutants (the standard is unchanged and VERSION is not bumped)
-**Card 578.** New `scripts/guard-mutants.sh <target> <table>`: per table row it changes one exact line in a copy of the target on disk and runs the row's case with `MUTANT_TARGET` set to the copy. The case must be green on an unmutated copy (else exit 2) and red on the mutant; a survivor exits 1, named. A row matching no line or several is refused before any case runs. Its own suite, `scripts/guard-mutants-test.sh`, is gate step 2; the old steps 2 to 8 are now 3 to 9.
+**Card 578.** New `scripts/guard-mutants.sh <target> <table>`: per table row it changes one exact line in a copy of the target on disk and runs the row's case with `MUTANT_TARGET` set to the copy. Each case runs in its own fresh directory under a time limit (`GUARD_MUTANTS_TIMEOUT`, default 120s). The case must be green on an unmutated copy (else exit 2) and red on the mutant; a survivor, a mutant that does not parse and a timeout each exit 1, named. A row matching no line or several is refused before any case runs. Its own suite, `scripts/guard-mutants-test.sh`, is gate step 3; the old steps 3 to 8 are now 4 to 9.
 
 Why: `docs/DECISIONS.md`.
 

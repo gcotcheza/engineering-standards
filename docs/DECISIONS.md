@@ -1777,7 +1777,17 @@ parallel is the caller's: a sweep of a script that copies, chmods or deletes sti
 red on the original makes every mutant "red" and proves nothing. Each distinct case runs once on the
 original, and a red one refuses the run.
 
-**Step 2, by measurement.** `guard-mutants-test.sh` timed 0.22, 0.23 and 0.42s, under step 3's
-0.59–0.66s, so it runs second and the old steps 2–8 are now 3–9. It runs as `bash <file>`, since the
-file is not executable. Proven on card 491's 40-line selection, converted in a lane: `40, 40 red`,
-matching that packet's own sweep. Moving the packets onto the runner is later work.
+**A red only counts when the case really ran (review of #57).** A mutant whose copy fails `bash -n`
+is refused, not red: a syntax error fails almost any case. A target that is not bash on the original
+(491's Python) skips that check, and says so. Each case runs in a fresh empty directory, so state a
+case leaves cannot fake red on the next run nor land in the caller's cwd, and under `timeout`
+(`GUARD_MUTANTS_TIMEOUT`, default 120s, fractions allowed so the suite stays quick); a timeout is a
+failure, never red. The case runs as a background job the runner `wait`s on, because bash defers a
+trap until a foreground child exits; bash runs the EXIT trap on TERM and HUP itself (measured: an
+extra `trap 'exit 143' TERM` survived deletion), and that trap stops the case and removes the temp dir.
+
+**Step 3, by measurement.** Best of three on 2026-10-23: `version-text-pair` 0.64s, then
+`guard-mutants-test.sh` 1.30, `fleet-versions-test.sh` 1.38, `fleet-budget-test.sh` 1.30 — the last
+three within noise — so it runs third and the old steps 3–8 are now 4–9. Proven on card 491's 40-line
+selection, converted in a lane: `40, 40 red`, matching that packet's own sweep (before this round's
+changes). Moving the packets onto the runner is later work.
