@@ -45,12 +45,9 @@ W7's two fixture suites, is placed last unmeasured.
 
 `scripts/decisions-check.sh <project-root>` is W7's check and `scripts/decisions-rollup.sh
 <project-root>` its roll-up; both run from this checkout against an app root and are not vendored.
-The check is read-only and names every pointer that resolves nowhere, every line-number pointer,
-every duplicate slug or malformed file, a missing opening line, 10 unrolled files, and a roll-up
-that collided with another branch's. The roll-up folds every file into the bottom of
-`docs/DECISIONS.md`, `git rm`s each by name, stages the log and runs the check; it refuses, writing
-nothing, on uncommitted decision files, a file changed on main since the branch point, or a slug
-collision, and a second run is a no-op.
+The check is read-only; the roll-up folds every file into the bottom of `docs/DECISIONS.md`,
+`git rm`s each by name, stages the log and runs the check. What each fails or refuses on is listed
+in its own header.
 
 `scripts/guard-mutants.sh <target> <table>` is rule T5's guard-deletion sweep. Each table row,
 `id@@case@@exact line@@replacement` (an empty replacement deletes the line), changes that one line

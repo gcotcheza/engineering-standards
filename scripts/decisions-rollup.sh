@@ -5,16 +5,19 @@
 #
 #   scripts/decisions-rollup.sh <repo-root>
 #
-# Refuses, writing nothing, on uncommitted decision files, a file changed on main
-# since the branch point, or a slug collision; a second run is a no-op.
-# DECISIONS_GIT, DECISIONS_BASE_REF and DECISIONS_CHECK_SH are the seams.
+# Refuses, writing nothing, on a root that is not the top of its work tree, uncommitted
+# decision files, a file changed on main since the branch point, a slug collision, a bad
+# name, a symlink or directory, CRLF endings, or a file not in the full form (# <Title>,
+# blank line, prose); .gitkeep is kept; a second run is a no-op.
+# DECISIONS_GIT (it may be several words: git-as <app> -C <tree>), DECISIONS_BASE_REF and
+# DECISIONS_CHECK_SH are the seams.
 # Each guard below is one deletable line, so T5's mutant is a line deletion.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${1:?usage: decisions-rollup.sh <repo-root>}"
 cd -- "${ROOT}" || exit 2
-GIT=${DECISIONS_GIT:-git}
+read -ra GIT <<<"${DECISIONS_GIT:-git}"
 BASE_REF=${DECISIONS_BASE_REF:-origin/main}
 CHECK=${DECISIONS_CHECK_SH:-${SCRIPT_DIR}/decisions-check.sh}
 LOG='docs/DECISIONS.md'
@@ -24,15 +27,17 @@ NAME_RE='^([0-9]{4}-[0-9]{2}-[0-9]{2})-[0-9]{4}-([a-z0-9]+(-[a-z0-9]+)+)\.md$'
 refuse() { printf 'decisions-rollup: %s — nothing was written.\n' "$*" >&2; exit 1; }
 
 export LC_ALL=C
+top=$("${GIT[@]}" rev-parse --show-toplevel 2>&1) || { printf 'decisions-rollup: %s is not a git work tree: %s — nothing was written.\n' "${ROOT}" "${top}" >&2; exit 2; }
+[ "${top}" = "$(pwd -P)" ] || { printf 'decisions-rollup: %s is not the top of its work tree (%s) — nothing was written.\n' "${ROOT}" "${top}" >&2; exit 2; }
 files=()
-[ -d "${DIR}" ] && for f in "${DIR}"/*; do [ -e "$f" ] && files+=("$f"); done
+[ -d "${DIR}" ] && for f in "${DIR}"/*; do { [ -e "$f" ] || [ -L "$f" ]; } && files+=("$f"); done
 [ "${#files[@]}" -gt 0 ] || { printf 'decisions-rollup: %s/ holds no decisions; nothing to roll up.\n' "${DIR}"; exit 0; }
 
 [ -f "${LOG}" ] || refuse "${LOG} does not exist"
-dirty=$("${GIT}" status --porcelain -- "${LOG}" "${DIR}") || refuse "git status failed"
+dirty=$("${GIT[@]}" status --porcelain -- "${LOG}" "${DIR}") || refuse "git status failed"
 [ -z "${dirty}" ] || refuse "uncommitted changes: $(tr '\n' ' ' <<<"${dirty}")"
-base=$("${GIT}" merge-base HEAD "${BASE_REF}" 2>/dev/null) || refuse "${BASE_REF} is not in this clone, so changes on main cannot be judged"
-on_main=$("${GIT}" diff --name-only --no-ext-diff --no-textconv "${base}" "${BASE_REF}" -- "${DIR}") || refuse "the changed-file list against ${BASE_REF} could not be read"
+base=$("${GIT[@]}" merge-base HEAD "${BASE_REF}" 2>/dev/null) || refuse "${BASE_REF} is not in this clone, so changes on main cannot be judged"
+on_main=$("${GIT[@]}" diff --name-only --no-ext-diff --no-textconv "${base}" "${BASE_REF}" -- "${DIR}") || refuse "the changed-file list against ${BASE_REF} could not be read"
 
 declare -A seen=()
 dates=(); slugs=()
@@ -42,7 +47,11 @@ for f in "${files[@]}"; do
     ! grep -qxF -- "${f}" <<<"${on_main}" || refuse "${f} changed on main since this branch began; rebase onto main first"
     [ -z "${seen[${slug}]:-}" ] || refuse "slug ${slug} is used by ${seen[${slug}]} and ${f}"
     ! grep -qxF -- "### ${slug}" "${LOG}" || refuse "slug ${slug} is already rolled up in ${LOG}"
+    if [ ! -f "$f" ] || [ -L "$f" ]; then refuse "${f} is not a plain file"; fi
+    ! grep -q $'\r' -- "$f" || refuse "${f} has CRLF line endings; save it with LF endings"
     head -n 1 -- "$f" | grep -qE '^# [^[:space:]]' || refuse "${f}: line 1 is not '# <Title>'"
+    [ -z "$(sed -n 2p -- "$f")" ] || refuse "${f}: line 2 is not blank, and the roll-up would drop it"
+    [ -n "$(sed -n 3p -- "$f")" ] || refuse "${f}: no prose after the title"
     seen[${slug}]=${f}
 done
 
@@ -61,8 +70,8 @@ chown --reference="${LOG}" -- "${tmp}" || refuse "could not copy ${LOG}'s owner"
 mv -- "${tmp}" "${LOG}" || refuse "could not replace ${LOG}"
 
 for f in "${files[@]}"; do
-    "${GIT}" rm -q -- "${f}" || { printf 'decisions-rollup: git rm %s failed after %s was written.\n' "${f}" "${LOG}" >&2; exit 1; }
+    "${GIT[@]}" rm -q -- "${f}" || { printf 'decisions-rollup: git rm %s failed after %s was written.\n' "${f}" "${LOG}" >&2; exit 1; }
 done
-"${GIT}" add -- "${LOG}" || { printf 'decisions-rollup: git add %s failed.\n' "${LOG}" >&2; exit 1; }
+"${GIT[@]}" add -- "${LOG}" || { printf 'decisions-rollup: git add %s failed.\n' "${LOG}" >&2; exit 1; }
 printf 'decisions-rollup: rolled %s decision(s) into %s\n' "${#files[@]}" "${LOG}"
 bash "${CHECK}" "${PWD}"

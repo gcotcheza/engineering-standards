@@ -124,5 +124,42 @@ fresh; chown nobody: "${R}/docs/DECISIONS.md"; chmod 640 "${R}/docs/DECISIONS.md
 equals  'case 8: exit code' "${RC}" 0
 equals  'case 8: owner and mode' "$(stat -c '%U %a' "${R}/docs/DECISIONS.md")" 'nobody 640'
 
+# --- 9. the full form, or nothing: line-2 prose and a bare title refuse ----------------------
+fresh; printf '# T\nprose on line 2\n\nBody.\n' >"${R}/docs/decisions/2026-02-01-0900-file-1.md"; commit 'Line 2 prose'; snap; run
+matches 'case 9a: line-2 prose refuses' "${OUT}" 'file-1\.md: line 2 is not blank, and the roll-up would drop it'
+equals  'case 9a: exit code' "${RC}" 1; unchanged 'case 9a'
+fresh; printf '# T\n\n' >"${R}/docs/decisions/2026-02-01-0900-file-1.md"; commit 'No prose'; snap; run
+matches 'case 9b: no prose refuses' "${OUT}" 'file-1\.md: no prose after the title'
+equals  'case 9b: exit code' "${RC}" 1; unchanged 'case 9b'
+
+# --- 10. a symlink is not followed ------------------------------------------------------------
+fresh; printf '# Outside\n\nNot ours.\n' >"${WORK}/outside${n}.md"
+ln -s "${WORK}/outside${n}.md" "${R}/docs/decisions/2026-02-03-0900-a-link.md"; commit 'Added a link'; snap; run
+matches 'case 10: a symlink refuses' "${OUT}" '2026-02-03-0900-a-link\.md is not a plain file'
+equals  'case 10: exit code' "${RC}" 1; unchanged 'case 10'
+
+# --- 11. a subdirectory as the root refuses -----------------------------------------------------
+fresh; mkdir "${R}/sub"; printf '# Decisions\n' >"${R}/sub/x"; snap; OUT="$(bash "${ROLLUP}" "${R}/sub" 2>&1)"; RC=$?
+matches 'case 11: a subdirectory refuses' "${OUT}" 'is not the top of its work tree'
+equals  'case 11: exit code' "${RC}" 2; unchanged 'case 11'
+
+# --- 12. a several-word git seam, and git's own words when it fails -------------------------------
+fresh; OUT="$(DECISIONS_GIT="git -C ${R}" bash "${ROLLUP}" "${R}" 2>&1)"; RC=$?
+matches 'case 12a: git -C <tree> as the seam rolls up' "${OUT}" 'rolled 2 decision\(s\)'
+equals  'case 12a: exit code' "${RC}" 0
+fresh; snap; OUT="$(DECISIONS_GIT="git -C ${WORK}/no-such-tree" bash "${ROLLUP}" "${R}" 2>&1)"; RC=$?
+matches 'case 12b: git stderr is kept' "${OUT}" 'is not a git work tree: fatal: cannot change to'
+equals  'case 12b: exit code' "${RC}" 2; unchanged 'case 12b'
+
+# --- 13. .gitkeep stays --------------------------------------------------------------------------
+fresh; : >"${R}/docs/decisions/.gitkeep"; git -C "${R}" add -f -- docs/decisions/.gitkeep; git -C "${R}" commit -q -m 'Kept the dir'; run
+equals  'case 13: exit code' "${RC}" 0
+equals  'case 13: .gitkeep is kept' "$(ls -A "${R}/docs/decisions")" '.gitkeep'
+
+# --- 14. CRLF refuses -----------------------------------------------------------------------------
+fresh; printf '# T\r\n\r\nBody\r\n' >"${R}/docs/decisions/2026-02-01-0900-file-1.md"; commit 'CRLF'; snap; run
+matches 'case 14: CRLF refuses' "${OUT}" 'file-1\.md has CRLF line endings; save it with LF endings'
+equals  'case 14: exit code' "${RC}" 1; unchanged 'case 14'
+
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'decisions-rollup-test: all cases passed\n'

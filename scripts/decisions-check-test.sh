@@ -51,12 +51,12 @@ equals  'case 1: exit code' "${RC}" 0
 
 # --- 2. a pointer that resolves nowhere --------------------------------------------
 fresh; printf 'x # %s: no-such-one\n' "${KW}" >>"${R}/src/app.sh"; run
-matches 'case 2: dangling pointer is named with its line' "${OUT}" "src/app.sh:4: pointer '${KW}: no-such-one' resolves to no"
+matches 'case 2: dangling pointer is named with its line' "${OUT}" "src/app.sh:4: pointer to no-such-one \\('${KW}: no-such-one'\\) resolves to no"
 equals  'case 2: exit code' "${RC}" 1
 
 # --- 3. a legacy pointer that resolves nowhere -------------------------------------
 fresh; printf "see docs/%s: \`gone-away\`\n" "${D}" >"${R}/src/b.md"; git -C "${R}" add -- src; run
-matches 'case 3: dangling legacy pointer' "${OUT}" "src/b.md:1: pointer 'DECISIONS.md: .gone-away' resolves to no"
+matches 'case 3: dangling legacy pointer' "${OUT}" "src/b.md:1: pointer to gone-away \\('DECISIONS.md: .gone-away.'\\) resolves to no"
 equals  'case 3: exit code' "${RC}" 1
 
 # --- 4. line-number pointers ---------------------------------------------------------
@@ -139,6 +139,36 @@ chmod +x "${WORK}/bin/git-grep-fails"
 OUT="$(DECISIONS_GIT="${WORK}/bin/git-grep-fails" bash "${CHECK}" "${R}" 2>&1)"; RC=$?
 matches 'case 14: a failing git grep judges nothing' "${OUT}" 'git grep failed, so no pointer was judged'
 equals  'case 14: exit code' "${RC}" 2
+
+# --- 15. every slug of a comma list, across a wrapped line, in each spelling --------------------------
+fresh; printf "a docs/%s: \`first-one\`, \`list-gone\`, and \`second-one\`,\n\`wrap-gone\`.\nb %s: \`variant-gone\`\nc %s: first-one, rolled-one\n" "${D}" "${D%.md}" "${KW}" >"${R}/src/d.md"; git -C "${R}" add -- src; run
+matches 'case 15a: the second slug of a list' "${OUT}" 'src/d.md:1: pointer to list-gone '
+matches 'case 15b: a slug on the wrapped line' "${OUT}" 'src/d.md:2: pointer to wrap-gone '
+matches 'case 15c: the DECISIONS: spelling' "${OUT}" 'src/d.md:3: pointer to variant-gone '
+equals  'case 15: only those three' "$(grep -c 'pointer to' <<<"${OUT}")" 3
+equals  'case 15: exit code' "${RC}" 1
+
+# --- 16. a subdirectory or a mistyped root judges nothing ---------------------------------------------
+fresh; R="${R}/src"; run
+matches 'case 16: a subdirectory is refused' "${OUT}" 'is not the top of its work tree'
+equals  'case 16: exit code' "${RC}" 2
+
+# --- 17. a several-word git seam, and git's own words when it fails -------------------------------------
+fresh; OUT="$(DECISIONS_GIT="git -C ${R}" bash "${CHECK}" "${R}" 2>&1)"; RC=$?
+matches 'case 17a: git -C <tree> as the seam' "${OUT}" '^decisions-check: ok \(2 unrolled, 1 rolled up\)$'
+OUT="$(DECISIONS_GIT="git -C ${WORK}/no-such-tree" bash "${CHECK}" "${R}" 2>&1)"; RC=$?
+matches 'case 17b: git stderr is kept' "${OUT}" "is not a git work tree, so nothing was judged: fatal: cannot change to"
+equals  'case 17b: exit code' "${RC}" 2
+
+# --- 18. .gitkeep is allowed ----------------------------------------------------------------------------
+fresh; : >"${R}/docs/decisions/.gitkeep"; run
+equals  'case 18: .gitkeep exit code' "${RC}" 0
+
+# --- 19. CRLF says so -----------------------------------------------------------------------------------
+fresh; printf '# T\r\n\r\nBody\r\n' >"${R}/docs/decisions/2026-02-01-0900-first-one.md"; run
+matches 'case 19: CRLF is named' "${OUT}" '2026-02-01-0900-first-one.md: CRLF line endings; save it with LF endings$'
+equals  'case 19: no form finding on top' "$(grep -c 'line 2 is not blank' <<<"${OUT}")" 0
+equals  'case 19: exit code' "${RC}" 1
 
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'decisions-check-test: all cases passed\n'
