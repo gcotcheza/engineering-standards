@@ -7,17 +7,18 @@
 #   2) scripts/version-text-pair.sh and its own test — VERSION and
 #      ENGINEERING-STANDARDS.md move together, or neither moves — then W7's
 #      decisions-check.sh on this tree and the W4 closing-line test
-#   3) scripts/fleet-versions-test.sh, the fleet check's own test
-#   4) scripts/fleet-budget-test.sh, the budget gate's own test
-#   5) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
-#   6) shellcheck, style severity, in the pinned image — a missing image is a
+#   3) scripts/guard-mutants-test.sh, the T5 guard-mutant runner's own test
+#   4) scripts/fleet-versions-test.sh, the fleet check's own test
+#   5) scripts/fleet-budget-test.sh, the budget gate's own test
+#   6) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
+#   7) shellcheck, style severity, in the pinned image — a missing image is a
 #      loud failure here, never a silent skip (C9)
-#   7) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
-#   8) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh), twice: from
+#   8) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
+#   9) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh), twice: from
 #      this tree, then from a copy owned by nobody, as an app's ci.sh runs it
-#   9) scripts/decisions-check-test.sh and decisions-rollup-test.sh, W7's fixtures
+#  10) scripts/decisions-check-test.sh and decisions-rollup-test.sh, W7's fixtures
 #
-#   scripts/check.sh            all nine steps; records a FULL run to the fleet ledger
+#   scripts/check.sh            all ten steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
 #                                so nothing is recorded (the ledger only hears
 #                                about a full gate run)
@@ -48,13 +49,14 @@ step_name() {
     case "$1" in
         1) printf 'bash -n, guard-diff lint' ;;
         2) printf 'version-text-pair' ;;
-        3) printf 'fleet-versions-test.sh' ;;
-        4) printf 'fleet-budget-test.sh' ;;
-        5) printf 'queue-start-test.sh' ;;
-        6) printf 'shellcheck' ;;
-        7) printf 'gate-image-tags-test.sh' ;;
-        8) printf 'deploy-lib test.sh' ;;
-        9) printf 'decisions tests' ;;
+        3) printf 'guard-mutants-test.sh' ;;
+        4) printf 'fleet-versions-test.sh' ;;
+        5) printf 'fleet-budget-test.sh' ;;
+        6) printf 'queue-start-test.sh' ;;
+        7) printf 'shellcheck' ;;
+        8) printf 'gate-image-tags-test.sh' ;;
+        9) printf 'deploy-lib test.sh' ;;
+        10) printf 'decisions tests' ;;
     esac
 }
 
@@ -63,8 +65,8 @@ ONLY=0
 case "${1:-}" in
     "") ;;
     --only)
-        case "${2:-}" in 1|2|3|4|5|6|7|8|9) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 9)" >&2; exit 2 ;; esac ;;
-    *) echo "usage: check.sh [--only N]  (N is 1 to 9)" >&2; exit 2 ;;
+        case "${2:-}" in 1|2|3|4|5|6|7|8|9|10) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 10)" >&2; exit 2 ;; esac ;;
+    *) echo "usage: check.sh [--only N]  (N is 1 to 10)" >&2; exit 2 ;;
 esac
 
 # Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
@@ -89,7 +91,7 @@ fail_step() {
 run_step() {
     [ "${FULL_RUN}" -eq 1 ] || [ "${ONLY}" -eq "$1" ] || return 0
     printf -- '--- step %s: %s ---\n' "$1" "$(step_name "$1")"
-    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; esac
+    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; 10) step_10 ;; esac
 }
 
 step_1() {
@@ -122,57 +124,61 @@ step_2() {
 }
 
 step_3() {
-    "${REPO_ROOT}/scripts/fleet-versions-test.sh" || fail_step 3
+    bash "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 3
 }
 
 step_4() {
-    "${REPO_ROOT}/scripts/fleet-budget-test.sh" || fail_step 4
+    "${REPO_ROOT}/scripts/fleet-versions-test.sh" || fail_step 4
 }
 
 step_5() {
-    "${REPO_ROOT}/scripts/queue-start-test.sh" || fail_step 5
+    "${REPO_ROOT}/scripts/fleet-budget-test.sh" || fail_step 5
 }
 
 step_6() {
+    "${REPO_ROOT}/scripts/queue-start-test.sh" || fail_step 6
+}
+
+step_7() {
     if ! docker image inspect "${SHELLCHECK_IMAGE}" >/dev/null 2>&1; then
         printf 'shellcheck image %s is not present on this box — refusing to treat a missing image as a pass (C9).\n' \
             "${SHELLCHECK_IMAGE}" >&2
-        fail_step 6
+        fail_step 7
     fi
     local files
     files=$("${GIT}" ls-files '*.sh')
     [ -n "${files}" ] || return 0
     # shellcheck disable=SC2086
     docker run --rm --network none -v "${REPO_ROOT}:/mnt:ro" -w /mnt \
-        "${SHELLCHECK_IMAGE}" --severity=style ${files} || fail_step 6
-}
-
-step_7() {
-    "${REPO_ROOT}/scripts/gate-image-tags-test.sh" || fail_step 7
+        "${SHELLCHECK_IMAGE}" --severity=style ${files} || fail_step 7
 }
 
 step_8() {
-    "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 8
-    # An app vendors the lib into a tree it owns; a case that sources it in place is refused there.
-    APP_OWNED_LIB=$(mktemp -d -p /srv/worker-scratch deploy-lib-app-owned.XXXXXXXX) || fail_step 8
-    chmod 755 -- "${APP_OWNED_LIB}" || fail_step 8
-    cp -r -- "${REPO_ROOT}/scripts/lib/deploy" "${APP_OWNED_LIB}/deploy" || fail_step 8
-    chown -R nobody: -- "${APP_OWNED_LIB}/deploy" || fail_step 8
-    chmod -R a-w -- "${APP_OWNED_LIB}/deploy" || fail_step 8
-    if [ "$(stat -c %U "${APP_OWNED_LIB}/deploy/summary.sh")" != nobody ]; then
-        printf 'the app-owned copy of the deploy lib is not owned by nobody, so its run proves nothing.\n' >&2
-        fail_step 8
-    fi
-    printf -- '--- step 8: deploy-lib test.sh again, from %s/deploy (owner nobody, DEPLOY_LIB_DIR unset) ---\n' "${APP_OWNED_LIB}"
-    env -u DEPLOY_LIB_DIR bash "${APP_OWNED_LIB}/deploy/test.sh" || fail_step 8
+    "${REPO_ROOT}/scripts/gate-image-tags-test.sh" || fail_step 8
 }
 
 step_9() {
-    bash "${REPO_ROOT}/scripts/decisions-check-test.sh" || fail_step 9
-    bash "${REPO_ROOT}/scripts/decisions-rollup-test.sh" || fail_step 9
+    "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 9
+    # An app vendors the lib into a tree it owns; a case that sources it in place is refused there.
+    APP_OWNED_LIB=$(mktemp -d -p /srv/worker-scratch deploy-lib-app-owned.XXXXXXXX) || fail_step 9
+    chmod 755 -- "${APP_OWNED_LIB}" || fail_step 9
+    cp -r -- "${REPO_ROOT}/scripts/lib/deploy" "${APP_OWNED_LIB}/deploy" || fail_step 9
+    chown -R nobody: -- "${APP_OWNED_LIB}/deploy" || fail_step 9
+    chmod -R a-w -- "${APP_OWNED_LIB}/deploy" || fail_step 9
+    if [ "$(stat -c %U "${APP_OWNED_LIB}/deploy/summary.sh")" != nobody ]; then
+        printf 'the app-owned copy of the deploy lib is not owned by nobody, so its run proves nothing.\n' >&2
+        fail_step 9
+    fi
+    printf -- '--- step 9: deploy-lib test.sh again, from %s/deploy (owner nobody, DEPLOY_LIB_DIR unset) ---\n' "${APP_OWNED_LIB}"
+    env -u DEPLOY_LIB_DIR bash "${APP_OWNED_LIB}/deploy/test.sh" || fail_step 9
 }
 
-for n in 1 2 3 4 5 6 7 8 9; do run_step "${n}"; done
+step_10() {
+    bash "${REPO_ROOT}/scripts/decisions-check-test.sh" || fail_step 10
+    bash "${REPO_ROOT}/scripts/decisions-rollup-test.sh" || fail_step 10
+}
+
+for n in 1 2 3 4 5 6 7 8 9 10; do run_step "${n}"; done
 
 # shellcheck disable=SC2034  # the EXIT trap's gate_ledger_record reads it
 GATE_SUITE_PASSED=1

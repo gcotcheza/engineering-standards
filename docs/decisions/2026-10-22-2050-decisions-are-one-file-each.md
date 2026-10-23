@@ -37,7 +37,7 @@ one W7 quotes, and the check fails without it.
 
 **Where the check runs in this repo's gate.** The check on this tree and the W4 closing-line test
 take well under a second and sit in step 2 beside the other check of this tree's own text. The two
-fixture suites take about ten seconds each and are step 9, placed last without a measurement; the
+fixture suites take about ten seconds each and are step 10, placed last without a measurement; the
 order in `scripts/check.sh` should be re-measured before anyone moves them. Their guard-deletion
 mutants run as root in a scratch directory, not as `nobody`: the fixtures commit through the fleet
 hook, which blocks a `nobody` commit (its personal-data layer hop fails) and is never bypassed.

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-23 — one shared runner for guard mutants (the standard is unchanged and VERSION is not bumped)
+**Card 578.** New `scripts/guard-mutants.sh <target> <table>`: per table row it changes one exact line in a copy of the target on disk and runs the row's case with `MUTANT_TARGET` set to the copy. Each case runs in its own fresh directory under a time limit (`GUARD_MUTANTS_TIMEOUT`, default 120s). The case must be green on an unmutated copy (else exit 2) and red on the mutant; a survivor, a mutant that does not parse and a timeout each exit 1, named. A row matching no line or several is refused before any case runs. Its own suite, `scripts/guard-mutants-test.sh`, is gate step 3; the old steps 3 to 8 are now 4 to 9.
+
+Why: `docs/DECISIONS.md`.
+
 ## 2026-10-22 — S8: a security finding is fixed first (VERSION 2026-10-22.1)
 **New rule S8; the standard now has 40 rules** (Ghie, 2026-10-22). An advisory on an app's
 dependencies or runtime, dev-only packages included, is started by its owning session the same day,
@@ -15,7 +20,7 @@ the change that adds the 10th file runs `scripts/decisions-rollup.sh`, which app
 `### <slug>` to the bottom of `docs/DECISIONS.md` and `git rm`s it. Code points at a decision by
 `decision: <slug>`; line-number pointers are rejected. New `scripts/decisions-check.sh` (read-only)
 and `scripts/decisions-rollup.sh`, run from this checkout against an app root, not vendored, with
-fixture suites in `check.sh` step 9; the check runs on this tree in step 2. C5 and C9 point at a
+fixture suites in `check.sh` step 10; the check runs on this tree in step 2. C5 and C9 point at a
 decision (W7) instead of `DECISIONS.md`, and W6 names the decisions. W4's closing line is now
 *Technical detail: commits and docs/decisions/.*, its `sed` pattern matches it, and
 `scripts/w4-closing-line-test.sh` holds the two together. This repo adopts the form: its first

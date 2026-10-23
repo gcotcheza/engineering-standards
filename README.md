@@ -33,7 +33,7 @@ watchdog's line parser already reads.
 `fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then the one
 step that judges this repo's own tree — VERSION and ENGINEERING-STANDARDS.md moved together,
 or neither moved, W7's decisions check passes on this tree and W4's closing line still matches its
-word-count `sed` — the five fixture-only tests and shellcheck (the pinned image, style
+word-count `sed` — the six fixture-only tests and shellcheck (the pinned image, style
 severity — a missing image is a loud failure, never a skip) in measured cost order, cheapest
 first. The order is a measurement, not a list to keep in your head; `scripts/check.sh` prints each step
 with its number and name as it runs. A full run records to the fleet gate ledger
@@ -51,6 +51,15 @@ that collided with another branch's. The roll-up folds every file into the botto
 `docs/DECISIONS.md`, `git rm`s each by name, stages the log and runs the check; it refuses, writing
 nothing, on uncommitted decision files, a file changed on main since the branch point, or a slug
 collision, and a second run is a no-op.
+
+`scripts/guard-mutants.sh <target> <table>` is rule T5's guard-deletion sweep. Each table row,
+`id@@case@@exact line@@replacement` (an empty replacement deletes the line), changes that one line
+in a copy of the target saved on disk and runs the case, a bash command with `MUTANT_TARGET` set to
+the copy, in a fresh empty directory of its own. The case must pass on an unmutated copy and fail on
+the mutant; a mutant whose case stays green, whose bash copy does not parse, or whose case runs past
+`GUARD_MUTANTS_TIMEOUT` seconds (default 120) fails the run (exit 1) and is named. A row whose line
+matches no line, or more than one, is refused (exit 2) before any case runs. Run it as `nobody` when
+the target copies, chmods or deletes.
 
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and one of this repo's gate steps
 runs its fixtures. Point it at a project root and it names the compose files it read, the image
