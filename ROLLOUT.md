@@ -175,8 +175,8 @@ the survey eventually says — it measures the size of the backlog, not whether 
 `/usr/local/sbin/fleet-merged-reap`, on a timer every 15 minutes, which sources an installed copy at
 `/usr/local/lib/fleet-merged-reap/cleanup.sh`: a change here reaches production when that copy is
 re-installed, not through any project. No project's deploy calls it yet:
-no project vendors it, `LIB_FILES` in `scripts/fleet-versions.sh` does not compare it, and
-`scripts/lib/deploy/VERSION` has not moved, so no project is reported `DIVERGED` for a file it
+no project vendors it, `LIB_FILES` in `scripts/fleet-versions.sh` does not compare it (card 630's
+VERSION bump left that list alone), so no project is reported `DIVERGED` for a file it
 does not have. Arming it is one round of eight small pull requests, one per project, and they
 want doing together — the version bump that makes the fleet check see the file is the same
 change that would otherwise turn every project's row red for work nobody has done.
