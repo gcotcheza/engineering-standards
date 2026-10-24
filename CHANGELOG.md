@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-24 — the after-deploy cleanup sees root-owned files behind a linked worktree path (deploy-lib VERSION 2026-10-24.2; the standard is unchanged and VERSION is not bumped)
+**Card 676.** `cleanup_rootfiles` in `cleanup.sh` ran `find -P "$wt"`. `find -P` never enters a start
+point that is a symbolic link, and a worktree that was moved and linked back is listed by
+`git worktree list` under its link path. So a root-owned file inside was never seen, the check
+passed, and `worktree remove` ran as the app user, deleted the worktree's git record, then stopped
+on the root-owned file and left an orphaned directory. It now runs `find -P "$wt/"`, which enters
+the directory and still follows no link inside it. New case `cleanup-rootfiles-linked` in
+`test.sh` lists the worktree by a link path; it fails against the old line. Every header is
+re-stamped for 2026-10-24.2. Each project reads STALE in the fleet check until it re-vendors.
+
 ## 2026-10-24 — the deploy library ignores CDPATH, and its suite labels its scratch directories (deploy-lib VERSION 2026-10-24.1; the standard is unchanged and VERSION is not bumped)
 **Card 532.** Every `cd` in `summary.sh` and `compose.sh` now runs with `CDPATH` empty. With
 `CDPATH` set, a relative path such as `lib/deploy` resolved inside the decoy directory, and `cd`
