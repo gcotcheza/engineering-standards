@@ -187,6 +187,24 @@ matches 'case 5f: B re-gated after A merged fails on main'"'"'s VERSION' "${OUT}
 equals  'case 5f: exit code' "${RC}" 1
 g checkout -q main; g branch -q -D branch-b
 
+# --- 5g. main moved above the branch's bump: the bump must clear main's tip too ---
+reset_tree
+g checkout -q -b branch-c
+printf 'summary, edited by C\n' >"${LIB}/summary.sh"
+printf '2026-02-02\n' >"${LIB}/VERSION"
+commit 'Branch C: a lib edit and a bump between base and main'
+g checkout -q main
+printf 'summary, edited on main\n' >"${LIB}/summary.sh"
+printf '2026-03-03\n' >"${LIB}/VERSION"
+commit 'Main: a higher bump'
+g update-ref refs/remotes/origin/main HEAD
+g checkout -q branch-c
+OUT="$("${CHECK}" "${REPO}" 2>&1)"
+RC=$?
+matches 'case 5g: a bump below main'"'"'s tip fails, naming origin/main' "${OUT}" '^deploy-lib-version: scripts/lib/deploy/VERSION went to 2026-02-02, not above 2026-01-01 \(merge base\) and 2026-03-03 \(origin/main\) — one version must name one tree\.$'
+equals  'case 5g: exit code' "${RC}" 1
+g checkout -q main; g branch -q -D branch-c
+
 # --- 6. a git call that fails -> exit 2, nothing judged, no ok line -------------
 # fake <name> <shell test on "$@">: a git that exits 128 when the test holds.
 fake() {
