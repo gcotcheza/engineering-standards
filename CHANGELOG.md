@@ -1,8 +1,9 @@
 # Changelog
 
-## 2026-10-24 — queue-start and the dialog check hold under cron's C locale (the standard is unchanged and VERSION is not bumped)
+## 2026-10-24 — queue-start and the dialog check hold under a C locale (the standard is unchanged and VERSION is not bumped)
 **Card 595.** `scripts/queue-start.sh` now pins `LC_ALL=C.UTF-8` itself, as `dialog_on` already
-does: cron runs it under C, which reads ❯, │ and a no-break space as bytes. `scripts/queue-start-test.sh`
+does: a caller with a C locale (env -i, a job without the box's locale file) reads ❯, │ and a
+no-break space as bytes. Both boxes' cron load UTF-8 today, so nothing changes there. `scripts/queue-start-test.sh`
 gains verdicts under `LC_ALL=C` (a framed dialog is 0, a reply list 1) and a tick under `LC_ALL=C`
 through a copy of the check without its own pin. Deleting either pin turns them red: the new
 `scripts/dialog-lib-mutants.txt` and a row in `scripts/queue-start-mutants.txt` record it.

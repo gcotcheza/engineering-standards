@@ -383,7 +383,7 @@ for fx in ${DIALOG_FX}; do
     equals "case 10l: FX_${fx}" "$(verdict "${!v}")" 0
 done
 equals 'case 10l: no pinned locale' "$(LC_ALL=C verdict "${FX_list}" xx_XX.UTF-8)" 2
-# Cron's C locale (card 595): the check pins UTF-8 itself, so its verdicts hold there too.
+# A C locale (card 595): the check pins UTF-8 itself, so its verdicts hold there too.
 equals 'case 10l: FX_frame under LC_ALL=C' "$(LC_ALL=C verdict "${FX_frame}")" 0
 equals 'case 10l: FX_list under LC_ALL=C' "$(LC_ALL=C verdict "${FX_list}")" 1
 
@@ -418,7 +418,7 @@ equals   'case 10o: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/ke
 equals   'case 10o: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
 rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
 
-# Cron's C locale (card 595): queue-start pins UTF-8 itself, so even a copy of the check
+# A C locale (card 595): queue-start pins UTF-8 itself, so even a copy of the check
 # without its own pin still reads the pane.
 # shellcheck disable=SC2016  # the lib's own text, not our expansion
 sed 's/local -x LC_ALL="$DIALOG_LOCALE" 2>\/dev\/null; //' "${DLIB}" >"${WORK}/unpinned-lib.sh"
