@@ -7,3 +7,4 @@ qs-non1-is-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  i
 qs-busy-no-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@     && no_dialog "$screen"; then@@     && true; then
 qs-loop-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@    if [ "$drc" -ne 1 ]; then@@    if false; then
 qs-loop-unreadable@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@    if [ -z "$screen" ]; then@@    if false; then
+qs-locale-pin@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@export LC_ALL=C.UTF-8 2>/dev/null@@

@@ -1,0 +1,3 @@
+# T5 guard-deletion mutants for scripts/lib/dialog-lib.sh (card 595), for scripts/guard-mutants.sh.
+#   QUEUE_START_TEST=$PWD/scripts/queue-start-test.sh scripts/guard-mutants.sh scripts/lib/dialog-lib.sh scripts/dialog-lib-mutants.txt
+dl-locale-pin@@DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  local -x LC_ALL="$DIALOG_LOCALE" 2>/dev/null; local s out re='Do you want to proceed\?' c='❯'@@  local s out re='Do you want to proceed\?' c='❯'

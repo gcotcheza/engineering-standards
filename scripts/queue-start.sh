@@ -22,6 +22,8 @@
 # when the shared dialog check (scripts/lib/dialog-lib.sh) cannot load: one line, nothing typed.
 # =============================================================================
 set -uo pipefail
+# Cron runs us under C, which reads ❯, │ and a no-break space as bytes: pin UTF-8 (card 595).
+export LC_ALL=C.UTF-8 2>/dev/null
 
 OWNERS="${QS_OWNERS:-/root/backlog-owners}"
 BACKLOG="${QS_BACKLOG:-/root/backlog.md}"
