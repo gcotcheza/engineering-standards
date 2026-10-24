@@ -5,8 +5,9 @@
 #   1) bash -n on every tracked .sh file, then fleet-lint-guard-diff over scripts/ and a
 #      canary it must flag — a missing lint is a loud failure, never a skip (C9)
 #   2) scripts/version-text-pair.sh and its own test — VERSION and
-#      ENGINEERING-STANDARDS.md move together, or neither moves — then W7's
-#      decisions-check.sh on this tree and the W4 closing-line test
+#      ENGINEERING-STANDARDS.md move together, or neither moves — then
+#      scripts/deploy-lib-version.sh and its test (a lib change raises the lib's
+#      VERSION), W7's decisions-check.sh on this tree and the W4 closing-line test
 #   3) scripts/guard-mutants-test.sh, the T5 guard-mutant runner's own test
 #   4) scripts/fleet-versions-test.sh, the fleet check's own test
 #   5) scripts/fleet-budget-test.sh, the budget gate's own test
@@ -119,6 +120,8 @@ step_1() {
 step_2() {
     VERSION_PAIR_GIT="${GIT}" "${REPO_ROOT}/scripts/version-text-pair.sh" "${REPO_ROOT}" || fail_step 2
     "${REPO_ROOT}/scripts/version-text-pair-test.sh" || fail_step 2
+    DEPLOY_LIB_VERSION_GIT="${GIT}" "${REPO_ROOT}/scripts/deploy-lib-version.sh" "${REPO_ROOT}" || fail_step 2
+    "${REPO_ROOT}/scripts/deploy-lib-version-test.sh" || fail_step 2
     DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 2
     bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 2
 }

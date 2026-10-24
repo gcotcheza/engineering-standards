@@ -14,7 +14,8 @@
 # Each guard below is one deletable line, so T5's mutant is a line deletion.
 set -uo pipefail
 
-ROOT="${1:?usage: decisions-check.sh <repo-root>}"
+[ -n "${1:-}" ] || { printf 'usage: decisions-check.sh <repo-root>\n' >&2; exit 2; }
+ROOT=$1
 cd -- "${ROOT}" || exit 2
 read -ra GIT <<<"${DECISIONS_GIT:-git}"
 BASE_REF=${DECISIONS_BASE_REF:-origin/main}
@@ -71,8 +72,9 @@ fi
 
 if [ "${#rolled[@]}" -gt 0 ]; then
     if ! base=$("${GIT[@]}" merge-base HEAD "${BASE_REF}" 2>/dev/null); then
-        printf 'decisions-check: %s is not in this clone, so a roll-up cannot be compared with main — fetch it. A missing base is never a pass.\n' "${BASE_REF}" >&2
-        exit 1
+        [ "${findings}" -eq 0 ] || { printf 'decisions-check: %s is not in this clone, so the roll-up and pointers were not judged — fetch it\ndecisions-check: %s finding(s)\n' "${BASE_REF}" "${findings}" >&2; exit 1; }
+        printf 'decisions-check: %s is not in this clone, so nothing was judged: a roll-up cannot be compared with main — fetch it. A missing base is never a pass.\n' "${BASE_REF}" >&2
+        exit 2
     fi
     while IFS= read -r p; do
         base_name=${p#"${DIR}/"}

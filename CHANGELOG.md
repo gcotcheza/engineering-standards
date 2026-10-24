@@ -15,6 +15,27 @@ label in the form card 499's lint accepts for a directory with no PR: `kind=lane
 checks the label, and it fails when the line that writes it is deleted. Both cards share one bump:
 every header is re-stamped for 2026-10-24.1. Why: decision: test-scratch-lanes-carry-a-kind-lane-label.
 
+## 2026-10-24 — every deploy-lib change raises the lib's VERSION, and the gate checks it (deploy-lib VERSION 2026-10-24; the standard is unchanged and VERSION is not bumped)
+**Card 630.** The lib's `VERSION` stayed 2026-10-16 while `ownership.sh` (card 527) and `test.sh`
+(card 547) changed after it, so one name covered two trees (GhieCode #37). New
+`scripts/deploy-lib-version.sh`, in gate step 2: compared with the merge base on `origin/main`, a
+change to any file under `scripts/lib/deploy/`, tests included (a rename out of it too), fails
+unless `VERSION` is one dated line and rises above both the merge base's value and `origin/main`'s
+(`sort -V`, so a same-day `.10` follows `.9`). It judges HEAD, not the working tree. A missing
+`origin/main` or merge base exits 2. README's re-stamp step now says to raise `VERSION` first. `scripts/deploy-lib-version-test.sh` covers the cases, and
+`scripts/deploy-lib-version-mutants.txt` records that every guard line is red when deleted. This
+change takes 2026-10-24 and re-stamps every header; no body changes. Each project reads STALE in
+the fleet check until it re-vendors.
+
+Why: decision: deploy-lib-version-names-one-tree.
+
+## 2026-10-24 — decisions-check exits 2 when main is missing (the standard is unchanged and VERSION is not bumped)
+**Card 633.** `scripts/decisions-check.sh` exited 1 when `origin/main` was not in the clone, but its
+header gives 1 to findings and 2 to "nothing could be judged". It stops before any pointer is judged,
+so it now exits 2 and says so. Case 12 of `scripts/decisions-check-test.sh` expects 2. When a file or
+roll-up finding was already printed it exits 1 and still names the missing base (case 20). No
+argument, or an empty one, is a usage error, exit 2 (was 1; case 21). `decisions-rollup.sh` keeps its own refusal (exit 1).
+
 ## 2026-10-24 — queue-start and the dialog check hold under a C locale (the standard is unchanged and VERSION is not bumped)
 **Card 595.** `scripts/queue-start.sh` now pins `LC_ALL=C.UTF-8` itself, as `dialog_on` already
 does: a caller with a C locale (env -i, a job without the box's locale file) reads ❯, │ and a
