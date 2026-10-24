@@ -1,9 +1,9 @@
-# fleet-deploy-lib 2026-10-16 sha256:289fe9f3555a4cc7c4be7d236d5e5eea16b82b8b589e4c773e3aee2e0cc2effe
+# fleet-deploy-lib 2026-10-24.1 sha256:caa763fe0ce0d5d80bc8c2726cd1df5db1ba149598087883a2e0b3d4cf56b0a0
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
 
-FLEET_COMPOSE_LIB="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/compose.sh"
+FLEET_COMPOSE_LIB="$(CDPATH='' cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/compose.sh"
 FLEET_COMPOSE_WORD='^/?[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$'
 # External networks an app may join, by exact name: scribly and reflection share whisper (docs/DECISIONS.md).
 FLEET_COMPOSE_SHARED_NETWORKS="whisper-net"
@@ -161,7 +161,7 @@ deploy_compose_exec() {
     while [ $# -gt 0 ] && [ "$1" != -- ]; do files+=("$1"); shift; done
     [ "${1:-}" = -- ] || { printf 'REFUSED: compose.sh run has no -- before the compose arguments\n' >&2; return 1; }
     shift
-    run=$(cd -P -- "$(dirname -- "$FLEET_COMPOSE_LIB")/../../.." && pwd -P)
+    run=$(CDPATH='' cd -P -- "$(dirname -- "$FLEET_COMPOSE_LIB")/../../.." && pwd -P)
     deploy_compose_pieces "$root" "$env" "$run" "${files[@]}" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; }
     [[ $docker =~ $FLEET_COMPOSE_WORD ]] || { printf 'REFUSED: the docker command is not one plain word\n' >&2; return 1; }
     argv=(compose --project-directory "$root")
@@ -258,9 +258,9 @@ deploy_compose_pieces() { # root, env file, run dir, file… -> 0, or 1 with DEP
 # deploy_compose_init <merge sha>, before the first compose call; ROOT set, DEPLOY_COMPOSE_FILES optional.
 deploy_compose_init() {
     local root env run json exported
-    root=$(cd -P -- "${ROOT:-}" 2>/dev/null && pwd -P) || refuse "ROOT '${ROOT:-}' is not a directory."
+    root=$(CDPATH='' cd -P -- "${ROOT:-}" 2>/dev/null && pwd -P) || refuse "ROOT '${ROOT:-}' is not a directory."
     env="${DEPLOY_APP_ENV_DIR:-/etc/fleet/app-env}/$(basename -- "$root").env"
-    run=$(cd -P -- "$(dirname -- "$FLEET_COMPOSE_LIB")/../../.." && pwd -P)
+    run=$(CDPATH='' cd -P -- "$(dirname -- "$FLEET_COMPOSE_LIB")/../../.." && pwd -P)
     read -ra DEPLOY_COMPOSE_FILE_LIST <<<"${DEPLOY_COMPOSE_FILES:-docker-compose.yml}"
     deploy_compose_pieces "$root" "$env" "$run" "${DEPLOY_COMPOSE_FILE_LIST[@]}" || refuse "$DEPLOY_COMPOSE_ERR"
     exported=$(head -c 41 "$run/export-sha" | tr -d '\n')

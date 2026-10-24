@@ -90,7 +90,7 @@ write_driver() {
     cat >"${CASE}/lib/driver.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
-D="$(cd -- "$(dirname -- "$0")" && pwd)"
+D="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 . "${D}/summary.sh"
 . "${D}/resolve.sh"
 . "${D}/ledger.sh"
@@ -526,6 +526,20 @@ run_lib 'say "RAN INSIDE ROOT"'
 contains 'a root-owned copy inside ROOT is refused when ROOT is known' "${OUT}" \
     "REFUSED: ${ROOT}/scripts/lib is at or inside ROOT ${ROOT}, so root does not run it. Deploy with: fleet-deploy <app> <PR#>"
 absent 'and nothing after deploy_log_open runs' "${OUT}" 'RAN INSIDE ROOT'
+
+# A deploy.sh run by a relative path finds its own directory, never a CDPATH decoy (card 532).
+# The driver's later cd to ROOT makes deploy_log_open refuse that path anyway, so this asserts the first check.
+fixture src-cdpath
+relib "${CASE}/r700/lib"; chmod 700 "${CASE}/r700" "${CASE}/r700/lib"
+mkdir -p "${CASE}/decoy/lib"
+cd -- "${CASE}/r700" || exit 1
+export CDPATH="${CASE}/decoy"
+DRIVER_DIR=lib
+run_lib 'say "RAN UNDER CDPATH"'
+unset CDPATH
+cd -- "${WORK}" || exit 1
+contains 'a root copy run by a relative path under a CDPATH decoy passes the check at source time' "${OUT}" 'LIBS SOURCED'
+absent 'and no check walks into the decoy' "${OUT}" "${CASE}/decoy"
 
 # --- 2. resolve ----------------------------------------------------------------
 fixture resolved

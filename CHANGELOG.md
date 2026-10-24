@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-24 — the deploy library ignores CDPATH (deploy-lib VERSION 2026-10-24.1; the standard is unchanged and VERSION is not bumped)
+**Card 532.** Every `cd` in `summary.sh` and `compose.sh` now runs with `CDPATH` empty. With
+`CDPATH` set, a relative path such as `lib/deploy` resolved inside the decoy directory, and `cd`
+printed that path into the result. The root check then refused a good copy, and `compose.sh` named
+the wrong copy of itself. New cases: `test.sh` runs a root copy by a relative path with a decoy on
+`CDPATH`, and `compose-test.sh` sources `compose.sh` the same way. Each fails against the old file.
+`test.sh`'s fixture driver blanks `CDPATH` for its own `cd` as well; an app's own `deploy.sh` is not
+changed here. Every header is re-stamped for 2026-10-24.1.
+
 ## 2026-10-24 — queue-start and the dialog check hold under a C locale (the standard is unchanged and VERSION is not bumped)
 **Card 595.** `scripts/queue-start.sh` now pins `LC_ALL=C.UTF-8` itself, as `dialog_on` already
 does: a caller with a C locale (env -i, a job without the box's locale file) reads ❯, │ and a

@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-16 sha256:bc16a05915b49259440b5a17bc354911e54176146bc143f8d0dd9a2e2ef67049
+# fleet-deploy-lib 2026-10-24.1 sha256:690915d71d5c7c493e6b5812cc1c057f6afcd35055f740a23a5a52a511de5dab
 # shellcheck shell=bash
 # Root runs a deploy only from files root alone can write, never from inside ROOT: no switch turns
 # this off, and fleet-deploy's export passes it. docs/DECISIONS.md (backlog 317)
@@ -6,7 +6,7 @@ deploy_src_root_only() {
     local main=${BASH_SOURCE[${#BASH_SOURCE[@]}-1]} f d r
     DEPLOY_SRC_ERR=''
     for f in "$main" "${BASH_SOURCE[0]}"; do
-        d=$(cd -P -- "$(dirname -- "$f")" 2>/dev/null && pwd -P) || { DEPLOY_SRC_ERR="cannot find the directory $f runs from"; return 1; }
+        d=$(CDPATH='' cd -P -- "$(dirname -- "$f")" 2>/dev/null && pwd -P) || { DEPLOY_SRC_ERR="cannot find the directory $f runs from"; return 1; }
         f="${d%/}/$(basename -- "$f")"
         while :; do
             [ ! -L "$f" ] || { DEPLOY_SRC_ERR="$f is a symlink"; return 1; }
@@ -17,8 +17,8 @@ deploy_src_root_only() {
         done
     done
     [ -n "${1:-}" ] || return 0
-    r=$(cd -P -- "$1" 2>/dev/null && pwd -P) || r=$1
-    d=$(cd -P -- "$(dirname -- "$main")" && pwd -P)
+    r=$(CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P) || r=$1
+    d=$(CDPATH='' cd -P -- "$(dirname -- "$main")" && pwd -P)
     case "${d%/}/" in "${r%/}"/*) DEPLOY_SRC_ERR="$d is at or inside ROOT $r"; return 1 ;; esac
 }
 deploy_src_refusal() { printf 'REFUSED: %s, so root does not run it. Deploy with: fleet-deploy <app> <PR#>\n' "$DEPLOY_SRC_ERR" >&2; }
@@ -108,7 +108,7 @@ deploy_build_hash() {
     user=$(deploy_app_user)
     [[ ${1:-} == /* ]] || { printf "REFUSED: deploy_build_hash: '%s' is not an absolute directory\n" "${1:-}" >&2; return 1; }
     # shellcheck disable=SC2016  # $1 is the inner bash's, by design
-    out=$(sudo -n -u "$user" -- bash -c 'set -o pipefail; cd -- "$1" && find -P . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum --' _ "${1:-}") \
+    out=$(sudo -n -u "$user" -- bash -c 'set -o pipefail; CDPATH= cd -- "$1" && find -P . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum --' _ "${1:-}") \
         || { printf 'REFUSED: %s could not be hashed as %s, so no build is named\n' "${1:-}" "$user" >&2; return 1; }
     printf '%s\n' "$out" | sha256sum | cut -d' ' -f1
 }
