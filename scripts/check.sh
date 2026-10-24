@@ -162,6 +162,8 @@ step_9() {
     # An app vendors the lib into a tree it owns; a case that sources it in place is refused there.
     APP_OWNED_LIB=$(mktemp -d -p /srv/worker-scratch deploy-lib-app-owned.XXXXXXXX) || fail_step 9
     chmod 755 -- "${APP_OWNED_LIB}" || fail_step 9
+    # A lane with no PR carries the label form the scratch lint accepts (card 537).
+    printf 'kind=lane\ncard=537\nowner=%s\n' "${FLEET_SCRATCH_OWNER:-pv}" >"${APP_OWNED_LIB}/.fleet-scratch" || fail_step 9
     cp -r -- "${REPO_ROOT}/scripts/lib/deploy" "${APP_OWNED_LIB}/deploy" || fail_step 9
     chown -R nobody: -- "${APP_OWNED_LIB}/deploy" || fail_step 9
     chmod -R a-w -- "${APP_OWNED_LIB}/deploy" || fail_step 9

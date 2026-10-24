@@ -9,6 +9,7 @@
 # real fleet hook (S1); the hook canary reads its log, so the suite runs as root.
 # FAKE_CALLS strings stay single-quoted on purpose: the driver eval's them. WORK is fixed under
 # /srv/worker-scratch (root 755, exec), never TMPDIR: summary.sh refuses /tmp and /run is noexec.
+# It carries a kind=lane .fleet-scratch label, so the scratch lint knows whose it is (card 537).
 # shellcheck disable=SC2016
 set -uo pipefail
 
@@ -48,6 +49,9 @@ matches() {
 
 WORK="$(mktemp -d -p /srv/worker-scratch deploy-lib-test.XXXXXXXX)" || { printf 'cannot make a work directory under /srv/worker-scratch\n' >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
+# The lane label the scratch lint accepts for a lane with no PR (card 537); FLEET_SCRATCH_OWNER is its seam.
+SCRATCH_LABEL="$(printf 'kind=lane\ncard=537\nowner=%s' "${FLEET_SCRATCH_OWNER:-pv}")"
+printf '%s\n' "${SCRATCH_LABEL}" >"${WORK}/.fleet-scratch" || { printf 'cannot label the work directory %s\n' "${WORK}" >&2; exit 1; }
 GHE_WORKFLOW='name: ci'$'\n''on: [push, workflow_dispatch]'
 GHE_WSUM="$(printf '%s\n' "${GHE_WORKFLOW}" | sha256sum | cut -d' ' -f1)"
 DEVNULL_BEFORE="$(stat -c '%a %u %g %F' /dev/null)"
@@ -416,6 +420,9 @@ case "${OUT}" in
     *"${PLANTED}"*) fail 'the hook printed the token it caught (S2)' ;;
     *) pass 'and the hook never prints the token it caught' ;;
 esac
+
+# --- 0b. the work directory carries its lane label (card 537) -------------------
+equals 'the work directory under /srv/worker-scratch carries its lane label' "$(cat "${WORK}/.fleet-scratch" 2>&1)" "${SCRATCH_LABEL}"
 
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
