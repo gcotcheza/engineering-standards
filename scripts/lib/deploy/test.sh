@@ -2306,6 +2306,19 @@ contains 'a worktree carrying a file owned by the privileged uid is kept' "${OUT
     'worktrees removed 0 kept 1 (rootfiles)'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 
+# The worktree moved and linked back: git lists the link path, and the link itself is not the uid's.
+cleanup_fixture cleanup-rootfiles-linked
+ROOT_UID_SEAM="$(stat -c %u "${WT}/app/base.txt")"
+mv "${WT}" "${WT}-moved"
+ln -s "${WT}-moved" "${WT}"
+chown -h 65534:65534 "${WT}"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree listed by a link path, carrying a privileged-uid file, is kept' "${OUT}" \
+    'worktrees removed 0 kept 1 (rootfiles)'
+equals 'and the directory behind the link is still on disk' "$(on_disk "${WT}-moved")" 'there'
+contains 'and git still lists it, so no half-removal deleted its record' "$(git_at worktree list --porcelain)" \
+    "worktree ${WT}"$'\n'
+
 # CLEANUP_FIND is the pin: a `find` earlier on PATH that answers nothing must not be
 # what decides a tree carries no root-owned file.
 cleanup_fixture cleanup-find-pinned

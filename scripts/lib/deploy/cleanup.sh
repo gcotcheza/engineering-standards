@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-24.1 sha256:70b8794dba770008e5adc706060ed5ff35b28cc1a1ca81239b9d75f4cb20ddaf
+# fleet-deploy-lib 2026-10-24.2 sha256:d3476684884be9635f12e2aa83c2371e67ab2a858eb6da780848d97ec0907335
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -73,7 +73,9 @@ cleanup_mounts() {
 
 cleanup_rootfiles() {
     local wt=$1 rc=0 out
-    out=$("${CLEANUP_FIND}" -P "$wt" -uid "${CLEANUP_ROOT_UID-}" -print -quit 2>&1) || rc=$?
+    # The slash: -P never enters a start point that is a link, and a worktree moved and linked
+    # back is listed by its link path, so without it a root-owned file inside is never seen.
+    out=$("${CLEANUP_FIND}" -P "$wt/" -uid "${CLEANUP_ROOT_UID-}" -print -quit 2>&1) || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep rootfiles "$wt (find exited ${rc}, so root-owned files could not be ruled out)"; return 1; }
     [ -z "$out" ] || { cleanup_keep rootfiles "$wt (uid ${CLEANUP_ROOT_UID-} owns $out)"; return 1; }
     return 0
