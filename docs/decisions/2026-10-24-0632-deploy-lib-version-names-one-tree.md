@@ -9,10 +9,17 @@ the per-file headers, so it caught neither case: `ownership.sh` is not in its `L
 
 **The rule.** Any change to a file under `scripts/lib/deploy/`, tests included, raises `VERSION` in
 the same change. `scripts/deploy-lib-version.sh` checks that in gate step 2, beside
-`version-text-pair.sh`, against the merge base with `origin/main`. It fails when a lib file moved
-and `VERSION` did not, and when `VERSION` moved without rising. That second guard catches an edit
-to the same value or a step backwards, either of which would reuse a name. A missing base is a
-failure (exit 1), as in `version-text-pair.sh`. A git call that fails is exit 2 and judges nothing.
+`version-text-pair.sh`, on the commits from the merge base with `origin/main` to HEAD. The working
+tree is not judged, and rename detection is off, so a file moved out of the lib counts as changed.
+It fails when a lib file moved and `VERSION` did not, and when `VERSION` is not one dated line. It
+also fails when `VERSION` does not rise above both the merge base's value and `origin/main`'s. The
+second comparison catches two branches from one base that both bump to the same value: whichever is
+re-gated after the other merges fails. A missing `origin/main`, no merge base, or a failed git call
+exits 2 and judges nothing.
+
+**The limit.** Two branches gated before either merges both pass. Merging the second without a
+re-gate on main's new tip would still leave one name for two trees. Merging main into a branch
+before it lands, which the fleet already does, closes that gap.
 
 **Why tests count.** An app runs the lib's own `test.sh` and `*-test.sh` from its vendored copy
 (gate step 9 proves that path), so two copies with different suites are two different trees.

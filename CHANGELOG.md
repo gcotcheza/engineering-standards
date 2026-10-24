@@ -4,9 +4,10 @@
 **Card 630.** The lib's `VERSION` stayed 2026-10-16 while `ownership.sh` (card 527) and `test.sh`
 (card 547) changed after it, so one name covered two trees (GhieCode #37). New
 `scripts/deploy-lib-version.sh`, in gate step 2: compared with the merge base on `origin/main`, a
-change to any file under `scripts/lib/deploy/`, tests included, fails unless `VERSION` rises in the
-same change (`sort -V`, so a same-day `.10` follows `.9`). Moving it to the same value or backwards
-also fails. `scripts/deploy-lib-version-test.sh` covers the cases, and
+change to any file under `scripts/lib/deploy/`, tests included (a rename out of it too), fails
+unless `VERSION` is one dated line and rises above both the merge base's value and `origin/main`'s
+(`sort -V`, so a same-day `.10` follows `.9`). It judges HEAD, not the working tree. A missing
+`origin/main` or merge base exits 2. README's re-stamp step now says to raise `VERSION` first. `scripts/deploy-lib-version-test.sh` covers the cases, and
 `scripts/deploy-lib-version-mutants.txt` records that every guard line is red when deleted. This
 change takes 2026-10-24 and re-stamps every header; no body changes. Each project reads STALE in
 the fleet check until it re-vendors.
