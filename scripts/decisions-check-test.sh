@@ -120,8 +120,8 @@ equals  'case 11: exit code' "${RC}" 1
 
 # --- 12. a rolled-up log with no main to compare with ------------------------------------------------
 fresh; git -C "${R}" update-ref -d refs/remotes/origin/main; run
-matches 'case 12: a missing base is never a pass' "${OUT}" 'origin/main is not in this clone'
-equals  'case 12: exit code' "${RC}" 1
+matches 'case 12: a missing base is never a pass' "${OUT}" 'origin/main is not in this clone, so nothing was judged'
+equals  'case 12: exit code (2: nothing judged, not a finding)' "${RC}" 2
 
 # --- 13. not a git tree -------------------------------------------------------------------------------
 mkdir -p "${WORK}/plain"; R="${WORK}/plain"; run

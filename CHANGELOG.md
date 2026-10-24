@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-24 — decisions-check exits 2 when main is missing (the standard is unchanged and VERSION is not bumped)
+**Card 633.** `scripts/decisions-check.sh` exited 1 when `origin/main` was not in the clone, but its
+header gives 1 to findings and 2 to "nothing could be judged". It stops before any pointer is judged,
+so it now exits 2 and says so. Case 12 of `scripts/decisions-check-test.sh` expects 2.
+`decisions-rollup.sh` keeps its own refusal (exit 1, nothing written).
+
 ## 2026-10-23 — one shared dialog check for queue-start and the Pi autoclear (the standard is unchanged and VERSION is not bumped)
 **Card 581.** New `scripts/lib/dialog-lib.sh`, the master copy of the fleet's one dialog check:
 `dialog_on <screen>` returns 0 (a dialog, its lines on stdout), 1 (none) or 2 (no C.UTF-8 locale).

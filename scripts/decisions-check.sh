@@ -71,8 +71,8 @@ fi
 
 if [ "${#rolled[@]}" -gt 0 ]; then
     if ! base=$("${GIT[@]}" merge-base HEAD "${BASE_REF}" 2>/dev/null); then
-        printf 'decisions-check: %s is not in this clone, so a roll-up cannot be compared with main — fetch it. A missing base is never a pass.\n' "${BASE_REF}" >&2
-        exit 1
+        printf 'decisions-check: %s is not in this clone, so nothing was judged: a roll-up cannot be compared with main — fetch it. A missing base is never a pass.\n' "${BASE_REF}" >&2
+        exit 2
     fi
     while IFS= read -r p; do
         base_name=${p#"${DIR}/"}
