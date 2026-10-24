@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-24 — queue-start and the dialog check hold under a C locale (the standard is unchanged and VERSION is not bumped)
+**Card 595.** `scripts/queue-start.sh` now pins `LC_ALL=C.UTF-8` itself, as `dialog_on` already
+does: a caller with a C locale (env -i, a job without the box's locale file) reads ❯, │ and a
+no-break space as bytes. Both boxes' cron load UTF-8 today, so nothing changes there. `scripts/queue-start-test.sh`
+gains verdicts under `LC_ALL=C` (a framed dialog is 0, a reply list 1) and a tick under `LC_ALL=C`
+through a copy of the check without its own pin. Deleting either pin turns them red: the new
+`scripts/dialog-lib-mutants.txt` and a row in `scripts/queue-start-mutants.txt` record it.
+`scripts/lib/dialog-lib.sh` is unchanged, so the Pi's vendored copy stays as it is.
+
 ## 2026-10-23 — one shared dialog check for queue-start and the Pi autoclear (the standard is unchanged and VERSION is not bumped)
 **Card 581.** New `scripts/lib/dialog-lib.sh`, the master copy of the fleet's one dialog check:
 `dialog_on <screen>` returns 0 (a dialog, its lines on stdout), 1 (none) or 2 (no C.UTF-8 locale).
