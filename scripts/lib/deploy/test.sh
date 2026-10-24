@@ -422,7 +422,8 @@ case "${OUT}" in
 esac
 
 # --- 0b. the work directory carries its lane label (card 537) -------------------
-equals 'the work directory under /srv/worker-scratch carries its lane label' "$(cat "${WORK}/.fleet-scratch" 2>&1)" "${SCRATCH_LABEL}"
+equals 'the work directory under /srv/worker-scratch carries its lane label' "$(cat "${WORK}/.fleet-scratch" 2>&1)" \
+    $'kind=lane\ncard=537\nowner='"${FLEET_SCRATCH_OWNER:-pv}"
 
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"

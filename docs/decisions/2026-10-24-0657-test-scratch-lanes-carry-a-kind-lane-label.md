@@ -7,7 +7,7 @@ write there, and `/run` is `noexec`. Gate step 9's app-owned copy stands in for 
 sits under the same non-world-writable parent, and its refusals name the app-owned file as an app's
 would.
 
-**The label.** The lint accepts three forms. A directory with no PR takes the `kind=lane` form:
+**The label.** Of the label forms the lint accepts, a directory with no PR takes the `kind=lane` form:
 `kind=lane`, `card=537`, `owner=${FLEET_SCRATCH_OWNER:-pv}`, with no `keep=`. A `repo=`/`pr=`
 label would be refused without a real PR, and `kind=test` or `pr=none` are refused outright.
 
