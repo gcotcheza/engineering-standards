@@ -571,6 +571,15 @@ cfx envkeys-unreadable
 crun 'deploy_compose_policy "$ROOT" "{\"name\": \"demo\"}" demo "$C_ENV_DIR/none.env" "$C_DOCKER" compose || printf "ERR=%s\n" "$DEPLOY_COMPOSE_ERR"'
 contains 'env keys: an env file that cannot be read refuses' "${OUT}" "ERR=root's env file could not be read for its keys, so no compose call runs"
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
+# A compose.sh sourced by a relative path names its own copy, never a CDPATH decoy (card 532).
+cfx cdpath
+mkdir -p "${WORK}/decoy/lib/deploy"
+C_EXTRA="CDPATH=${WORK}/decoy"
+crun "cd -- '${CRUN}/scripts' && . lib/deploy/compose.sh && printf 'LIB=%s\\n' \"\${FLEET_COMPOSE_LIB}\"; ${INIT}"
+contains 'compose: a relative source under a CDPATH decoy names its own copy' "${OUT}" "LIB=${CRUN}/scripts/lib/deploy/compose.sh"
+contains 'compose: and the export it reads is its own' "${OUT}" "COMPOSE root's files: docker-compose.yml at ${COMPOSE_SHA:0:12}"
+equals 'compose: and exits 0' "${RC}" 0
+
 if [ "${fails}" -eq 0 ]; then printf '\ncompose-test: all checks passed\n'; exit 0; fi
 printf '\ncompose-test: %s check(s) failed\n' "${fails}" >&2
 exit 1

@@ -9,6 +9,7 @@
 # real fleet hook (S1); the hook canary reads its log, so the suite runs as root.
 # FAKE_CALLS strings stay single-quoted on purpose: the driver eval's them. WORK is fixed under
 # /srv/worker-scratch (root 755, exec), never TMPDIR: summary.sh refuses /tmp and /run is noexec.
+# It carries a kind=lane .fleet-scratch label, so the scratch lint knows whose it is (card 537).
 # shellcheck disable=SC2016
 set -uo pipefail
 
@@ -48,6 +49,9 @@ matches() {
 
 WORK="$(mktemp -d -p /srv/worker-scratch deploy-lib-test.XXXXXXXX)" || { printf 'cannot make a work directory under /srv/worker-scratch\n' >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
+# The lane label the scratch lint accepts for a lane with no PR (card 537); FLEET_SCRATCH_OWNER is its seam.
+SCRATCH_LABEL="$(printf 'kind=lane\ncard=537\nowner=%s' "${FLEET_SCRATCH_OWNER:-pv}")"
+printf '%s\n' "${SCRATCH_LABEL}" >"${WORK}/.fleet-scratch" || { printf 'cannot label the work directory %s\n' "${WORK}" >&2; exit 1; }
 GHE_WORKFLOW='name: ci'$'\n''on: [push, workflow_dispatch]'
 GHE_WSUM="$(printf '%s\n' "${GHE_WORKFLOW}" | sha256sum | cut -d' ' -f1)"
 DEVNULL_BEFORE="$(stat -c '%a %u %g %F' /dev/null)"
@@ -90,7 +94,7 @@ write_driver() {
     cat >"${CASE}/lib/driver.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
-D="$(cd -- "$(dirname -- "$0")" && pwd)"
+D="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 . "${D}/summary.sh"
 . "${D}/resolve.sh"
 . "${D}/ledger.sh"
@@ -417,6 +421,10 @@ case "${OUT}" in
     *) pass 'and the hook never prints the token it caught' ;;
 esac
 
+# --- 0b. the work directory carries its lane label (card 537) -------------------
+equals 'the work directory under /srv/worker-scratch carries its lane label' "$(cat "${WORK}/.fleet-scratch" 2>&1)" \
+    $'kind=lane\ncard=537\nowner='"${FLEET_SCRATCH_OWNER:-pv}"
+
 # --- 1. the vendoring header on every lib file --------------------------------
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date, with an optional same-day serial' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$'
@@ -526,6 +534,20 @@ run_lib 'say "RAN INSIDE ROOT"'
 contains 'a root-owned copy inside ROOT is refused when ROOT is known' "${OUT}" \
     "REFUSED: ${ROOT}/scripts/lib is at or inside ROOT ${ROOT}, so root does not run it. Deploy with: fleet-deploy <app> <PR#>"
 absent 'and nothing after deploy_log_open runs' "${OUT}" 'RAN INSIDE ROOT'
+
+# A deploy.sh run by a relative path finds its own directory, never a CDPATH decoy (card 532).
+# The driver's later cd to ROOT makes deploy_log_open refuse that path anyway, so this asserts the first check.
+fixture src-cdpath
+relib "${CASE}/r700/lib"; chmod 700 "${CASE}/r700" "${CASE}/r700/lib"
+mkdir -p "${CASE}/decoy/lib"
+cd -- "${CASE}/r700" || exit 1
+export CDPATH="${CASE}/decoy"
+DRIVER_DIR=lib
+run_lib 'say "RAN UNDER CDPATH"'
+unset CDPATH
+cd -- "${WORK}" || exit 1
+contains 'a root copy run by a relative path under a CDPATH decoy passes the check at source time' "${OUT}" 'LIBS SOURCED'
+absent 'and no check walks into the decoy' "${OUT}" "${CASE}/decoy"
 
 # --- 2. resolve ----------------------------------------------------------------
 fixture resolved

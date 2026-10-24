@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-24 — the deploy library ignores CDPATH, and its suite labels its scratch directories (deploy-lib VERSION 2026-10-24.1; the standard is unchanged and VERSION is not bumped)
+**Card 532.** Every `cd` in `summary.sh` and `compose.sh` now runs with `CDPATH` empty. With
+`CDPATH` set, a relative path such as `lib/deploy` resolved inside the decoy directory, and `cd`
+printed that path into the result. The root check then refused a good copy, and `compose.sh` named
+the wrong copy of itself. New cases: `test.sh` runs a root copy by a relative path with a decoy on
+`CDPATH`, and `compose-test.sh` sources `compose.sh` the same way. Each fails against the old file.
+`test.sh`'s fixture driver blanks `CDPATH` for its own `cd` as well; an app's own `deploy.sh` is not
+changed here.
+
+**Card 537.** The suite's work directory under `/srv/worker-scratch` now carries a `.fleet-scratch`
+label in the form card 499's lint accepts for a directory with no PR: `kind=lane`, `card=537`,
+`owner=${FLEET_SCRATCH_OWNER:-pv}`. Gate step 9's app-owned copy carries the same label. A new case
+checks the label, and it fails when the line that writes it is deleted. Both cards share one bump:
+every header is re-stamped for 2026-10-24.1. Why: decision: test-scratch-lanes-carry-a-kind-lane-label.
+
 ## 2026-10-24 — every deploy-lib change raises the lib's VERSION, and the gate checks it (deploy-lib VERSION 2026-10-24; the standard is unchanged and VERSION is not bumped)
 **Card 630.** The lib's `VERSION` stayed 2026-10-16 while `ownership.sh` (card 527) and `test.sh`
 (card 547) changed after it, so one name covered two trees (GhieCode #37). New
