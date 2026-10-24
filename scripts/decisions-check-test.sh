@@ -173,13 +173,16 @@ equals  'case 19: exit code' "${RC}" 1
 # --- 20. a finding and no main: the finding wins (1), the base is still named --------------------------
 fresh; printf 'x\n' >"${R}/docs/decisions/notes.md"; git -C "${R}" update-ref -d refs/remotes/origin/main; run
 matches 'case 20: the finding is printed' "${OUT}" 'docs/decisions/notes.md: not a decision file name'
-matches 'case 20: the missing base is named' "${OUT}" 'origin/main is not in this clone, so the roll-up was not compared'
+matches 'case 20: the missing base is named' "${OUT}" 'origin/main is not in this clone, so the roll-up and pointers were not judged'
 equals  'case 20: exit code (1: a finding, not "nothing judged")' "${RC}" 1
 
 # --- 21. no argument is a usage error (2) --------------------------------------------------------------
 OUT="$(bash "${CHECK}" 2>&1)"; RC=$?
 matches 'case 21: usage is printed' "${OUT}" '^usage: decisions-check\.sh <repo-root>$'
 equals  'case 21: exit code' "${RC}" 2
+fresh; OUT="$(cd "${R}" && bash "${CHECK}" '' 2>&1)"; RC=$?
+matches 'case 21: an empty argument is usage too' "${OUT}" '^usage: decisions-check\.sh <repo-root>$'
+equals  'case 21: empty argument exit code' "${RC}" 2
 
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'decisions-check-test: all cases passed\n'

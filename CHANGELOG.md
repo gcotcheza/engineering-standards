@@ -5,7 +5,7 @@
 header gives 1 to findings and 2 to "nothing could be judged". It stops before any pointer is judged,
 so it now exits 2 and says so. Case 12 of `scripts/decisions-check-test.sh` expects 2. When a file or
 roll-up finding was already printed it exits 1 and still names the missing base (case 20). No
-argument is a usage error, exit 2 (case 21). `decisions-rollup.sh` keeps its own refusal (exit 1).
+argument, or an empty one, is a usage error, exit 2 (was 1; case 21). `decisions-rollup.sh` keeps its own refusal (exit 1).
 
 ## 2026-10-24 — queue-start and the dialog check hold under a C locale (the standard is unchanged and VERSION is not bumped)
 **Card 595.** `scripts/queue-start.sh` now pins `LC_ALL=C.UTF-8` itself, as `dialog_on` already
