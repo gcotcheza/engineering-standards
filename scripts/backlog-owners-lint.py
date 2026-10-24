@@ -10,7 +10,7 @@ The session `hold` parks an item that has no owner yet. Exit 0 green, 1 red.
 import re
 import sys
 
-SESSIONS = {"advisor", "personal-vps", "orbit", "health", "kidsquest"}
+SESSIONS = {"advisor", "personal-vps", "orbit", "kidsquest"}
 PARKED = "hold"
 ITEM_RE = re.compile(r"<summary><b>(\d+)\.</b>\s*([^<]*)")
 

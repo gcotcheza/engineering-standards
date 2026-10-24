@@ -1,0 +1,9 @@
+# T5 guard-deletion mutants for scripts/queue-start.sh (card 581), for scripts/guard-mutants.sh.
+#   QUEUE_START_TEST=$PWD/scripts/queue-start-test.sh scripts/guard-mutants.sh scripts/queue-start.sh scripts/queue-start-mutants.txt
+qs-lib-load@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@. "$DIALOG_LIB" 2>/dev/null || dialog_lib_fail 'did not load'@@. "$DIALOG_LIB" 2>/dev/null
+qs-lib-dialog-on@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@declare -F dialog_on >/dev/null || dialog_lib_fail 'defines no dialog_on'@@
+qs-defer@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  if [ "$drc" -ne 1 ]; then@@  if false; then
+qs-non1-is-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  if [ "$drc" -ne 1 ]; then@@  if [ "$drc" -eq 0 ]; then
+qs-busy-no-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@     && no_dialog "$screen"; then@@     && true; then
+qs-loop-dialog@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@    if [ "$drc" -ne 1 ]; then@@    if false; then
+qs-loop-unreadable@@QUEUE_START_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@    if [ -z "$screen" ]; then@@    if false; then

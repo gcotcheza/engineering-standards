@@ -2,16 +2,19 @@
 # Fakes only: a fake backlog, owners file, registries, budget script, systemctl
 # and heavy-work drive the real scripts/queue-start.sh and
 # scripts/backlog-owners-lint.py through their seams. No tmux, no delivery, no
-# real backlog. QUEUE_START_SH / OWNERS_LINT_PY point at scratch copies for the
-# red proofs.
+# real backlog. QUEUE_START_SH / OWNERS_LINT_PY / DIALOG_LIB_SH point at scratch
+# copies for the red proofs.
 #
 #   scripts/queue-start-test.sh
 #   QUEUE_START_SH=/tmp/mutant.sh scripts/queue-start-test.sh   the red proofs
+#   scripts/guard-mutants.sh scripts/queue-start.sh scripts/queue-start-mutants.txt   T5's sweep
+#   scripts/guard-mutants.sh scripts/backlog-owners-lint.py scripts/backlog-owners-lint-mutants.txt
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CHECK="${QUEUE_START_SH:-${SCRIPT_DIR}/queue-start.sh}"
 LINT="${OWNERS_LINT_PY:-${SCRIPT_DIR}/backlog-owners-lint.py}"
+DLIB="${DIALOG_LIB_SH:-${SCRIPT_DIR}/lib/dialog-lib.sh}"
 
 fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
@@ -103,7 +106,7 @@ run() {
         QS_BUDGET_SH="${WORK}/budget" QS_APP_OWNERS="${WORK}/app-owners" \
         QS_SYSTEMCTL="${SYSTEMCTL_BIN:-${WORK}/systemctl}" \
         QS_HEAVY_WORK="${HEAVY_BIN:-${WORK}/heavy-work}" \
-        QS_LOCK="${WORK}/lock" QS_ALLOW_ANY_PATH=1 \
+        QS_LOCK="${WORK}/lock" QS_ALLOW_ANY_PATH=1 QS_DIALOG_LIB="${QS_LIB:-${DLIB}}" \
         "${CHECK}" "$@" 2>&1)"
     RC=$?
 }
@@ -255,10 +258,16 @@ case "$sub" in
     case "$mode" in
       busy)    [ -s "$d/typed" ] && printf '❯ %s\n' "$(cat "$d/typed")" || printf '❯ \n' ;;
       foreign) [ -s "$d/typed" ] && printf '❯ some other pending thought\n' || printf '❯ \n' ;;
+      screen)  cat "$d/screen" ;;
+      busydialog) [ -s "$d/typed" ] && { cat "$d/screen"; printf '❯ %s\n' "$(cat "$d/typed")"; } || printf '❯ \n' ;;
+      enterdialog) if grep -qx Enter "$d/keys" 2>/dev/null; then cat "$d/screen"
+                   else [ -s "$d/typed" ] && printf '❯ %s\n' "$(cat "$d/typed")" || printf '❯ \n'; fi ;;
+      capfail) [ -s "$d/typed" ] && exit 1; printf '❯ \n' ;;
       *)       printf '❯ \n' ;;
     esac ;;
   send-keys)
-    if [ "${@: -1}" = Enter ]; then :; else printf '%s' "${@: -1}" >"$d/typed"; fi ;;
+    printf '%s\n' "${@: -1}" >>"$d/keys"
+    case "${@: -1}" in Enter) ;; C-u) rm -f "$d/typed" ;; *) printf '%s' "${@: -1}" >"$d/typed" ;; esac ;;
   display-message) printf '2' ;;
 esac
 SH
@@ -271,6 +280,7 @@ live() {
         QS_SYSTEMCTL="${WORK}/systemctl" QS_HEAVY_WORK="${WORK}/heavy-work" \
         QS_LOCK="${WORK}/lock" QS_ALLOW_ANY_PATH=1 QS_SETTLE=0 \
         QS_TMUX_SOCK="${WORK}/fake.sock" FAKE_TMUX_DIR="${WORK}/tmuxstate" \
+        QS_DIALOG_LIB="${QS_LIB:-${DLIB}}" \
         PATH="${WORK}/bin:${PATH}" "${CHECK}" "$@" 2>&1)"
     RC=$?
 }
@@ -290,6 +300,120 @@ matches 'case 10f: a foreign line keeps the old not-delivered behaviour' "${OUT}
 lacks   'case 10f: no queued-pane line for a foreign line' "${OUT}" 'queued in a busy pane'
 equals  'case 10f: nothing is recorded for a foreign line' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
 rm -f "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed"
+
+# --- 10g-10k. card 581: the shared dialog check (scripts/lib/dialog-lib.sh) ---
+# The FX_ screens are read only by name, through ${!v} below.
+# shellcheck disable=SC2034
+{
+FX_list=$'⏺ MoneyWise upgrade is ready for you to merge: PR #19\n\n  - Nothing changes in how the app behaves for you. Merging doesn\'t deploy; orbit deploys afterwards.\n\n  Your asks:\n  1. Merge PR #19 when you are happy with it.\n  2. No rush: fill in ~/.config/fleet/personal-identifiers so the secrets check also blocks your personal details.\n\n────────────\n❯ \n────────────\n  ⏵⏵ auto mode on'
+FX_frame=$'╭──────────╮\n│ Do you want to make this edit to a.txt?\n│ ❯ 1. Yes\n│   2. No, and tell Claude what to do differently\n╰──────────╯'
+FX_footer=$' Do you want to make this edit to a.txt?\n   1. Yes\n   2. No, and tell Claude what to do differently\n\n Esc to cancel · Tab to amend'
+FX_cursor=$' Bash command\n   ls /srv\n ❯ 1. Yes'
+FX_dialog=$'Bash(rm -rf /srv/x)\n\nDo you want to proceed?\n❯ 1. Yes\n  2. No'
+FX_sgr=$' Do you want to make this edit to a.txt?\n \e[38;5;153m❯\e[0m 1. Yes\n   2. No'
+FX_edite=$'\e[38;2;177;185;249m────────────\n\e[39m \e[1mEdit file\n\e[0m a.txt\n  1 -old\n  1 +new\n\n Do you want to make this edit to \e[1ma.txt\e[0m?\n \e[38;2;177;185;249m❯ 1. Yes\n\e[39m   2. Yes, allow all edits during this session \e[2m(shift+tab)\n\e[0m   3. No, and tell Claude what to do differently \e[2m(esc)\e[0m'
+FX_nbsp=$' Do you want to make this edit to a.txt?\n ❯\xc2\xa01. Yes\n   2. Yes, allow all edits during this session\n   3. No, and tell Claude what to do differently'
+FX_framecursor=$'╭──────────╮\n│ Bash command\n│   ls /srv\n│ ❯ 1. Yes\n╰──────────╯'
+FX_proceed=$'Bash(rm -rf /srv/x)\n\nDo you want to proceed?\n  Allow once\n  Deny, and tell Claude what to do'
+FX_ulcolon=$' Do you want to make this edit to a.txt?\n \e[4:3m❯\e[24m 1. Yes\n\e[4:3m   2. No\e[0m'
+FX_osc8=$' Do you want to make this edit to a.txt?\n \e]8;;file:///a\e\\❯\e]8;;\e\\ 1. Yes\n   2. No'
+FX_block=$' Choose a model\n ❯ 1. Opus\n   2. Sonnet'
+FX_confirm=$' Exit Claude Code?\n Enter to confirm · Esc to cancel'
+FX_blocknbsp=$' Choose a model\n ❯\xc2\xa01. Opus\n   2. Sonnet'
+FX_framedblock=$'│ ❯ 1. Postgres\n│   2. SQLite\n│ Enter to select · Esc to cancel'
+FX_framenbsp=$'│ Bash command\n│ ❯\xc2\xa01. Yes'
+FX_cursorNo=$' Bash command\n ❯ 2. No'
+FX_badutf8=$' Bash command\n ❯ 1. Yes \xe2\x9d'
+FX_cursornbsp=$' Bash command\n ❯\xc2\xa01. Yes'
+FX_pickcrop=$' Which database?\n   2. SQLite\n   3. Type something.\n Enter to select · ↑/↓ to navigate · Esc to cancel'
+FX_pickclose=$' Pick a session\n   4. old-run\n   5. other-run\n ↑/↓ to navigate · Enter to select · Esc to close'
+FX_dotnbsp=$' Bash command\n ❯ 1.\xc2\xa0Yes'
+FX_nbspclass=$'⏺ Notes\n  \xc2\xa01. Yes we did\n❯ '
+FX_pickescfirst=$' Pick one\n   2. b\n   3. c\n Esc to cancel · Enter to select'
+FX_framedblockcut=$'│ ❯ 1. Postgres\n│   2. SQLite'
+}
+
+# Every dialog screen, verdict 0; NO_DIALOG_FX, verdict 1. A new FX_ literal is added here by name.
+DIALOG_FX='frame footer cursor dialog sgr edite nbsp framecursor proceed ulcolon osc8 block confirm
+  blocknbsp framedblock framenbsp cursorNo badutf8 cursornbsp
+  pickcrop pickclose pickescfirst dotnbsp framedblockcut'
+NO_DIALOG_FX='list nbspclass'
+typed() { [ -e "${WORK}/tmuxstate/typed" ] && echo yes || echo no; }
+
+QS_LIB="${WORK}/no-such-dialog-lib.sh" live --once advisor
+equals   'case 10g: a dialog lib that does not load exits non-zero' "${RC}" 1
+contains 'case 10g: and says so' "${OUT}" 'dialog check '"${WORK}"'/no-such-dialog-lib.sh did not load'
+equals   'case 10g: in exactly one line' "$(printf '%s\n' "${OUT}" | grep -c .)" 1
+equals   'case 10g: and types nothing' "$(typed)" no
+
+printf 'DIALOG_LOCALE=C.UTF-8\n' >"${WORK}/hollow-lib.sh"
+QS_LIB="${WORK}/hollow-lib.sh" live --once advisor
+equals   'case 10h: a lib that defines no dialog_on exits non-zero' "${RC}" 1
+contains 'case 10h: and says so' "${OUT}" 'hollow-lib.sh defines no dialog_on'
+equals   'case 10h: in exactly one line' "$(printf '%s\n' "${OUT}" | grep -c .)" 1
+equals   'case 10h: and types nothing' "$(typed)" no
+
+echo screen >"${WORK}/tmuxstate/mode"
+printf '%s\n\n❯ \n' "${FX_frame}" >"${WORK}/tmuxstate/screen"
+live --once advisor
+contains 'case 10i: a dialog on the pane defers delivery' "${OUT}" 'defer: pane advisor:0.0 is showing a dialog (dialog check rc 0)'
+equals   'case 10i: and types nothing' "$(typed)" no
+
+printf 'dialog_on(){ return 2; }\n' >"${WORK}/nolocale-lib.sh"
+printf '%s\n' "${FX_list}" >"${WORK}/tmuxstate/screen"
+QS_LIB="${WORK}/nolocale-lib.sh" live --once advisor
+contains 'case 10j: a check that cannot read the pane (rc 2) counts as a dialog' "${OUT}" 'is showing a dialog (dialog check rc 2)'
+equals   'case 10j: and types nothing' "$(typed)" no
+
+live --once advisor
+contains 'case 10k: a reply ending in a numbered list is not a dialog' "${OUT}" 'announced advisor: item 71'
+equals   'case 10k: and the line is typed' "$(typed)" yes
+rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen"
+
+# The verdicts themselves: a reply's list is no dialog (1), every real dialog is (0),
+# and a missing pinned locale fails closed (2).
+# shellcheck source=scripts/lib/dialog-lib.sh
+verdict() { ( . "${DLIB}"; DIALOG_LOCALE="${2:-${DIALOG_LOCALE}}"; dialog_on "$1" >/dev/null ); printf '%s' "$?"; }
+for fx in ${NO_DIALOG_FX}; do
+    v="FX_${fx}"
+    equals "case 10l: FX_${fx}" "$(verdict "${!v}")" 1
+done
+for fx in ${DIALOG_FX}; do
+    v="FX_${fx}"
+    equals "case 10l: FX_${fx}" "$(verdict "${!v}")" 0
+done
+equals 'case 10l: no pinned locale' "$(LC_ALL=C verdict "${FX_list}" xx_XX.UTF-8)" 2
+
+# A dialog that comes up after the first Enter: no further key at all (an Enter would
+# answer it "1. Yes", and even C-u lands on it), deferred like any dialog, not recorded.
+rm -f "${WORK}/tmuxstate/keys"
+echo enterdialog >"${WORK}/tmuxstate/mode"
+printf '%s\n' "${FX_dialog}" >"${WORK}/tmuxstate/screen"
+live --once advisor
+contains 'case 10m: a dialog after the first Enter defers' "${OUT}" 'defer: pane advisor:0.0 is showing a dialog (dialog check rc 0) after 1 Enter(s) — no further keys sent'
+lacks    'case 10m: it is not called queued' "${OUT}" 'queued in a busy pane'
+contains 'case 10m: it is not delivered' "${OUT}" 'not delivered advisor: item 71 (rc 4)'
+equals   'case 10m: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" 'Enter '
+equals   'case 10m: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
+rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
+
+# A dialog already up when our sentence lands: not one Enter.
+echo busydialog >"${WORK}/tmuxstate/mode"
+printf '%s\n' "${FX_frame}" >"${WORK}/tmuxstate/screen"
+live --once advisor
+contains 'case 10n: a dialog before the first Enter defers' "${OUT}" 'is showing a dialog (dialog check rc 0) after 0 Enter(s)'
+equals   'case 10n: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" ''
+equals   'case 10n: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
+rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
+
+# A pane that cannot be read once our sentence is in: no Enter into a screen nobody saw.
+echo capfail >"${WORK}/tmuxstate/mode"
+live --once advisor
+contains 'case 10o: an unreadable pane after typing is a transport failure' "${OUT}" 'transport: pane advisor:0.0 unreadable after 0 Enter(s) — no further keys sent'
+contains 'case 10o: it is not delivered' "${OUT}" 'not delivered advisor: item 71 (rc 3)'
+equals   'case 10o: keys after our sentence' "$(tail -n +2 "${WORK}/tmuxstate/keys" | tr '\n' ' ')" ''
+equals   'case 10o: nothing is recorded' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
+rm -f "${WORK}/state" "${WORK}/tmuxstate/mode" "${WORK}/tmuxstate/typed" "${WORK}/tmuxstate/screen" "${WORK}/tmuxstate/keys"
 
 # --- 11. the owners lint ------------------------------------------------------
 lint() { LOUT="$("${LINT}" "${WORK}/backlog.md" "$1" 2>&1)"; LRC=$?; }
@@ -321,6 +445,11 @@ matches 'case 11d: an item that is not in the backlog is red' "${LOUT}" 'item 40
 { cat "${WORK}/owners-good"; printf 'advisor 33 please\n'; } >"${WORK}/owners-malformed"
 lint "${WORK}/owners-malformed"
 matches 'case 11e: a malformed line is red' "${LOUT}" 'line 5: not .<item> <session> \[hold\].'
+
+sed 's/^33 advisor/33 health/' "${WORK}/owners-good" >"${WORK}/owners-health"
+lint "${WORK}/owners-health"
+matches 'case 11f: the retired health session is refused' "${LOUT}" "item 33 names unknown session 'health'"
+equals  'case 11f: exit code' "${LRC}" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nqueue-start-test: all checks passed\n'

@@ -17,8 +17,9 @@
 #
 # Seams (tests only): QS_OWNERS QS_BACKLOG QS_STATE QS_REGISTRY_DIR QS_BUDGET_SH
 #   QS_APP_OWNERS QS_SYSTEMCTL QS_HEAVY_WORK QS_TMUX_SOCK QS_LOCK QS_SETTLE
-#   QS_ENTER_TRIES QS_DEDUPE_SECS QS_ALLOW_ANY_PATH.
-# Exit: 0 always — a cron job that fails loudly at 3am is a pager, not a tool.
+#   QS_ENTER_TRIES QS_DEDUPE_SECS QS_ALLOW_ANY_PATH QS_DIALOG_LIB.
+# Exit: 0 — a cron job that fails loudly at 3am is a pager, not a tool — except 1
+# when the shared dialog check (scripts/lib/dialog-lib.sh) cannot load: one line, nothing typed.
 # =============================================================================
 set -uo pipefail
 
@@ -27,6 +28,7 @@ BACKLOG="${QS_BACKLOG:-/root/backlog.md}"
 STATE="${QS_STATE:-/var/lib/fleet/queue-start.state}"
 REG_DIR="${QS_REGISTRY_DIR:-/root}"
 BUDGET="${QS_BUDGET_SH:-/usr/local/sbin/fleet-budget}"
+DIALOG_LIB="${QS_DIALOG_LIB:-/usr/local/lib/fleet/dialog-lib.sh}"
 APP_OWNERS="${QS_APP_OWNERS:-/etc/fleet/app-owners}"
 SYSTEMCTL="${QS_SYSTEMCTL:-systemctl}"
 HEAVY="${QS_HEAVY_WORK:-/usr/local/sbin/heavy-work}"
@@ -35,11 +37,10 @@ LOCK="${QS_LOCK:-/run/lock/queue-start.lock}"
 SETTLE="${QS_SETTLE:-0.6}"
 ENTER_TRIES="${QS_ENTER_TRIES:-3}"
 DEDUPE_SECS="${QS_DEDUPE_SECS:-86400}"
-KNOWN_SESSIONS='advisor personal-vps orbit health kidsquest'
+KNOWN_SESSIONS='advisor personal-vps orbit kidsquest'
 DRY_RUN=0
 ONLY=''
 
-DIALOG_RE='Do you want to proceed[?]|^[[:space:]]*[^[:alnum:]]?[[:space:]]*[0-9]+\.[[:space:]]+(Yes|No)([[:space:],]|$)'
 PROMPT_X=2
 
 QUEUED="$(mktemp)" || exit 0
@@ -47,6 +48,15 @@ trap 'rm -f "$QUEUED"' EXIT
 
 log(){ printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 loud(){ printf '%s queue-start: %s\n' "$(date -u +%FT%TZ)" "$*" >&2; log "$*"; }
+
+# The fleet's one dialog check (decision: one-shared-dialog-check), loaded before any pane
+# is touched; without it nothing is typed. dialog_on <screen>: rc 1 is the only "no dialog".
+dialog_lib_fail(){ log "dialog check $DIALOG_LIB $1 — nothing typed this tick"; exit 1; }
+# shellcheck source=scripts/lib/dialog-lib.sh
+. "$DIALOG_LIB" 2>/dev/null || dialog_lib_fail 'did not load'
+declare -F dialog_on >/dev/null || dialog_lib_fail 'defines no dialog_on'
+# A check that cannot read the screen (rc 2, no locale) counts as a dialog.
+no_dialog(){ local rc=0; dialog_on "$1" >/dev/null || rc=$?; [ "$rc" -eq 1 ]; }
 
 tmux_(){ timeout 10 tmux -S "$TMUX_SOCK" "$@"; }
 path_ok(){ case "$1" in "$2"|"$2"/*) return 0 ;; esac ; return 1 ; }
@@ -86,13 +96,14 @@ give_up_clear(){
 # 0 delivered (input line empty again, or queued in a busy pane), 3 unreadable
 # or not accepted, 4 deferred.
 deliver(){
-  local pane="$1" text="$2" session="$3" item="$4" dialog_screen screen row cx try=0 stuck ours shorter
+  local pane="$1" text="$2" session="$3" item="$4" dialog_screen screen row cx try=0 stuck ours shorter drc=0
   dialog_screen="$(tmux_ capture-pane -peJ -S -60 -t "$pane" 2>/dev/null)" || dialog_screen=''
   if [ -z "$dialog_screen" ]; then
     log "transport: pane $pane unreadable — nothing delivered"; return 3
   fi
-  if printf '%s\n' "$dialog_screen" | grep -qE "$DIALOG_RE"; then
-    log "defer: pane $pane is showing a permission dialog"; return 4
+  dialog_on "$dialog_screen" >/dev/null || drc=$?
+  if [ "$drc" -ne 1 ]; then
+    log "defer: pane $pane is showing a dialog (dialog check rc $drc)"; return 4
   fi
   screen="$(tmux_ capture-pane -peJ -S 0 -t "$pane" 2>/dev/null)" || screen=''
   if [ -z "$screen" ]; then
@@ -110,13 +121,23 @@ deliver(){
     log "defer: pane $pane has text in the input line"; return 4
   fi
   tmux_ send-keys -t "$pane" -l -- "$text" || { log "transport: send-keys text failed for $pane"; return 3; }
-  while [ "$try" -lt "$ENTER_TRIES" ]; do
-    sleep "$SETTLE"
-    tmux_ send-keys -t "$pane" Enter || { log "transport: send-keys Enter failed for $pane"; return 3; }
+  # Every capture is checked before the next key: an Enter on a dialog answers it "1. Yes".
+  while :; do
     sleep "$SETTLE"
     screen="$(tmux_ capture-pane -peJ -S 0 -t "$pane" 2>/dev/null)" || screen=''
+    # An unread screen is not a dialog-free one: dialog_on "" says 1.
+    if [ -z "$screen" ]; then
+      log "transport: pane $pane unreadable after $try Enter(s) — no further keys sent, not recorded"; return 3
+    fi
+    drc=0; dialog_on "$screen" >/dev/null || drc=$?
+    if [ "$drc" -ne 1 ]; then
+      log "defer: pane $pane is showing a dialog (dialog check rc $drc) after $try Enter(s) — no further keys sent, not recorded"
+      return 4
+    fi
     row="$(prompt_row "$screen")"
-    if [ -n "$row" ] && [ -z "$(input_text "$row")" ]; then return 0; fi
+    if [ "$try" -gt 0 ] && [ -n "$row" ] && [ -z "$(input_text "$row")" ]; then return 0; fi
+    [ "$try" -lt "$ENTER_TRIES" ] || break
+    tmux_ send-keys -t "$pane" Enter || { log "transport: send-keys Enter failed for $pane"; return 3; }
     try=$((try + 1))
   done
   if [ -z "$row" ]; then
@@ -129,7 +150,7 @@ deliver(){
   shorter=${#stuck}
   [ "${#ours}" -lt "$shorter" ] && shorter=${#ours}
   if [ "$shorter" -ge 10 ] && { is_prefix "$stuck" "$ours" || is_prefix "$ours" "$stuck"; } \
-     && ! printf '%s\n' "$screen" | grep -qE "$DIALOG_RE"; then
+     && no_dialog "$screen"; then
     log "queued in a busy pane $pane: $session item $item (the line is consumed at its next turn)"
     return 0
   fi
