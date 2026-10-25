@@ -2313,8 +2313,9 @@ mv "${WT}" "${WT}-moved"
 ln -s "${WT}-moved" "${WT}"
 chown -h 65534:65534 "${WT}"
 run_lib "${CLEAN_CALL}"
-contains 'a worktree listed by a link path, carrying a privileged-uid file, is kept (every link is, card 677)' "${OUT}" \
-    'worktrees removed 0 kept 1 (link)'
+contains 'a worktree listed by a link path, carrying a privileged-uid file, is kept' "${OUT}" \
+    'worktrees removed 0 kept 1 (rootfiles)'
+absent 'and no by-hand removal line is printed for it' "${OUT}" 'linked worktree, not removed'
 equals 'and the directory behind the link is still on disk' "$(on_disk "${WT}-moved")" 'there'
 contains 'and git still lists it, so no half-removal deleted its record' "$(git_at worktree list --porcelain)" \
     "worktree ${WT}"$'\n'
@@ -2422,6 +2423,21 @@ equals 'and the tracked file behind the link is still there' "$(cat "${WT}-moved
 equals 'and the real folder holds as many files' "$(find "${WT}-moved" -type f | wc -l)" "${BEFORE_FILES}"
 equals 'and its names and contents are unchanged' "$(tree_print "${WT}-moved")" "${BEFORE_PRINT}"
 absent 'and no removal was tried' "${OUT}" '(remove)'
+contains 'and the read-only preview says it carries no ignored path' "${OUT}" "CLEANUP #73 preview of ${WT}-moved: 0 ignored paths"
+
+# A linked worktree with an ignored build/out.log and no .env: the preview counts and names it (S7), then the line.
+cleanup_fixture cleanup-linked-ignored-build
+mv "${WT}" "${WT}-moved"
+ln -s "${WT}-moved" "${WT}"
+mkdir -p "${ROOT}/.git/info" "${WT}-moved/build"
+printf 'build/\n' >>"${ROOT}/.git/info/exclude"
+printf 'log\n' >"${WT}-moved/build/out.log"
+run_lib "${CLEAN_CALL}"
+contains 'a linked worktree with only an ignored build/ is kept as a link' "${OUT}" 'worktrees removed 0 kept 1 (link)'
+contains 'and the read-only preview counts and names the ignored path' "${OUT}" \
+    "CLEANUP #73 preview of ${WT}-moved: 1 ignored path(s), which worktree remove deletes: build/"$'\n'
+equals 'and the by-hand line comes right after it' "$(grep -F -A1 'preview of' <<<"${OUT}" | tail -n 1 | grep -cF 'linked worktree, not removed')" 1
+equals 'and the ignored file is still there' "$(cat "${WT}-moved/build/out.log" 2>/dev/null)" 'log'
 
 # Paths with a space and shell metacharacters: the printed line is %q-quoted, and run as printed it ends clean.
 cleanup_fixture cleanup-linked-quoted
@@ -2441,16 +2457,35 @@ equals 'and no real folder' "$(on_disk "${CASE}/real dir/wt \$(touch pwned)")" '
 absent 'and no worktree record' "$(git_at worktree list --porcelain)" 'wt-pr'
 equals 'and ran nothing from the path' "$([ -e "${CASE}/pwned" ] && echo ran || echo quoted)" 'quoted'
 
-# Listed through a linked parent, with a process inside: a cwd reads as the real path, never the listed one.
-cleanup_fixture cleanup-parent-linked-in-use
+# Listed through a linked parent, unused: kept as a link, and the line names both paths.
+cleanup_fixture cleanup-parent-linked-unused
 via_parent
-mkdir -p "${CASE}/proc/4242"
-ln -s "${WT}/app" "${CASE}/proc/4242/cwd"
 BEFORE_PRINT="$(tree_print "${WT}")"
 run_lib "${CLEAN_CALL}"
 contains 'a worktree listed through a linked parent is kept' "${OUT}" 'worktrees removed 0 kept 1 (link)'
 contains 'and the summary names the listed and the real path' "${OUT}" "CLEANUP #73 kept ${CASE}/via/wt-pr -> ${WT}: linked worktree, not removed"
 equals 'and its real folder is unchanged' "$(tree_print "${WT}")" "${BEFORE_PRINT}"
+
+# Listed through a linked parent, with a process inside: a cwd reads as the real path, never the listed one.
+cleanup_fixture cleanup-parent-linked-proc-inside
+via_parent
+mkdir -p "${CASE}/proc/4242"
+ln -s "${WT}/app" "${CASE}/proc/4242/cwd"
+run_lib "${CLEAN_CALL}"
+contains 'a linked worktree with a process in its real folder is kept for the process' "${OUT}" 'worktrees removed 0 kept 1 (procs)'
+absent 'and no by-hand removal line is printed for it' "${OUT}" 'linked worktree, not removed'
+
+# A linked worktree with an ignored .env: worktree remove without --force deletes ignored files, so no line.
+cleanup_fixture cleanup-linked-ignored-env
+mv "${WT}" "${WT}-moved"
+ln -s "${WT}-moved" "${WT}"
+mkdir -p "${ROOT}/.git/info"
+printf '.env\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}-moved/.env"
+run_lib "${CLEAN_CALL}"
+contains 'a linked worktree carrying an ignored .env is kept for the .env' "${OUT}" 'worktrees removed 0 kept 1 (envfiles)'
+absent 'and no by-hand removal line is printed for it' "${OUT}" 'linked worktree, not removed'
+equals 'and the .env is still there' "$(cat "${WT}-moved/.env" 2>/dev/null)" 'fixture'
 
 # A bind source written through a link of its own still names the worktree.
 cleanup_fixture cleanup-mounts-source-link

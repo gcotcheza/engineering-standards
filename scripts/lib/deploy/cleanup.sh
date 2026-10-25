@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25 sha256:efca203e957732e6521bd4dbf69e18c4b24d32d039b22425927923a15e051a28
+# fleet-deploy-lib 2026-10-25 sha256:183e2c8bca32602b93c38c205c47c8f119d24af07156fe588f1509da64fda74a
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -125,6 +125,25 @@ cleanup_linked_say() {
     say "CLEANUP #${PR-} kept $l -> $r: linked worktree, not removed; remove by hand with: git -C $g worktree repair $r && { [ ! -L $l ] || unlink -- $l; } && git -C $g worktree remove $r"
 }
 
+# Read-only preview (S7) of the ignored paths that remove deletes; 1 when they cannot be listed.
+cleanup_linked_preview() {
+    local real=$1 rc=0 n=0 shown='' p r
+    printf -v r '%q' "$real"
+    # The owner's tree may set core.fsmonitor, the one ls-files setting that runs a program: forced off.
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${WT_GIT-} --no-optional-locks -c core.fsmonitor=false -c core.quotePath=true -C "$real" \
+        ls-files -o -i --exclude-standard --directory 2>/dev/null || rc=$?
+    [ "$rc" = 0 ] || { say "CLEANUP #${PR-} kept $r: its ignored paths could not be listed (ls-files exited ${rc}), so no by-hand removal is printed"; return 1; }
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        n=$((n + 1))
+        [ "$n" -gt 5 ] || shown="${shown} ${p}"
+    done <<<"$DEPLOY_GIT_OUT"
+    [ "$n" != 0 ] || { say "CLEANUP #${PR-} preview of $r: 0 ignored paths"; return 0; }
+    [ "$n" -le 5 ] || shown="${shown} (and $((n - 5)) more)"
+    say "CLEANUP #${PR-} preview of $r: ${n} ignored path(s), which worktree remove deletes:${shown}"
+}
+
 cleanup_worktree() {
     local wt=$1 head=$2 rc=0 out real
     cleanup_lanekeep "$wt" || return 0
@@ -148,11 +167,12 @@ cleanup_worktree() {
     [ -z "$out" ] || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
     # A worktree reached through a link is never removed: remove empties the target, then fails on the link.
     real=$("${CLEANUP_REALPATH}" -e -- "$wt" 2>/dev/null) || { cleanup_keep realpath "$wt (its real path could not be read, so a link could not be ruled out)"; return 0; }
-    [ "$real" = "$wt" ] || { cleanup_keep link "$wt (linked to $real)"; cleanup_linked_say "$wt" "$real"; return 0; }
-    cleanup_procs "$wt" || return 0
-    cleanup_mounts "$wt" || return 0
-    cleanup_rootfiles "$wt" || return 0
-    cleanup_envfiles "$wt" || return 0
+    cleanup_procs "$real" || return 0
+    cleanup_mounts "$real" || return 0
+    cleanup_rootfiles "$real" || return 0
+    cleanup_envfiles "$real" || return 0
+    # Only now the preview and by-hand line: remove deletes ignored files, so a refusal above prints none.
+    [ "$real" = "$wt" ] || { cleanup_keep link "$wt (linked to $real)"; cleanup_linked_preview "$real" && cleanup_linked_say "$wt" "$real"; return 0; }
     rc=0
     # shellcheck disable=SC2086
     deploy_git_bounded ${GIT-} worktree remove "$wt" 2>/dev/null || rc=$?

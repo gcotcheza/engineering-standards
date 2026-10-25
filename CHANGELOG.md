@@ -15,12 +15,19 @@ limit left: none of them looks for a link above ROOT.
 a cwd always reads as the real path, so a worktree listed through a link was removed while a process
 sat in it. A clean worktree that is itself a link was emptied by `worktree remove`, which then failed
 on the link and was reported as `kept (remove)`. Now `cleanup_worktree` reads the worktree's
-`realpath -e` first: a worktree reached through any link is kept (reason `link`) and never removed,
-and the summary prints `kept <link> -> <real>: linked worktree, not removed; remove by hand with:
+`realpath -e` and runs the process, mount, root-owned-file and ignored-`.env` checks on it; one that
+refuses keeps the tree for its own reason and prints nothing more. `worktree remove` without
+`--force` deletes ignored files, so an ignored `.env*` now refuses first (reason `envfiles`, no
+line); any other ignored file is still deleted by the by-hand sequence, so it is previewed and
+counted first (S7): the count and the first five paths, or `0 ignored paths`, from a read-only
+`ls-files` with `core.fsmonitor` forced off. A worktree reached through
+any link that passes all four is kept (reason `link`) and never removed, and the summary prints
+`kept <link> -> <real>: linked worktree, not removed; remove by hand with:
 git -C <repo> worktree repair <real> && { [ ! -L <link> ] || unlink -- <link>; } && git -C <repo>
 worktree remove <real>`, every path `%q`-quoted (removing by the link path empties the target). A failing `realpath` keeps it too (reason `realpath`), and a
 mount source is also compared as its own `realpath -m`. decision: a-linked-worktree-is-kept-never-removed
-`realpath` is pinned as `find`, `timeout` and `grep` are. New cases in `ownership-test.sh` and
+`realpath` is pinned to `/usr/bin/realpath` in `cleanup.sh` (as `find`, `timeout` and `grep` are)
+and in `ownership.sh` (as `find` is). New cases in `ownership-test.sh` and
 `test.sh` fail with each new line removed. Every header is re-stamped for 2026-10-25. Each project
 reads STALE in the fleet check until it re-vendors.
 
