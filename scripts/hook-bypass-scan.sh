@@ -120,6 +120,8 @@ function judge(file, n, s, argvn,    t, h, r, cut, found, short, e, rest) {
         gsub(CONTAINER_ENV, " ", e)
         h = h e rest
     }
+    # One pass: env -i, assignments, HOME=/root, assignments, then git, in one command: root keeps its own home.
+    if (match(h, ROOTHOME)) { e = substr(h, RSTART, RLENGTH); sub("[ \t]" ROOT "[ \t]", " ", e); h = substr(h, 1, RSTART - 1) e substr(h, RSTART + RLENGTH) }
     if (h ~ /(^|[^A-Za-z0-9_])HOME=/) found = found " HOME= (another home drops a hook set in ~/.gitconfig)"
     if (index(h, "XDG_CONFIG_HOME=")) found = found " XDG_CONFIG_HOME="
     # A short cluster carrying n after the word commit or merge (quoted or not), up to a command end; or in an argv array.
@@ -140,6 +142,10 @@ BEGIN {
     VERB = "(^|[^a-z0-9_-])(commit|merge)" Q "?[ \t]"
     DOCKER_RUN = "docker[ \t]+(compose[ \t]+)?run[ \t]"
     ARGV_N = Q "(commit|merge)" Q "[ \t]*,([ \t]*" Q "[^\"" q "]*" Q "[ \t]*,)*[ \t]*" Q "-[a-z]*n[a-z]*" Q
+    ASSIGN = "[A-Za-z_][A-Za-z0-9_]*=(\"[^\"]*\"|[^ \t\"" q ";&|]*)[ \t]+"
+    ROOT = "HOME=/root"
+    GITCALL = "(git|\"?[$][{]?GIT_BIN[}]?\"?)"
+    ROOTHOME = "(^|[ \t;&|({`])env[ \t]+-i[ \t]+(" ASSIGN ")*" ROOT "[ \t]+(" ASSIGN ")*" GITCALL "([ \t;&|)`]|$)"
     CONTAINER_ENV = "(^|[ \t])(-e|--env)[ \t=]+[\"" q "]?HOME="
     VALUEOPT = "^(-[a-z]*[mfct]|--(message|file|author|date|template|trailer|cleanup|fixup|squash|reuse-message|reedit-message))$"
     ELEM = "(" Q "[^\"" q "]*" Q "|[^][ \t,\"" q "()]+)"

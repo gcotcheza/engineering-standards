@@ -157,6 +157,30 @@ expect 'the long flag split by an empty quote pair' 1 scripts/a.sh 'git commit -
 expect 'an unset with the read negated' 1 scripts/a.sh 'git config --unset --no-get core.hooks@Path'
 expect 'a global unset with the read negated' 1 scripts/a.sh 'git config --global --unset --no-get "core.hooks@Path"'
 
+# --- one root-home pass: env -i, the root home among its assignments, then git, in one command --
+expect 'root home: env -i with only the root home, then git' 0 scripts/a.sh 'env -i HOM@E=/root git -C / status'
+expect 'root home: assignments around the root home, then git' 0 scripts/a.sh 'clone_git() { env -i PATH=/usr/bin:/bin HOM@E=/root GIT_NO_REPLACE_OBJECTS=1 git -C / "$@"; }'
+expect 'root home: a quoted assignment, then "$GIT_BIN"' 0 scripts/a.sh 'exec env -i PATH="$RUN_PATH" HOM@E=/root "$GIT_BIN" fetch'
+expect 'root home: git through ${GIT_BIN}' 0 scripts/a.sh 'env -i HOM@E=/root ${GIT_BIN} fetch'
+expect 'root home: git on the continuation line' 0 scripts/a.sh 'env -i PATH=/usr/bin:/bin HOM@E=/root GIT_TERMINAL_PROMPT=0 \' '    "$GIT_BIN" -c credential.helper= "$@"'
+expect 'root home refused: a path under /root' 1 scripts/a.sh 'env -i HOM@E=/root/x git status'
+expect 'root home refused: /root with a suffix' 1 scripts/a.sh 'env -i HOM@E=/rootx git status'
+expect 'root home refused: another home' 1 scripts/a.sh 'env -i HOM@E=/tmp git status'
+expect 'root home refused: a home from a variable' 1 scripts/a.sh 'env -i HOM@E="$X" git status'
+expect 'root home refused: a second HOME before it' 1 scripts/a.sh 'env -i HOM@E=/tmp HOM@E=/root git status'
+expect 'root home refused: a second HOME after it' 1 scripts/a.sh 'env -i HOM@E=/root HOM@E=/tmp git status'
+expect 'root home refused: a HOME after the git call' 1 scripts/a.sh 'env -i HOM@E=/root git status HOM@E=/tmp'
+expect 'root home refused: a HOME in a later command' 1 scripts/a.sh 'env -i HOM@E=/root git status; HOM@E=/tmp git status'
+expect 'root home refused: a HOME after &&' 1 scripts/a.sh 'env -i HOM@E=/root git status && HOM@E=/tmp x'
+expect 'root home refused: no git next' 1 scripts/a.sh 'env -i HOM@E=/root bash "$TREE/$SCRIPT"'
+expect 'root home refused: docker compose next' 1 scripts/a.sh 'env -i PATH="$P" HOM@E=/root docker compose up'
+expect 'root home refused: env -i alone, then git after a separator' 1 scripts/a.sh 'env -i HOM@E=/root; git status'
+expect 'root home refused: git after an assignment and a separator' 1 scripts/a.sh 'env -i HOM@E=/root X=1; git status'
+expect 'root home refused: a command that only starts with git' 1 scripts/a.sh 'env -i HOM@E=/root gitx status'
+expect 'root home refused: env without -i' 1 scripts/a.sh 'env HOM@E=/root git status'
+expect 'root home refused: no env -i at all' 1 scripts/a.sh 'HOM@E=/root git status'
+expect 'root home refused: a word that only ends in env' 1 scripts/a.sh 'myenv -i HOM@E=/root git status'
+
 # --- docs/ and near misses are not ----------------------------------------------
 expect 'a file under docs/' 0 docs/a.md 'git commit --no-@verify'
 expect 'an argv array with no n' 0 tests/A.php "\$p = new Process(['git', 'commit', '-q', '-m', 'run -@n']);"
