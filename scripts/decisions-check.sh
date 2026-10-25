@@ -45,7 +45,7 @@ if [ -e "${MODE}" ] || [ -L "${MODE}" ]; then
     [ ! -L "${MODE}" ] || { printf 'decisions-check: %s is a symlink, so nothing was judged\n' "${MODE}" >&2; exit 2; }
     "${GIT[@]}" ls-files --error-unmatch -- "${MODE}" >/dev/null 2>&1 || { printf 'decisions-check: %s is not tracked by git, so nothing was judged\n' "${MODE}" >&2; exit 2; }
     mode=$(cat -- "${MODE}" 2>&1) || { printf 'decisions-check: %s could not be read, so nothing was judged: %s\n' "${MODE}" "${mode}" >&2; exit 2; }
-    tr -d '\000' <"${MODE}" | cmp -s -- - "${MODE}" || { printf 'decisions-check: %s holds a NUL byte, so nothing was judged\n' "${MODE}" >&2; exit 2; }
+    [ "$(tr -d '\000' <"${MODE}" | wc -c)" -eq "$(wc -c <"${MODE}")" ] || { printf 'decisions-check: %s holds a NUL byte, so nothing was judged\n' "${MODE}" >&2; exit 2; }
     [ "${mode}" = 'no-rollup' ] || { printf 'decisions-check: %s must read exactly no-rollup (or not exist), so nothing was judged\n' "${MODE}" >&2; exit 2; }
     rollup=no
     printf 'decisions-check: %s is no-rollup: the project never folds, so the 10-file fold and the opening line are not checked; every other check runs\n' "${MODE}"

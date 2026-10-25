@@ -11,6 +11,12 @@ throwaway repo and a fake docker, plus a comparison of the inline clone-lib bloc
 fleet-deploy's; each guard has a mutant in one of four `scripts/gate-run*-mutants.txt` tables. Not yet used by any app (the Memento pilot is next), and the
 installed fleet-deploy scripts still carry their own export-tree copy until a packet sources the lib.
 Why: `docs/DECISIONS.md#gate-run-exports-one-sha`.
+
+## 2026-10-25 — decisions-check's NUL test no longer reads the mode file twice in one pipe (the standard is unchanged and VERSION is not bumped)
+**Card 696 follow-up.** Shellcheck SC2094 turned main's gate red at step 7: the NUL guard piped the mode
+file through `tr` into `cmp` against the same file. It now compares the byte count with and without NUL
+bytes. Same refusal, same sentence; case 25d still passes, and goes red with the guard line deleted.
+
 ## 2026-10-25 — decisions-check honours a project's no-rollup mode (the standard is unchanged and VERSION is not bumped)
 **Card 696.** A project whose committed `.fleet/decisions-mode` reads exactly `no-rollup` (Fineprint:
 one file per decision never conflicts, and its archive is frozen by a test) is no longer told to fold
