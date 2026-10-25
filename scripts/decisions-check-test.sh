@@ -184,5 +184,31 @@ fresh; OUT="$(cd "${R}" && bash "${CHECK}" '' 2>&1)"; RC=$?
 matches 'case 21: an empty argument is usage too' "${OUT}" '^usage: decisions-check\.sh <repo-root>$'
 equals  'case 21: empty argument exit code' "${RC}" 2
 
+# --- 22. .fleet/decisions-mode no-rollup skips the fold and the opening line, nothing else -------------
+SKIPPED='^decisions-check: \.fleet/decisions-mode is no-rollup: .* the 10-file fold and the opening line are not checked; every other check runs$'
+no_rollup() { mkdir -p "${R}/.fleet"; printf '%s\n' "$1" >"${R}/.fleet/decisions-mode"; }
+ten_without_header() { sed -i 3d "${R}/docs/DECISIONS.md"; for i in 3 4 5 6 7 8 9; do add_decision "2026-02-0${i}-0900-file-${i}" "File ${i}"; done; add_decision 2026-02-10-0900-file-ten 'File ten'; }
+fresh; ten_without_header; no_rollup no-rollup; run
+matches 'case 22a: the skip is said in one line' "${OUT}" "${SKIPPED}"
+equals  'case 22a: ten files and no opening line pass' "${RC}" 0
+matches 'case 22a: still ok, with the count' "${OUT}" '^decisions-check: ok \(10 unrolled, 1 rolled up\)$'
+fresh; ten_without_header; no_rollup no-rollup; add_decision 2026-02-11-0900-Bad_Slug 'Bad'; printf 'x # %s: no-such-one\n' "${KW}" >>"${R}/src/app.sh"; run
+matches 'case 22b: a bad slug still fails' "${OUT}" '2026-02-11-0900-Bad_Slug.md: not a decision file name'
+matches 'case 22b: a dangling pointer still fails' "${OUT}" 'pointer to no-such-one '
+equals  'case 22b: neither skipped check speaks' "$(grep -cE 'unrolled decisions|first 10 lines must carry' <<<"${OUT}")" 0
+equals  'case 22b: exit code' "${RC}" 1
+
+# --- 23. any other mode value judges nothing ------------------------------------------------------------
+fresh; no_rollup 'no-rollup please'; run
+matches 'case 23: an unknown mode is refused' "${OUT}" '^decisions-check: \.fleet/decisions-mode must read exactly no-rollup \(or not exist\), so nothing was judged$'
+equals  'case 23: exit code' "${RC}" 2
+
+# --- 24. no mode file: the fold and the opening line are judged as before ---------------------------------
+fresh; ten_without_header; run
+matches 'case 24: the fold is judged' "${OUT}" 'decisions-check: 10 unrolled decisions: run decisions-rollup\.sh in this change'
+matches 'case 24: the opening line is judged' "${OUT}" 'its first 10 lines must carry'
+equals  'case 24: no skip line' "$(grep -c 'is no-rollup' <<<"${OUT}")" 0
+equals  'case 24: exit code' "${RC}" 1
+
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'decisions-check-test: all cases passed\n'

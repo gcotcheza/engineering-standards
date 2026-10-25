@@ -47,7 +47,8 @@ W7's two fixture suites, is placed last unmeasured.
 <project-root>` its roll-up; both run from this checkout against an app root and are not vendored.
 The check is read-only; the roll-up folds every file into the bottom of `docs/DECISIONS.md`,
 `git rm`s each by name, stages the log and runs the check. What each fails or refuses on is listed
-in its own header.
+in its own header. A project that never folds says so itself, in a committed `.fleet/decisions-mode`
+reading `no-rollup`; the check then skips the 10-file fold and the opening line, and nothing else.
 
 `scripts/guard-mutants.sh <target> <table>` is rule T5's guard-deletion sweep. Each table row,
 `id@@case@@exact line@@replacement` (an empty replacement deletes the line), changes that one line

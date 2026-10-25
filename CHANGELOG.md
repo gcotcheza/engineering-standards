@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-25 — decisions-check honours a project's no-rollup mode (the standard is unchanged and VERSION is not bumped)
+**Card 696.** A project whose committed `.fleet/decisions-mode` reads exactly `no-rollup` (Fineprint:
+one file per decision never conflicts, and its archive is frozen by a test) is no longer told to fold
+at the 10th file or to carry the "Newer decisions" line. `decisions-check.sh` says in one line that it
+skipped those two, and runs every other check: file names, `# <Title>`, unique slugs, pointers. Any
+other value in that file judges nothing (exit 2); no file changes nothing. The opt-out is read from
+the project, never listed in the checker. Three new cases in `decisions-check-test.sh`; deleting the
+skip line or the unknown-value refusal turns one red.
 ## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
 **Card 684.** Deploy-on-merge must require every row the test scope owes, e2e included, as a hand
 deploy does (Ghie, 2026-10-24). `gated()` in `ledger.sh` gains three optional inputs so a judge

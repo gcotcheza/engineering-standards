@@ -8,6 +8,8 @@
 # a duplicate slug, a bad file name, a symlink or directory, CRLF endings, a malformed file
 # (# <Title>, blank line, prose), a missing opening line, 10 unrolled files, a roll-up that
 # collided with another branch's. Pointers are judged in every tracked file, fenced blocks too.
+# A project whose .fleet/decisions-mode reads no-rollup skips only the fold and the opening line;
+# any other value there judges nothing (2).
 # Exit 0 clean, 1 with one line per finding, 2 when nothing could be judged.
 # DECISIONS_GIT is the git seam (it may be several words: git-as <app> -C <tree>),
 # DECISIONS_BASE_REF the main it compares against.
@@ -30,12 +32,21 @@ LIST="${ITEM}((, and |, or |, | and | or )${ITEM})*,?"
 POINTER='([Dd]ecisions?|DECISIONS(\.md)?)`?: '"${LIST}"
 NUMBERED='(DECISIONS\.md|decisions/[A-Za-z0-9._-]+\.md)(:L?[0-9]+|#L[0-9]+)'
 REBASE='rebase onto main and re-run decisions-rollup.sh'
+MODE='.fleet/decisions-mode'
 
 findings=0
 finding() { printf 'decisions-check: %s\n' "$*" >&2; findings=$((findings + 1)); }
 
 top=$("${GIT[@]}" rev-parse --show-toplevel 2>&1) || { printf 'decisions-check: %s is not a git work tree, so nothing was judged: %s\n' "${ROOT}" "${top}" >&2; exit 2; }
 [ "${top}" = "$(pwd -P)" ] || { printf 'decisions-check: %s is not the top of its work tree (%s), so nothing was judged.\n' "${ROOT}" "${top}" >&2; exit 2; }
+
+rollup=yes
+if [ -e "${MODE}" ] || [ -L "${MODE}" ]; then
+    mode=$(cat -- "${MODE}" 2>&1) || { printf 'decisions-check: %s could not be read, so nothing was judged: %s\n' "${MODE}" "${mode}" >&2; exit 2; }
+    [ "${mode}" = 'no-rollup' ] || { printf 'decisions-check: %s must read exactly no-rollup (or not exist), so nothing was judged\n' "${MODE}" >&2; exit 2; }
+    rollup=no
+    printf 'decisions-check: %s is no-rollup: the project never folds, so the 10-file fold and the opening line are not checked; every other check runs\n' "${MODE}"
+fi
 
 declare -A owner=()
 files=()
@@ -56,7 +67,7 @@ if [ -d "${DIR}" ]; then
         [ -n "$(sed -n 3p -- "$f")" ] || finding "${f}:3: no prose after the title"
     done
 fi
-[ "${#files[@]}" -lt "${LIMIT}" ] || finding "${#files[@]} unrolled decisions: run decisions-rollup.sh in this change"
+[ "${rollup}" = no ] || [ "${#files[@]}" -lt "${LIMIT}" ] || finding "${#files[@]} unrolled decisions: run decisions-rollup.sh in this change"
 
 declare -A rolled=()
 if [ -f "${LOG}" ]; then
@@ -68,7 +79,7 @@ if [ -f "${LOG}" ]; then
     done < <(grep -nE "^### ${SLUG}\$" -- "${LOG}")
 fi
 
-[ "${#files[@]}" -eq 0 ] || head -n 10 -- "${LOG}" 2>/dev/null | grep -qxF -- "${HEADER}" || finding "${LOG}: ${DIR}/ holds decisions, so its first 10 lines must carry: ${HEADER}"
+[ "${rollup}" = no ] || [ "${#files[@]}" -eq 0 ] || head -n 10 -- "${LOG}" 2>/dev/null | grep -qxF -- "${HEADER}" || finding "${LOG}: ${DIR}/ holds decisions, so its first 10 lines must carry: ${HEADER}"
 
 if [ "${#rolled[@]}" -gt 0 ]; then
     if ! base=$("${GIT[@]}" merge-base HEAD "${BASE_REF}" 2>/dev/null); then
