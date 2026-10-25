@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
+**Card 684.** Deploy-on-merge must require every row the test scope owes, e2e included, as a hand
+deploy does (Ghie, 2026-10-24). `gated()` in `ledger.sh` gains three optional inputs so a judge
+that reads from root's mirror can call it: `GATE_BASE` (the live commit the scope is read
+against, instead of the checkout's HEAD), `GATE_CI_BY` (the caller's own ci evidence, which fills
+an absent ci row and never a red one or e2e) and `GATE_ROUTE` (the refusal's closing route).
+`test_scope_of` takes `GATE_BASE` only as a full 40-hex sha that is an ancestor of the commit and
+not the commit itself; anything else, a set but empty value included, reads every path as UI and names the failed condition. A
+value of any of the three inherited from the environment is discarded on sourcing. Unset, nothing
+changes. Thirteen new `test.sh` cases (fifteen checks); each new guard line has a mutant that turns
+one red.
+Every header is re-stamped for 2026-10-25.1. Why: `docs/decisions/2026-10-25-0244-gated-takes-a-callers-base-and-ci.md`.
 ## 2026-10-25 — the deploy library sees through linked folders in its ownership and cleanup checks (deploy-lib VERSION 2026-10-25; the standard is unchanged and VERSION is not bumped)
 **Card 678.** `chown_root_owned` and `root_owned_count` in `ownership.sh` refused a link with
 `! -L`, but `link/` makes `-L` false and `find -P "link/"` then walks the link's target; so did a

@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25 sha256:95014c15bf1b86354c7dfbda6a00720777bb2cf235ad39430b80db5511ee1dfe
+# fleet-deploy-lib 2026-10-25.1 sha256:b0a3343349c47db934492a40b869ab2fb7e0c7e30d239a45d2e61b7ff3d76078
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -12,6 +12,8 @@
 # `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exit 75, never GATE FAILED.
 
 unset GATE_SUITE_PASSED GATE_ARMED GATE_ARMED_SHA
+# gated's caller inputs are set by the caller after sourcing, never inherited.
+unset GATE_BASE GATE_CI_BY GATE_ROUTE
 
 # The commit the run begins on. gate_ledger_record writes no row for any other.
 gate_ledger_arm() {
@@ -164,14 +166,34 @@ test_scope_classify() {
     fi
 }
 
-# What deploying $1 changes on this checkout, classified by the declaration $1 itself carries.
+# What deploying $1 changes on this checkout (or on GATE_BASE, a caller's verified live commit),
+# classified by the declaration $1 itself carries.
 test_scope_of() {
     local sha=$1 live raw paths links decl
     SCOPE=ui
     # shellcheck disable=SC2086
-    if ! deploy_git_or_refuse $GIT rev-parse HEAD 2>/dev/null; then
+    if [ -n "${GATE_BASE+x}" ]; then
+        if [[ ! $GATE_BASE =~ ^[0-9a-f]{40}$ ]]; then
+            SCOPE_WHY='GATE_BASE is not a full 40-hex sha, so every path is UI'
+            return 0
+        fi
+        if [ "$GATE_BASE" = "$sha" ]; then
+            SCOPE_WHY="GATE_BASE is ${sha:0:7} itself, so nothing shows what deploys and every path is UI"
+            return 0
+        fi
+        if ! deploy_git_or_refuse $GIT merge-base --is-ancestor "$GATE_BASE" "$sha" 2>/dev/null; then
+            SCOPE_WHY="GATE_BASE ${GATE_BASE:0:7} is not an ancestor of ${sha:0:7}, so every path is UI"
+            return 0
+        fi
+        live=$GATE_BASE
+    elif deploy_git_or_refuse $GIT rev-parse HEAD 2>/dev/null; then
+        live=$DEPLOY_GIT_OUT
+    else
         SCOPE_WHY="git could not name the checkout's HEAD, so every path is UI"
-    elif live=$DEPLOY_GIT_OUT; ! deploy_git_or_refuse $GIT diff --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --raw --no-abbrev "$live" "$sha" 2>/dev/null; then
+        return 0
+    fi
+    # shellcheck disable=SC2086
+    if ! deploy_git_or_refuse $GIT diff --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --raw --no-abbrev "$live" "$sha" 2>/dev/null; then
         SCOPE_WHY="git could not list what ${sha:0:7} changes on ${live:0:7}, so every path is UI"
     elif raw=$DEPLOY_GIT_OUT; paths=$(cut -s -f2- <<<"$raw") \
         && links=$(awk -F'\t' '!f && $1 ~ /^:(120000|160000) |^:[0-7]+ (120000|160000) / { f = $2 } END { printf "%s", f }' <<<"$raw") \
@@ -302,7 +324,7 @@ github_e2e() {
 }
 
 gated() {
-    local kind sha what v from tree='' bytree='' owed kinds='' notgreen='' verdict='' refusal='' gh_e2e=''
+    local kind sha what v from tree='' bytree='' owed kinds='' notgreen='' verdict='' refusal='' gh_e2e='' ci_by='' ci_src
     # Unset is a caller without the matching resolve.sh; set but empty is a resolve that
     # was skipped or did not finish, and that one is refused rather than read as the head.
     sha=${GATE_SHA-$HEAD_SHA}
@@ -350,6 +372,8 @@ gated() {
                     bytree="${bytree:+$bytree, }$kind ${from:0:7}"
                 fi
                 kinds="${kinds:+$kinds, }$kind $v${from:+ by identical tree from ${from:0:7}}"
+                # GATE_CI_BY: the caller's own ci evidence for sha; it fills an absent ci row, never a red one.
+                if [ "$kind" = ci ] && [ "$v" = absent ] && [ -n "${GATE_CI_BY:-}" ]; then v=green ci_by=$GATE_CI_BY; kinds="$kinds, $ci_by"; fi
                 if github_e2e "$kind" "$v" "$sha" "$what" "${MERGE_SHA:-}"; then v=green; gh_e2e=$GH_E2E_RUN; fi
                 kinds="$kinds${GH_E2E:+, $GH_E2E}"
                 [ -z "$GH_E2E_WHY" ] || say "GITHUB E2E $GH_E2E_WHY"
@@ -358,7 +382,7 @@ gated() {
             verdict="$what ${sha:0:7}: $kinds"
             if [ -n "$notgreen" ]; then
                 verdict="NOT GREEN $verdict"
-                refusal="the ledger holds no green $notgreen for ${sha:0:7} ($kinds): a commit is gated before it is merged, and once it is in main only a route the gate documents for that (a base override, where it has one) can gate it — or deploy with --gated-by-hand, which records this as ungated."
+                refusal="the ledger holds no green $notgreen for ${sha:0:7} ($kinds): ${GATE_ROUTE:-a commit is gated before it is merged, and once it is in main only a route the gate documents for that (a base override, where it has one) can gate it — or deploy with --gated-by-hand, which records this as ungated.}"
             fi
         fi
     fi
@@ -370,6 +394,8 @@ gated() {
         return 0
     fi
     [ -z "$refusal" ] || refuse "$refusal"
+    ci_src="in $LEDGER"
+    [ -z "$ci_by" ] || ci_src="by $ci_by"
     case $SCOPE in
         docs)
             # shellcheck disable=SC2034  # the project's finish() prints it
@@ -378,18 +404,22 @@ gated() {
             ;;
         non-ui)
             # shellcheck disable=SC2034  # the project's finish() prints it
-            GATED="ledger $what ${sha:0:7} ci (non-UI)${bytree:+, by identical tree: $bytree}"
-            say "GATED ${sha:0:7} ci green in $LEDGER; e2e not required: $SCOPE_WHY per $TEST_SCOPE_RULE"
+            GATED="${ci_by:-ledger $what ${sha:0:7} ci} (non-UI)${bytree:+, by identical tree: $bytree}"
+            say "GATED ${sha:0:7} ci green $ci_src; e2e not required: $SCOPE_WHY per $TEST_SCOPE_RULE"
             ;;
         *)
             if [ -n "$gh_e2e" ]; then
                 # shellcheck disable=SC2034  # the project's finish() prints it
-                GATED="ledger ci + $GH_E2E_SRC${bytree:+, by identical tree: $bytree}"
-                say "GATED ${sha:0:7} ci green in $LEDGER, $GH_E2E: $GH_E2E_URL completed $GH_E2E_AT"
+                GATED="${ci_by:-ledger ci} + $GH_E2E_SRC${bytree:+, by identical tree: $bytree}"
+                say "GATED ${sha:0:7} ci green $ci_src, $GH_E2E: $GH_E2E_URL completed $GH_E2E_AT"
             else
                 # shellcheck disable=SC2034  # the project's finish() prints it
-                GATED="ledger $what ${sha:0:7}${bytree:+, by identical tree: $bytree}"
-                say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
+                GATED="${ci_by:+$ci_by + e2e }ledger $what ${sha:0:7}${bytree:+, by identical tree: $bytree}"
+                if [ -n "$ci_by" ]; then
+                    say "GATED ${sha:0:7} ci green $ci_src, e2e green in $LEDGER"
+                else
+                    say "GATED ${sha:0:7} ci and e2e both green in $LEDGER"
+                fi
             fi
             ;;
     esac
