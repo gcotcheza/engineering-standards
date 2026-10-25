@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.2 sha256:7550b9e36e07244e81e08b05c25e6d7bb8030aa97fed95b20e952e95dd1bfc6d
+# fleet-deploy-lib 2026-10-25.3 sha256:7550b9e36e07244e81e08b05c25e6d7bb8030aa97fed95b20e952e95dd1bfc6d
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request

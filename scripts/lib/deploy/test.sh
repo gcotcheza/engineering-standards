@@ -804,10 +804,10 @@ TREE_ONE=1111111111111111111111111111111111111111
 TREE_TWO=2222222222222222222222222222222222222222
 tree_fixture() { fixture "$1"; HEAD_TREE="$(git_at rev-parse "${HEAD_SHA}^{tree}")"; }
 tree_gated() { run_lib 'resolve; gated; printf "GATED_IS %s\n" "$GATED" >&3'; }
-# tree_shim <mode>: git, but status prints nothing and then a change (late) or fails (fail), or ^{tree} fails (treefail).
+# tree_shim <mode>: git, but status prints nothing twice and then a change (late) or fails (fail), or ^{tree} fails (treefail).
 tree_shim() {
     mkdir -p "${CASE}/shim"
-    printf '#!/bin/sh\ncase " $* " in *"^{tree}"*) [ "%s" = treefail ] && exit 128 ;; *" status "*)\n  n=$(cat "%s" 2>/dev/null || echo 0); echo $((n + 1)) >"%s"\n  [ "%s" = fail ] && exit 128\n  [ "%s" = late ] && [ "$n" -ge 1 ] && echo " M app/base.txt"; exit 0 ;;\nesac\nexec /usr/bin/git "$@"\n' \
+    printf '#!/bin/sh\ncase " $* " in *"^{tree}"*) [ "%s" = treefail ] && exit 128 ;; *" status "*)\n  n=$(cat "%s" 2>/dev/null || echo 0); echo $((n + 1)) >"%s"\n  [ "%s" = fail ] && exit 128\n  [ "%s" = late ] && [ "$n" -ge 2 ] && echo " M app/base.txt"; exit 0 ;;\nesac\nexec /usr/bin/git "$@"\n' \
         "$1" "${CASE}/status-calls" "${CASE}/status-calls" "$1" "$1" >"${CASE}/shim/git"
     chmod 0755 "${CASE}/shim/git"
 }
@@ -1596,9 +1596,10 @@ fixture ledger-writer-late-dirty
 WRITTEN="${CASE}/written"
 tree_shim late
 run_lib "GATE_LEDGER_GIT='${CASE}/shim/git -C ${ROOT}'; gate_ledger_arm; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 - >&3 2>&3"
-matches 'a tree dirty by the time its tree is read is written as -' "$(tail -1 "${WRITTEN}")" \
-    "^${LIVE_SHA} ci [0-9-]+T[0-9:]+Z 0 - -$"
-equals 'and both status reads ran' "$(cat "${CASE}/status-calls")" 2
+contains 'a tree dirty by the time its tree is read is refused, naming the tree the run began on' "${OUT}" \
+    "gate-ledger: the tree is dirty or unreadable but the run began on $(git_at rev-parse "${LIVE_SHA}^{tree}"), so the ci run (rc=0) is NOT recorded"
+equals 'and no row is written' "$(rows "${WRITTEN}")" '0'
+equals 'and all three status reads ran, arming'"'"'s included' "$(cat "${CASE}/status-calls")" 3
 
 fixture ledger-writer-status-fails
 WRITTEN="${CASE}/written"
@@ -1675,6 +1676,16 @@ contains 'a commit landing mid-run is refused, naming both commits' "${OUT}" \
 equals 'and the ledger stays empty' "$(rows "${WRITTEN}")" '0'
 absent 'no green row for the commit the gate never read' "$(cat "${WRITTEN}" 2>/dev/null)" "${LATE_SHA}"
 absent 'and none for the commit it was armed on either' "$(cat "${WRITTEN}" 2>/dev/null)" "${LIVE_SHA}"
+
+# Card 717: a tree that changes between arm and record under the same HEAD buys no row either.
+fixture ledger-tree-moved
+WRITTEN="${CASE}/written"
+FIXGIT="git -C ${ROOT} -c user.name=t -c user.email=t@example.invalid"
+printf 'uncommitted\n' >>"${ROOT}/app/base.txt"
+run_lib "$(armed "${FIXGIT} checkout -q -- app/base.txt; GATE_SUITE_PASSED=1 GATE_LEDGER=${WRITTEN} gate_ledger_record ci 0 /tmp/ci.log >&3 2>&3")"
+contains 'a dirty tree cleaned mid-run is refused, naming the tree it ends on' "${OUT}" \
+    "gate-ledger: the tree is $(git_at rev-parse "${LIVE_SHA}^{tree}") but the run began on a dirty or unreadable tree, so the ci run (rc=0) is NOT recorded"
+equals 'and the ledger stays empty' "$(rows "${WRITTEN}")" '0'
 
 fixture ledger-never-armed
 WRITTEN="${CASE}/written"

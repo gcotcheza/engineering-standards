@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.2 sha256:b0a3343349c47db934492a40b869ab2fb7e0c7e30d239a45d2e61b7ff3d76078
+# fleet-deploy-lib 2026-10-25.3 sha256:912352ab36b2229be4e5ea23d2136f8e6220ac0921b66536b7e21efe47404590
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -15,13 +15,14 @@ unset GATE_SUITE_PASSED GATE_ARMED GATE_ARMED_SHA
 # gated's caller inputs are set by the caller after sourcing, never inherited.
 unset GATE_BASE GATE_CI_BY GATE_ROUTE
 
-# The commit the run begins on. gate_ledger_record writes no row for any other.
+# The commit and tree the run begins on. gate_ledger_record writes no row for any other.
 gate_ledger_arm() {
     local git=${GATE_LEDGER_GIT:-git}
     GATE_ARMED=1
     # shellcheck disable=SC2086
     GATE_ARMED_SHA=$($git rev-parse HEAD 2>/dev/null) || GATE_ARMED_SHA=''
     [ -n "$GATE_ARMED_SHA" ] || printf 'gate-ledger: arming could not name HEAD, so this run will record nothing\n' >&2
+    GATE_ARMED_TREE=$(gate_ledger_tree "$GATE_ARMED_SHA")
     return 0
 }
 
@@ -49,7 +50,7 @@ gate_ledger_tree() {
 }
 
 gate_ledger_record() {
-    local kind=$1 rc=$2 log=${3:--} file dir sha tree shrc=0
+    local kind=$1 rc=$2 log=${3:--} file dir sha tree shrc=0 began=${GATE_ARMED_TREE:--}
     if [ "${GATE_ARMED:-0}" != 1 ]; then
         printf 'gate-ledger: gate_ledger_arm was never called, so the %s run (rc=%s) is NOT recorded\n' "$kind" "$rc" >&2
         return 0
@@ -79,11 +80,16 @@ gate_ledger_record() {
             "$sha" "${GATE_ARMED_SHA:-an unreadable HEAD}" "$kind" "$rc" >&2
         return 0
     fi
+    tree=$(gate_ledger_tree "$sha")
+    if [ "$tree" != "$began" ]; then
+        printf 'gate-ledger: the tree is %s but the run began on %s, so the %s run (rc=%s) is NOT recorded\n' \
+            "${tree/#-/dirty or unreadable}" "${began/#-/a dirty or unreadable tree}" "$kind" "$rc" >&2
+        return 0
+    fi
     [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || {
         printf 'gate-ledger: cannot create %s, so the %s run (rc=%s) is NOT recorded\n' "$dir" "$kind" "$rc" >&2
         return 0
     }
-    tree=$(gate_ledger_tree "$sha")
     printf '%s %s %s %s %s %s\n' "$sha" "$kind" "$(date -u +%FT%TZ)" "$rc" "$log" "$tree" >>"$file" || {
         printf 'gate-ledger: cannot append to %s, so the %s run (rc=%s) is NOT recorded\n' "$file" "$kind" "$rc" >&2
         return 0
