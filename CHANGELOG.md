@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-25 — decisions-check's NUL test no longer reads the mode file twice in one pipe (the standard is unchanged and VERSION is not bumped)
+**Card 696 follow-up.** Shellcheck SC2094 turned main's gate red at step 7: the NUL guard piped the mode
+file through `tr` into `cmp` against the same file. It now compares the byte count with and without NUL
+bytes. Same refusal, same sentence; case 25d still passes, and goes red with the guard line deleted.
+
 ## 2026-10-25 — decisions-check honours a project's no-rollup mode (the standard is unchanged and VERSION is not bumped)
 **Card 696.** A project whose committed `.fleet/decisions-mode` reads exactly `no-rollup` (Fineprint:
 one file per decision never conflicts, and its archive is frozen by a test) is no longer told to fold
