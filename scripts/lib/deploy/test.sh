@@ -2399,6 +2399,43 @@ contains 'a docker that cannot be asked keeps the worktree' "${OUT}" \
     'worktrees removed 0 kept 1 (mounts)'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
 
+# The worktree moved and linked back: a process's cwd reads as the real path, never the link (card 677).
+cleanup_fixture cleanup-procs-real-path
+mv "${WT}" "${WT}-moved"
+ln -s "${WT}-moved" "${WT}"
+mkdir -p "${CASE}/proc/4242"
+ln -s "${WT}-moved/app" "${CASE}/proc/4242/cwd"
+run_lib "${CLEAN_CALL}"
+contains 'a process whose cwd is the real path of a linked worktree keeps it' "${OUT}" \
+    'worktrees removed 0 kept 1 (procs)'
+equals 'and the directory behind the link is still on disk' "$(on_disk "${WT}-moved")" 'there'
+
+cleanup_fixture cleanup-mounts-real-path
+mv "${WT}" "${WT}-moved"
+ln -s "${WT}-moved" "${WT}"
+DOCKER_IDS='c1'
+DOCKER_MOUNTS="${WT}-moved/storage"
+run_lib "${CLEAN_CALL}"
+contains 'a container mounting the real path of a linked worktree keeps it' "${OUT}" \
+    'worktrees removed 0 kept 1 (mounts)'
+equals 'and the directory behind the link is still on disk' "$(on_disk "${WT}-moved")" 'there'
+
+# The worktree vanishes after the status check: no real path, so nothing is ruled out.
+cleanup_fixture cleanup-realpath-unreadable
+mkdir -p "${CASE}/vanish"
+printf '#!/bin/sh
+git "$@"; rc=$?
+case " $* " in *" status "*) mv -- "%s" "%s.gone" ;; esac
+exit "$rc"
+' \
+    "${WT}" "${WT}" >"${CASE}/vanish/git"
+chmod 0755 "${CASE}/vanish/git"
+WT_GIT_SEAM="${CASE}/vanish/git"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree whose real path cannot be read is kept, and the reason says so' "${OUT}" \
+    'worktrees removed 0 kept 1 (realpath)'
+equals 'and it is still on disk' "$(on_disk "${WT}.gone")" 'there'
+
 # The dirty check passes, then the mounts step dirties the tree: the only shape in which
 # `worktree remove` itself refuses, and so the only shape a --force would rescue.
 cleanup_fixture cleanup-never-forced

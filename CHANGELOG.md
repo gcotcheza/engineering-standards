@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-25 — the deploy library sees a worktree or app tree reached through a link however the path is written (deploy-lib VERSION 2026-10-25; the standard is unchanged and VERSION is not bumped)
+**Card 678.** `chown_root_owned` and `root_owned_count` in `ownership.sh` refused a link with
+`! -L`, but `link/` makes `-L` false and `find -P "link/"` then walks the link's target. Both now
+trim trailing slashes before the test (`/` stays `/`) and hand `find` the trimmed path, and both
+refuse a path with a `.` or `..` part (`link/.`, `link/a/..`), which reaches the target the same way.
+`compose.sh` needed no change: its root must match `FLEET_COMPOSE_WORD`, which allows no trailing
+slash, and its other `-L` tests name paths it builds with a fixed last name or takes from `dirname`,
+which drops trailing slashes.
+**Card 677.** `cleanup_procs` and `cleanup_mounts` in `cleanup.sh` compared a process's cwd and a
+container's mount source with the worktree path as written. A process's cwd always reads as the
+real path, so for a worktree listed by a link path a process inside it was never seen. Both now
+also compare with `realpath -e` of the worktree; when that fails the worktree is kept with the
+reason `realpath`. New cases in `ownership-test.sh` and `test.sh` (`cleanup-procs-real-path`,
+`cleanup-mounts-real-path`, `cleanup-realpath-unreadable`) fail with each new line removed. Every
+header is re-stamped for 2026-10-25. Each project reads STALE in the fleet check until it re-vendors.
+
 ## 2026-10-24 — the after-deploy cleanup sees root-owned files behind a linked worktree path (deploy-lib VERSION 2026-10-24.2; the standard is unchanged and VERSION is not bumped)
 **Card 676.** `cleanup_rootfiles` in `cleanup.sh` ran `find -P "$wt"`. `find -P` never enters a start
 point that is a symbolic link, and a worktree that was moved and linked back is listed by

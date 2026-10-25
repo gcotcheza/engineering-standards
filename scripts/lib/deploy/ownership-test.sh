@@ -110,7 +110,23 @@ for o in nobody 'nobody:nogroup;id' ':nogroup' 'Nobody:nogroup'; do
     contains "owner: [${o}] refuses" "${OUT}" "REFUSED: chown_root_owned: '${o}' is not user:group"
     contains "owner: [${o}] returns 1" "${OUT}" 'RC=1'
 done
+# A trailing slash makes -L false and find -P follow the link; a . or .. part does the same (card 678).
+for d in "${OF}/root-link/" "${OF}/root-link//"; do
+    orun "${d}" "${TO}"
+    contains "dir: [${d}] refuses as the link it is" "${OUT}" "REFUSED: chown_root_owned: ${OF}/root-link is not a plain absolute directory"
+done
+for d in "${OF}/root-link/." "${OF}/root-link/a/.." "${OF}/root-link/./"; do
+    orun "${d}" "${TO}"
+    contains "dir: [${d}] refuses its . or .. part" "${OUT}" "REFUSED: chown_root_owned: ${d%/} has a . or .. part"
+done
 equals 'refusals: no chown ran' "${LOG}" ''
+for d in / //; do
+    orun "${d}" nobody
+    contains "dir: [${d}] is still a plain directory (the owner check is what refuses)" "${OUT}" "REFUSED: chown_root_owned: 'nobody' is not user:group"
+done
+ofx trailing-slash
+orun "${OROOT}//" "${TO}"
+contains 'trailing: a plain directory with slashes is still walked: its files are named' "${LOG}" "|${OROOT}/a/sub/f"
 
 ofx chown-fails; O_FAIL=1
 orun "${OROOT}" "${TO}"
@@ -131,6 +147,8 @@ crun "${CROOT}"
 equals 'count: root, .claude and app/ and its file count; nothing under .claude does' "${OUT}" $'4\nRC=0'
 crun "${CROOT}/"
 equals 'count: a trailing slash still leaves .claude/** out' "${OUT}" $'4\nRC=0'
+crun "${CROOT}//"
+equals 'count: two trailing slashes still leave .claude/** out' "${OUT}" $'4\nRC=0'
 NROOT="${WORK}/count-nested/root"
 mkdir -p "${NROOT}/app/x/.claude"; : >"${NROOT}/app/x/.claude/f"
 crun "${NROOT}"
@@ -155,6 +173,16 @@ for d in root "${WORK}/count/root-link" "${WORK}/count/missing" ''; do
     crun "${d}"
     contains "count: [${d}] refuses" "${OUT}" "REFUSED: root_owned_count: ${d} is not a plain absolute directory"
     contains "count: [${d}] returns 1" "${OUT}" 'RC=1'
+done
+for d in "${WORK}/count/root-link/" "${WORK}/count/root-link//"; do
+    crun "${d}"
+    equals "count: [${d}] refuses as the link it is, and counts nothing" "${OUT}" \
+        "REFUSED: root_owned_count: ${WORK}/count/root-link is not a plain absolute directory"$'\nRC=1'
+done
+for d in "${WORK}/count/root-link/." "${WORK}/count/root-link/app/.."; do
+    crun "${d}"
+    equals "count: [${d}] refuses its . or .. part, and counts nothing" "${OUT}" \
+        "REFUSED: root_owned_count: ${d} has a . or .. part, which can reach the tree through a link"$'\nRC=1'
 done
 
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"

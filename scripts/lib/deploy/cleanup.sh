@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-24.2 sha256:d3476684884be9635f12e2aa83c2371e67ab2a858eb6da780848d97ec0907335
+# fleet-deploy-lib 2026-10-25 sha256:b376cc2245cc74087535f5decf71301473ed3d52aa8eed721cd41dbf790bd92c
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -40,13 +40,13 @@ cleanup_unassigned() {
 }
 
 cleanup_procs() {
-    local wt=$1 d target seen=0
+    local wt=$1 real=$2 d target seen=0
     for d in "${PROC_ROOT-}"/[0-9]*; do
         [ -d "$d" ] || continue
         seen=1
         target=$(readlink -- "$d/cwd" 2>/dev/null) || continue
         case "$target" in
-            "$wt"|"$wt"/*) cleanup_keep procs "$wt (a running process has its working directory inside it)"; return 1 ;;
+            "$wt"|"$wt"/*|"$real"|"$real"/*) cleanup_keep procs "$wt (a running process has its working directory inside it)"; return 1 ;;
         esac
     done
     [ "$seen" = 1 ] || { cleanup_keep procs "$wt (no process list under ${PROC_ROOT-}, so no process could be ruled out)"; return 1; }
@@ -54,7 +54,7 @@ cleanup_procs() {
 }
 
 cleanup_mounts() {
-    local wt=$1 rc=0 ids out t
+    local wt=$1 real=$2 rc=0 ids out t
     ids=$(${DOCKER-} ps -q 2>&1) || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep mounts "$wt (docker ps exited ${rc}, so no container could be ruled out)"; return 1; }
     [ -n "$ids" ] || return 0
@@ -65,7 +65,7 @@ cleanup_mounts() {
     while IFS= read -r t; do
         [ -n "$t" ] || continue
         case "$t" in
-            "$wt"|"$wt"/*) cleanup_keep mounts "$wt (a running container mounts $t)"; return 1 ;;
+            "$wt"|"$wt"/*|"$real"|"$real"/*) cleanup_keep mounts "$wt (a running container mounts $t)"; return 1 ;;
         esac
     done <<<"$out"
     return 0
@@ -112,7 +112,7 @@ cleanup_lanekeep() {
 }
 
 cleanup_worktree() {
-    local wt=$1 head=$2 rc=0 out
+    local wt=$1 head=$2 rc=0 out real
     cleanup_lanekeep "$wt" || return 0
     [ -n "$head" ] || { cleanup_keep headInMain "$wt (git named no HEAD for it)"; return 0; }
     # shellcheck disable=SC2086
@@ -132,8 +132,10 @@ cleanup_worktree() {
     out=$DEPLOY_GIT_OUT$DEPLOY_GIT_STDERR
     [ "$rc" = 0 ] || { cleanup_keep status "$wt (status --porcelain exited ${rc}, so uncommitted work could not be ruled out)"; return 0; }
     [ -z "$out" ] || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
-    cleanup_procs "$wt" || return 0
-    cleanup_mounts "$wt" || return 0
+    # A process's cwd is always its real path, and a mount may name it: both are compared.
+    real=$(realpath -e -- "$wt" 2>/dev/null) || { cleanup_keep realpath "$wt (its real path could not be read, so a process or container in it could not be ruled out)"; return 0; }
+    cleanup_procs "$wt" "$real" || return 0
+    cleanup_mounts "$wt" "$real" || return 0
     cleanup_rootfiles "$wt" || return 0
     cleanup_envfiles "$wt" || return 0
     rc=0
