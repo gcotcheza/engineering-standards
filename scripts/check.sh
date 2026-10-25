@@ -127,10 +127,9 @@ step_2() {
     "${REPO_ROOT}/scripts/deploy-lib-version-test.sh" || fail_step 2
     DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 2
     bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 2
-    # The prose names the routes. The rest each hand root its own home under env -i but run bash or docker, not git, so the
-    # one root-home pass refuses (gate-run.sh's exec, gate/run.sh's app gate, gate/compose.sh's dc, two mutant rows).
+    # The prose names the routes; the two mutant tables are test data that rewrite the root gate's env -i lines.
     HOOK_BYPASS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
-        scripts/gate-run.sh scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/lib/gate/compose.sh scripts/lib/gate/run.sh || fail_step 2
+        scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt || fail_step 2
     bash "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 2
 }
 

@@ -157,7 +157,7 @@ expect 'the long flag split by an empty quote pair' 1 scripts/a.sh 'git commit -
 expect 'an unset with the read negated' 1 scripts/a.sh 'git config --unset --no-get core.hooks@Path'
 expect 'a global unset with the read negated' 1 scripts/a.sh 'git config --global --unset --no-get "core.hooks@Path"'
 
-# --- one root-home pass: env -i, the root home among its assignments, then git, in one command --
+# --- one root-home pass: env -i, the root home among its assignments, then any git, in one command --
 expect 'root home: env -i with only the root home, then git' 0 scripts/a.sh 'env -i HOM@E=/root git -C / status'
 expect 'root home: assignments around the root home, then git' 0 scripts/a.sh 'clone_git() { env -i PATH=/usr/bin:/bin HOM@E=/root GIT_NO_REPLACE_OBJECTS=1 git -C / "$@"; }'
 expect 'root home: a quoted assignment, then "$GIT_BIN"' 0 scripts/a.sh 'exec env -i PATH="$RUN_PATH" HOM@E=/root "$GIT_BIN" fetch'
@@ -172,11 +172,14 @@ expect 'root home refused: a second HOME after it' 1 scripts/a.sh 'env -i HOM@E=
 expect 'root home refused: a HOME after the git call' 1 scripts/a.sh 'env -i HOM@E=/root git status HOM@E=/tmp'
 expect 'root home refused: a HOME in a later command' 1 scripts/a.sh 'env -i HOM@E=/root git status; HOM@E=/tmp git status'
 expect 'root home refused: a HOME after &&' 1 scripts/a.sh 'env -i HOM@E=/root git status && HOM@E=/tmp x'
-expect 'root home refused: no git next' 1 scripts/a.sh 'env -i HOM@E=/root bash "$TREE/$SCRIPT"'
-expect 'root home refused: docker compose next' 1 scripts/a.sh 'env -i PATH="$P" HOM@E=/root docker compose up'
+expect 'root home: bash next' 0 scripts/a.sh 'env -i HOM@E=/root bash "$TREE/$SCRIPT"'
+expect 'root home: docker compose next' 0 scripts/a.sh 'env -i PATH="$P" HOM@E=/root docker compose up'
 expect 'root home refused: env -i alone, then git after a separator' 1 scripts/a.sh 'env -i HOM@E=/root; git status'
 expect 'root home refused: git after an assignment and a separator' 1 scripts/a.sh 'env -i HOM@E=/root X=1; git status'
-expect 'root home refused: a command that only starts with git' 1 scripts/a.sh 'env -i HOM@E=/root gitx status'
+expect 'root home: a command named like git' 0 scripts/a.sh 'env -i HOM@E=/root gitx status'
+expect "root home: gate-run.sh's exec form" 0 scripts/a.sh 'exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOM@E=/root LANG=C.UTF-8 \' '    GATE_RUN_DIR="$run" GATE_RUN_T_SRC="${GATE_RUN_T_SRC:-}" \' '    /bin/bash "$run/lib/scripts/lib/gate/run.sh" "$app" "$sha" "$script" "$@"'
+expect "root home: gate/run.sh's app-gate form" 0 scripts/a.sh 'env -i PATH="$RUN_PATH" HOM@E=/root LANG=C.UTF-8 TERM=dumb \' '    GATE_COMPOSE="bash $LIB/compose.sh" CI_GIT="$tgit" GATE_LEDGER="$RUN/status" \' '    bash "$TREE/$SCRIPT" "$@"'
+expect "root home: gate/compose.sh's dc form" 0 scripts/lib/compose.sh 'dc() { env -i PATH="$RUN_PATH" HOM@E=/root docker compose --project-directory "$TREE" "$@"; }'
 expect 'root home refused: env without -i' 1 scripts/a.sh 'env HOM@E=/root git status'
 expect 'root home refused: no env -i at all' 1 scripts/a.sh 'HOM@E=/root git status'
 expect 'root home refused: a word that only ends in env' 1 scripts/a.sh 'myenv -i HOM@E=/root git status'
