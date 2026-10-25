@@ -7,7 +7,8 @@
 #   2) scripts/version-text-pair.sh and its own test — VERSION and
 #      ENGINEERING-STANDARDS.md move together, or neither moves — then
 #      scripts/deploy-lib-version.sh and its test (a lib change raises the lib's
-#      VERSION), W7's decisions-check.sh on this tree and the W4 closing-line test
+#      VERSION), W7's decisions-check.sh on this tree, the W4 closing-line test, and
+#      S1's scripts/hook-bypass-scan.sh on this tree and its own test
 #   3) scripts/guard-mutants-test.sh, the T5 guard-mutant runner's own test
 #   4) scripts/fleet-versions-test.sh, the fleet check's own test
 #   5) scripts/fleet-budget-test.sh, the budget gate's own test
@@ -126,6 +127,10 @@ step_2() {
     "${REPO_ROOT}/scripts/deploy-lib-version-test.sh" || fail_step 2
     DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 2
     bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 2
+    # The standard, its logs and the root gate name the routes or set root's own HOME. decision: the-hook-bypass-scan-has-one-copy
+    HOOK_BYPASS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
+        scripts/gate-run.sh scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/lib/gate/compose.sh scripts/lib/gate/run.sh || fail_step 2
+    bash "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 2
 }
 
 step_3() {

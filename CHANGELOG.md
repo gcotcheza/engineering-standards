@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-26 — the hook-bypass scan has one copy, here (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 746.** New `scripts/hook-bypass-scan.sh` and `scripts/hook-bypass-scan-test.sh`, lifted from Memento
+at 466b957 and run, like `decisions-check.sh`, from this checkout against an app root; extra arguments
+are paths skipped whole, exact. Two new rules: an empty `''` or `""` pair is dropped before judging, so a
+word split by one is still the route; and the hooks-key read pass needs `--get` as its own word, so
+`--unset --no-get` is found by rule. The cases hide their routes with a dropped `@`. Gate step 2 runs the
+scan over this tree (eight named skips) and its cases. No app calls it yet.
+Why: `docs/decisions/` the-hook-bypass-scan-has-one-copy.
+
 ## 2026-10-25 — gate-run.sh runs a root gate from a hash-verified export of one sha (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 719.** New `scripts/gate-run.sh` and `scripts/lib/gate/` (`run.sh`, `compose.sh`, and
 `export.sh`, the export-tree block fleet-deploy and fleet-deploy-on-merge carry, extracted). An app's
