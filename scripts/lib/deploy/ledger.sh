@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.1 sha256:614e10e01e00af072e8925532ce699e99b3ae7791f314931731c49888718ebed
+# fleet-deploy-lib 2026-10-25.1 sha256:f59a2d6dd5c00466fbe9fa6bece0eeb9d7f3d01054ea93cb06383696e992464f
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -173,6 +173,18 @@ test_scope_of() {
     SCOPE=ui
     # shellcheck disable=SC2086
     if [ -n "${GATE_BASE:-}" ]; then
+        if [[ ! $GATE_BASE =~ ^[0-9a-f]{40}$ ]]; then
+            SCOPE_WHY='GATE_BASE is not a full 40-hex sha, so every path is UI'
+            return 0
+        fi
+        if [ "$GATE_BASE" = "$sha" ]; then
+            SCOPE_WHY="GATE_BASE is ${sha:0:7} itself, so nothing shows what deploys and every path is UI"
+            return 0
+        fi
+        if ! deploy_git_or_refuse $GIT merge-base --is-ancestor "$GATE_BASE" "$sha" 2>/dev/null; then
+            SCOPE_WHY="GATE_BASE ${GATE_BASE:0:7} is not an ancestor of ${sha:0:7}, so every path is UI"
+            return 0
+        fi
         live=$GATE_BASE
     elif deploy_git_or_refuse $GIT rev-parse HEAD 2>/dev/null; then
         live=$DEPLOY_GIT_OUT

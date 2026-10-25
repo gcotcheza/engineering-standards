@@ -1424,6 +1424,37 @@ scope_rows e2e
 GATE_CI_BY='inherited' scope_gated
 contains 'a GATE_CI_BY inherited from the environment is discarded on sourcing' "${OUT}" "$(no_green ci "${SCOPE_SHA}" 'ci absent, e2e green')"
 
+scope_fixture scope-base-inherited bare docs
+rm -f "${LEDGER}"
+GATE_BASE="$(git_at rev-parse refs/scope/live)" scope_gated
+contains 'a GATE_BASE inherited from the environment is discarded on sourcing' "${OUT}" "SCOPE ui: UI path: .fleet/test-scope ${RULE}"
+
+scope_fixture scope-route-inherited live ui
+scope_rows ci
+GATE_ROUTE='inherited route.' scope_gated
+contains 'a GATE_ROUTE inherited from the environment is discarded on sourcing' "${OUT}" \
+    "$(no_green e2e "${SCOPE_SHA}" 'ci green, e2e absent, e2e github: off (no config)')"
+
+# test_scope_of trusts GATE_BASE only as a full sha, an ancestor of the commit, and not the commit itself.
+scope_fixture scope-base-short bare docs
+rm -f "${LEDGER}"
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_BASE=$(git_at rev-parse --short refs/scope/live); gated"
+contains 'a short GATE_BASE is refused, and every path is UI' "${OUT}" \
+    "SCOPE ui: GATE_BASE is not a full 40-hex sha, so every path is UI ${RULE}"
+
+scope_fixture scope-base-ahead bare live
+rm -f "${LEDGER}"
+AHEAD_SHA="$(git_at rev-parse refs/scope/docs)"
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_BASE=${AHEAD_SHA}; gated"
+contains 'a GATE_BASE that is not an ancestor is refused, and every path is UI' "${OUT}" \
+    "SCOPE ui: GATE_BASE ${AHEAD_SHA:0:7} is not an ancestor of ${SCOPE_SHA:0:7}, so every path is UI ${RULE}"
+
+scope_fixture scope-base-self bare docs
+rm -f "${LEDGER}"
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_BASE=${SCOPE_SHA}; gated"
+contains 'a GATE_BASE equal to the commit is refused, and every path is UI' "${OUT}" \
+    "SCOPE ui: GATE_BASE is ${SCOPE_SHA:0:7} itself, so nothing shows what deploys and every path is UI ${RULE}"
+
 scope_fixture scope-no-declaration bare nodecl
 scope_rows ci
 scope_gated
