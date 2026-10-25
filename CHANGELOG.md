@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-10-25 — the deploy library sees through linked folders in its ownership and cleanup checks (deploy-lib VERSION 2026-10-25; the standard is unchanged and VERSION is not bumped)
+**Card 678.** `chown_root_owned` and `root_owned_count` in `ownership.sh` refused a link with
+`! -L`, but `link/` makes `-L` false and `find -P "link/"` then walks the link's target; so did a
+`.` or `..` part, and a link above the directory. Both now trim trailing slashes (`/` stays `/`)
+and refuse any directory that is not its own `realpath -e`, so `find` walks only the path checked.
+`compose.sh` is unchanged. Its root must match `FLEET_COMPOSE_WORD`, which allows no trailing
+slash or `//` but does allow a `.` or `..` part; such a root is then refused by the later checks
+that compare `realpath` output with `$root/...` (the bind and build-context checks), since
+`realpath` never prints a `.` part. That refusal is reasoned from the code, not tested end to end.
+Its other `-L` tests name paths it builds with a fixed last name or takes from `dirname`. The
+limit left: none of them looks for a link above ROOT.
+**Card 677.** `cleanup_procs` compared a process's cwd with the worktree path as git lists it, and
+a cwd always reads as the real path, so a worktree listed through a link was removed while a process
+sat in it. A clean worktree that is itself a link was emptied by `worktree remove`, which then failed
+on the link and was reported as `kept (remove)`. Now `cleanup_worktree` reads the worktree's
+`realpath -e` and runs the process, mount, root-owned-file and ignored-`.env` checks on it; one that
+refuses keeps the tree for its own reason and prints nothing more. `worktree remove` without
+`--force` deletes ignored files, so an ignored `.env*` now refuses first (reason `envfiles`, no
+line); any other ignored file is still deleted by the by-hand sequence, so it is previewed and
+counted first (S7): the count and the first five paths, or `0 ignored paths`, from a read-only
+`ls-files` with `core.fsmonitor` forced off. A worktree reached through
+any link that passes all four is kept (reason `link`) and never removed, and the summary prints
+`kept <link> -> <real>: linked worktree, not removed; remove by hand with:
+git -C <repo> worktree repair <real> && { [ ! -L <link> ] || unlink -- <link>; } && git -C <repo>
+worktree remove <real>`, every path `%q`-quoted (removing by the link path empties the target). A failing `realpath` keeps it too (reason `realpath`), and a
+mount source is also compared as its own `realpath -m`. decision: a-linked-worktree-is-kept-never-removed
+`realpath` is pinned to `/usr/bin/realpath` in `cleanup.sh` (as `find`, `timeout` and `grep` are)
+and in `ownership.sh` (as `find` is). New cases in `ownership-test.sh` and
+`test.sh` fail with each new line removed. Every header is re-stamped for 2026-10-25. Each project
+reads STALE in the fleet check until it re-vendors.
+
 ## 2026-10-24 — the after-deploy cleanup sees root-owned files behind a linked worktree path (deploy-lib VERSION 2026-10-24.2; the standard is unchanged and VERSION is not bumped)
 **Card 676.** `cleanup_rootfiles` in `cleanup.sh` ran `find -P "$wt"`. `find -P` never enters a start
 point that is a symbolic link, and a worktree that was moved and linked back is listed by
