@@ -13,7 +13,7 @@ inputs, each unset by every existing caller, which keeps today's behaviour and t
   checkout's HEAD. A deploy-on-merge judge reads from root's mirror, and a bare mirror's HEAD is the
   merge itself, which would make every diff empty and every scope UI. The caller passes its own
   record, which it has already proved is the live commit. `test_scope_of` still checks it: a base
-  that is not a full 40-hex sha, not an ancestor of the commit, or the commit itself reads every
+  that is empty or not a full 40-hex sha, not an ancestor of the commit, or the commit itself reads every
   path as UI, because a base the caller got wrong must never make a diff look docs-only.
 - `GATE_CI_BY`: the caller's own ci evidence for the commit, such as Ghie Writes' GitHub Actions ci
   for the exact head. It fills only an absent ci row, never a red one, matching the rule that red

@@ -1436,6 +1436,12 @@ contains 'a GATE_ROUTE inherited from the environment is discarded on sourcing' 
     "$(no_green e2e "${SCOPE_SHA}" 'ci green, e2e absent, e2e github: off (no config)')"
 
 # test_scope_of trusts GATE_BASE only as a full sha, an ancestor of the commit, and not the commit itself.
+scope_fixture scope-base-empty live docs
+rm -f "${LEDGER}"
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_BASE=; gated"
+contains 'a set but empty GATE_BASE is refused, not read against the checkout' "${OUT}" \
+    "SCOPE ui: GATE_BASE is not a full 40-hex sha, so every path is UI ${RULE}"
+
 scope_fixture scope-base-short bare docs
 rm -f "${LEDGER}"
 run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_BASE=$(git_at rev-parse --short refs/scope/live); gated"

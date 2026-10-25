@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.1 sha256:f59a2d6dd5c00466fbe9fa6bece0eeb9d7f3d01054ea93cb06383696e992464f
+# fleet-deploy-lib 2026-10-25.1 sha256:b0a3343349c47db934492a40b869ab2fb7e0c7e30d239a45d2e61b7ff3d76078
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -172,7 +172,7 @@ test_scope_of() {
     local sha=$1 live raw paths links decl
     SCOPE=ui
     # shellcheck disable=SC2086
-    if [ -n "${GATE_BASE:-}" ]; then
+    if [ -n "${GATE_BASE+x}" ]; then
         if [[ ! $GATE_BASE =~ ^[0-9a-f]{40}$ ]]; then
             SCOPE_WHY='GATE_BASE is not a full 40-hex sha, so every path is UI'
             return 0

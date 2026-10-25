@@ -7,9 +7,9 @@ that reads from root's mirror can call it: `GATE_BASE` (the live commit the scop
 against, instead of the checkout's HEAD), `GATE_CI_BY` (the caller's own ci evidence, which fills
 an absent ci row and never a red one or e2e) and `GATE_ROUTE` (the refusal's closing route).
 `test_scope_of` takes `GATE_BASE` only as a full 40-hex sha that is an ancestor of the commit and
-not the commit itself; anything else reads every path as UI and names the failed condition. A
+not the commit itself; anything else, a set but empty value included, reads every path as UI and names the failed condition. A
 value of any of the three inherited from the environment is discarded on sourcing. Unset, nothing
-changes. Twelve new `test.sh` cases (fourteen checks); each new guard line has a mutant that turns
+changes. Thirteen new `test.sh` cases (fifteen checks); each new guard line has a mutant that turns
 one red.
 Every header is re-stamped for 2026-10-25.1. Why: `docs/decisions/2026-10-25-0244-gated-takes-a-callers-base-and-ci.md`.
 ## 2026-10-25 — the deploy library sees through linked folders in its ownership and cleanup checks (deploy-lib VERSION 2026-10-25; the standard is unchanged and VERSION is not bumped)
