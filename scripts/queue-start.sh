@@ -183,7 +183,7 @@ unit_is_up(){
 }
 
 busy_reason(){
-  local s="$1" reg pane app apane rest out rc
+  local s="$1" reg pane app apane rest out rc kept
   reg="$REG_DIR/$s-workers.active"
   if [ ! -f "$reg" ] || [ ! -r "$reg" ]; then printf 'no readable registry file %s' "$reg"; return 0; fi
   [ -s "$reg" ] && { printf 'a builder is listed in %s' "$reg"; return 0; }
@@ -200,7 +200,8 @@ busy_reason(){
   rc=0
   out="$("$HEAVY" --status 2>/dev/null)" || rc=$?
   if [ "$rc" -ne 0 ]; then printf 'heavy-work could not be asked (exit %s)' "$rc"; return 0; fi
-  if printf '%s\n' "$out" | grep -v '^[[:space:]]*last:' | grep -qE "(^|[[:space:]])session=$s([[:space:]]|$)"; then
+  kept="$(grep -v '^[[:space:]]*last:' <<<"$out")" || true   # no pipe into grep -q: SIGPIPE + pipefail
+  if grep -qE "(^|[[:space:]])session=$s([[:space:]]|$)" <<<"$kept"; then
     printf 'heavy-work holds a slot for %s' "$s"; return 0
   fi
   return 0

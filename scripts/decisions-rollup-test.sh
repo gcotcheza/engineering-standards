@@ -16,7 +16,8 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+# Here-strings, not `printf | grep -q`: grep -q quits early, printf dies of SIGPIPE, pipefail flips it.
+matches() { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -165,6 +166,12 @@ equals  'case 14: exit code' "${RC}" 1; unchanged 'case 14'
 fresh; mkdir -p "${R}/.fleet"; printf 'no-rollup\n' >"${R}/.fleet/decisions-mode"; git -C "${R}" add -- .fleet; git -C "${R}" commit -q -m 'No roll-up'; snap; run
 matches 'case 15: a no-rollup project refuses' "${OUT}" '^decisions-rollup: \.fleet/decisions-mode is no-rollup, so this project never folds — nothing was written\.$'
 equals  'case 15: exit code' "${RC}" 2; unchanged 'case 15'
+
+# --- 16. the helpers read a big output whose first line matches (card 704) ---
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE
+# the writer. Each helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 16: matches sees the match' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
 
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'decisions-rollup-test: all cases passed\n'

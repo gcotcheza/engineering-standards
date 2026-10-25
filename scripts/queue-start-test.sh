@@ -20,9 +20,10 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals()   { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-matches()  { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
-contains() { if printf '%s' "$2" | grep -qF "$3"; then pass "$1"; else fail "$1 — [$2] does not contain [$3]"; fi; }
-lacks()    { if printf '%s' "$2" | grep -qF "$3"; then fail "$1 — [$2] must not contain [$3]"; else pass "$1"; fi; }
+# Here-strings, not `printf | grep -q`: grep -q quits early, printf dies of SIGPIPE, pipefail flips it.
+matches()  { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+contains() { if grep -qF "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not contain [$3]"; fi; }
+lacks()    { if grep -qF "$3" <<<"$2"; then fail "$1 — [$2] must not contain [$3]"; else pass "$1"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -197,6 +198,12 @@ rm -f "${WORK}/heavy-rc"
 HEAVY_BIN="${WORK}/no-such-heavy-work" run --dry-run
 matches 'case 5d: a missing heavy-work is busy, not idle' "${OUT}" 'skip advisor: heavy-work could not be asked \(exit 127\)'
 lacks   'case 5d: and nothing is said to it' "${OUT}" "${SENT_A}"
+
+# --- 5e. a HELD status with many lines after the session still skips (card 704)
+{ printf 'HELD, 0 queued behind:\nslot 1:\n  session=advisor\n'; printf '  filler\n%.0s' {1..200000}; } >"${WORK}/heavy-status"
+run --dry-run
+matches 'case 5e: a long HELD status still skips the session' "${OUT}" 'skip advisor: heavy-work holds a slot'
+cp "${WORK}/heavy-status-free" "${WORK}/heavy-status"
 
 # --- 6. the top item announced within 24h -> silence, NEVER the next one down -
 printf '71 advisor %s\n' "$(date +%s)" >"${WORK}/state"
@@ -468,6 +475,14 @@ sed 's/^33 advisor/33 health/' "${WORK}/owners-good" >"${WORK}/owners-health"
 lint "${WORK}/owners-health"
 matches 'case 11f: the retired health session is refused' "${LOUT}" "item 33 names unknown session 'health'"
 equals  'case 11f: exit code' "${LRC}" 1
+
+# --- 12. the helpers read a big output whose first line matches (card 704) ---
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE
+# the writer. Each helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 12: matches sees the match' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
+equals 'case 12: contains sees the match' "$( (contains x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
+equals 'case 12: lacks reports the match' "$( (lacks x "${BIG}" 'needle') 2>&1 >/dev/null | grep -c '^FAIL x ')" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nqueue-start-test: all checks passed\n'

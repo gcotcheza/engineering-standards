@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-25 — the test helpers and queue-start's held-slot check read long output safely (the standard is unchanged and VERSION is not bumped)
+**Card 704.** Under `set -o pipefail`, `printf '%s' "$2" | grep -q` lets grep quit on the first
+match; when the text is longer than the pipe takes in one go, printf dies of SIGPIPE and the pipeline
+reads as a miss, so `matches`/`contains` fail a real match and `lacks`/`unmatches` pass one. The
+helpers in nine fixture suites now use a here-string (`grep -q ... <<<"$2"`), and `queue-start.sh`'s
+heavy-work check, which piped through `grep -v` into `grep -q` and could miss a held slot, filters
+into a variable first. Each suite gains one large-output case (queue-start-test also 5e, a long HELD
+status), and putting any one helper or the old queue-start line back turns its case red. Card 730
+(case 30 of gate-image-tags-test failed once) was suspected; its output is one 570-byte write, too
+small for this, so it is probably not the cause. `scripts/lib/deploy/test.sh` and `lib/dialog-lib.sh`
+keep the old form for now.
+
 ## 2026-10-25 — decisions-check's NUL test no longer reads the mode file twice in one pipe (the standard is unchanged and VERSION is not bumped)
 **Card 696 follow-up.** Shellcheck SC2094 turned main's gate red at step 7: the NUL guard piped the mode
 file through `tr` into `cmp` against the same file. It now compares the byte count with and without NUL

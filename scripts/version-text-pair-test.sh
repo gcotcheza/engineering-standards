@@ -15,7 +15,8 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+# Here-strings, not `printf | grep -q`: grep -q quits early, printf dies of SIGPIPE, pipefail flips it.
+matches() { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -110,6 +111,12 @@ run
 matches 'case 5: a missing origin/main fails loudly' "${OUT}" '^version-text-pair: origin/main is not in this clone, so the pair cannot be judged'
 equals  'case 5: exit code' "${RC}" 1
 equals  'case 5: no ok line is printed' "$(printf '%s' "${OUT}" | grep -c 'version-text-pair: ok')" 0
+
+# --- 6. the helpers read a big output whose first line matches (card 704) ---
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE
+# the writer. Each helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 6: matches sees the match' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nversion-text-pair-test: all checks passed\n'
