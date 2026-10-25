@@ -9,7 +9,8 @@ times for the one result that counted.
 on the final commit; only a green row on that head lets the pull request go ready. While building
 and fixing findings, the builder runs narrow checks (the changed file's own suite, a lint, a probe)
 and quotes their output, so the reviewer judges evidence, not a claim. The gate reruns only if it
-fails on that commit; any commit after it is a new final commit, which needs its own gate run.
+fails on that commit; any commit after it is a new final commit, which needs its own gate run. A
+fix after a red gate goes back to the reviewer for that diff before the gate reruns.
 
 **What stays.** T1's scope: a docs-only change needs no test run, so it has no gate step; a
 script-only change runs its own small suite. The reviewer is still never the builder.

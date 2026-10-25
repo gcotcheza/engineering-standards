@@ -4,10 +4,11 @@
 **Ghie's rule of 2026-10-25, written into W2.** The order was self-review → gate → adversarial
 review; it is now self-review → adversarial review → the full gate once, on the final commit, and
 no PR goes ready without it. Until the review is clean only narrow checks run, quoted for the
-reviewer; the gate reruns only if it fails on that final commit. Why: the VPS gate queue waited
+reviewer; the gate reruns only if it fails on that final commit, after the reviewer has read the
+fix. Why: the VPS gate queue waited
 20 to 55 minutes a run today, and every review bounce cost one. T1 is unchanged (a docs-only change
 still needs no test run, so it has no gate step), and S8 already named this order. `SOURCES.md`'s W2
-row cites the rule. The standard grew about 360 bytes. The standards text moved, so `VERSION` moves
+row cites the rule. The standard grew about 450 bytes. The standards text moved, so `VERSION` moves
 with it. Why: `docs/decisions/2026-10-25-1430-the-gate-runs-once-after-review.md`.
 
 ## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
