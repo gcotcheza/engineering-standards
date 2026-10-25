@@ -60,6 +60,19 @@ the mutant; a mutant whose case stays green, whose bash copy does not parse, or 
 matches no line, or more than one, is refused (exit 2) before any case runs. Run it as `nobody` when
 the target copies, chmods or deletes.
 
+`scripts/gate-run.sh <app> <sha40> <script> [--keep] [--artifacts-to <dir>] [--ledger <file>] [-- args]`
+runs one app's gate script as root from a root-owned export of that sha, fetched from GitHub only, in
+`/run/<app>-gate/<id>`; it never reads the app's worktree. The script gets `$GATE_COMPOSE` for its
+docker compose calls (read-only tree, root's override and bind check, `--build` for composer/npm/vite
+as the app uid) and the ledger seams pointed into the run; gate-run writes the one ledger row for the
+exported sha after re-hashing the tree. A deliberate red proof (rule 20) passes `--ledger <file>`, a
+file named `*ledger*` only root can write, so no real row is written; `GATE_LEDGER=` alone is refused. Refusals exit 2 with `gate-run: REFUSED: <why>`.
+The export-tree block it shares with fleet-deploy is `scripts/lib/gate/export.sh`. Its tests are
+`scripts/gate-run-test.sh` (root; one gate step; `GR_CASES="A3 L"` picks cases, `GR_AS_NOBODY=1` runs
+gate-run as nobody, `GR_ENTRY`/`GR_RUN_SH`/`GR_COMPOSE_SH`/`GR_EXPORT_SH` test a mutant copy,
+`GR_REAL_DOCKER=1` is the one real-docker smoke run, `GR_CALLERS` judges export-tree callers) and four
+`scripts/gate-run*-mutants.txt` tables. Why: `docs/DECISIONS.md#gate-run-exports-one-sha`.
+
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and one of this repo's gate steps
 runs its fixtures. Point it at a project root and it names the compose files it read, the image
 values it could not resolve, and any tag that project builds for both its gate and production. It

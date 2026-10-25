@@ -2083,49 +2083,64 @@ script-only change runs its own small suite. The reviewer is still never the bui
 **The option not taken.** Gating every fix commit "to be safe". The reviewer reads the diff either
 way, and only the final commit can merge, so earlier gate runs prove nothing that ships.
 
-### a-worktree-whose-git-config-names-a-filter-is-kept
+### gate-run-exports-one-sha
 
-*2026-10-25 — A worktree whose git config names a filter is kept, and every status forces fsmonitor off*
+*2026-10-25 — Root gates run from a hash-verified export of one sha*
 
-**Card 714.** Card 694 left three gaps, each a program a tree's own git config can make git run.
+Root ran an app's scripts/check.sh, scripts/e2e.sh and docker compose straight from an app-owned
+worktree. bash reads a script as it runs and compose re-reads its files, so the app user could
+rewrite either before or during a run and have root execute it; that undid the root-owned env copy
+(card 716) and is a root escalation. A commit landing mid-run could also earn a ledger row for a sha
+that never ran (card 717).
 
-**`worktree remove`.** Root's `${GIT} worktree remove` runs a `status` of its own inside the
-worktree, which started the tree's `core.fsmonitor` program, and that `status` refreshed and wrote
-the index, which fired `post-index-change` as root from a `core.hooksPath` in the tree's
-`config.worktree` (it outranks the fleet's global one) or from `.git/hooks` (ES #70's review). It
-is now `${GIT} --no-optional-locks -c core.fsmonitor=false worktree remove`, options after the
-seam as every other `${GIT}` call puts them; both reach the inner `status`. Probed on git 2.39.5
-with a script for every hook git names, in both places: without `--no-optional-locks` only
-`post-index-change` ran, and with it none did.
+A gate now runs only through `scripts/gate-run.sh <app> <sha40> <script>`. The entry copies
+scripts/lib/gate and scripts/lib/deploy blob by blob from the box clone's origin/main, with
+fleet-deploy's clone_lib checks, and execs that copy. It takes an explicit 40-hex sha and fetches it
+from GitHub, and only from GitHub, so git hashes every object; an unpushed sha is refused. The
+objects land in the run's own `repo.git`, which borrows root's mirror through alternates (root writes
+the mirror's literal path, and only when the mirror's objects, every parent and everything beneath
+them are root's alone, with no link), so the
+mirror keeps holding main only, as fleet-deploy-on-merge requires; origin/main comes from GitHub in
+the same fetch, never from the app's repo. Every entry is judged before a byte is written (links,
+submodules, odd paths, compose include and extends file, a committed .env), and the tree is written
+by root into /run/<app>-gate/<id>, after a check that /run has twice the tree's size free.
 
-**The other `status` calls.** `preflight.sh`'s two read `ROOT`, the app's checkout, which the app
-user can configure; `compose.sh`'s reads the same tree as the app user; `ledger.sh`'s two read the
-gate's tree, which the developer owns. A non-root user can set `core.fsmonitor` in each, so all
-five force it off. None was safe without it. All five already pass `--no-optional-locks`, so none
-writes the index or fires a hook; the `.env` probe's `ls-files` never writes the index.
+Scripts, compose files and env files are read from there only. The gate script runs under `env -i`
+from `cd /`, with the existing ledger seams pointed into the run: GATE_LEDGER at `<run>/status` and
+the CI_GIT, CHECK_GIT, E2E_GIT and GATE_LEDGER_GIT seams at `repo.git` with the exported tree, so
+the deploy lib's own record rules (75 not recorded, rc 0 needs suite-passed) apply unchanged. After
+the run gate-run re-hashes the tree against its manifest; a changed or added file means rc 1. Then
+`<run>/status` must hold exactly one row, for the exported sha and the script's kind: zero rows, two,
+or another sha's row is refused with no ledger row at all, and a row whose rc differs from the
+script's real exit is written as rc 1. Only then does it append to the real ledger. A deliberate red
+proof (rule 20) passes `--ledger <file>`, refused unless the file is named `*ledger*` and it and its
+directory chain are root's alone, so its row never reaches the real ledger. `env -i` drops a
+GATE_LEDGER the caller set, so a set GATE_LEDGER without `--ledger` is refused rather than letting
+that proof's row land in the real ledger.
 
-**Filters.** A `filter.<name>.clean` or `.process` program is run by `status` (and by `worktree
-remove`'s inner `status`) on a tracked file whose stat changed, with fsmonitor off too (probed on
-git 2.39.5 in a throwaway container). No single `-c` turns every filter off. So `cleanup_filters`
-reads `git config --show-scope --get-regexp '^filter\..*\.(clean|process)$'` through `WT_GIT`
-before `status`, and again just before `worktree remove`; a match in any scope but `system` (which
-only root can write) keeps the tree as `filter`, and a failed read keeps it too. `diff.*.textconv`
-is not checked: the same probe showed `status` never runs it. The pattern is `.*`, not `.+`: a
-filter may have an empty name (`[filter ""]`, selected by `* filter=`), which `.+` missed while
-`status` and root's `worktree remove` both ran it (ES #70's review).
+Compose goes through `$GATE_COMPOSE`, which runs docker compose with the tree as project directory,
+the deploy compose policy over the tree's files, and a root-written override that makes every tree
+bind read-only and lays the build dirs over each service that mounts the tree. Both its `config
+--format json` renders take `--profile '*'`, as the deploy policy does, so a service behind
+`profiles:` gets the override and the check too; a `-f`, `-p`, `--project-directory` or `--env-file`
+in any spelling after the leading options is refused, because compose would still read it. A
+subcommand's own `-f` or `-p` (logs, rm, run) is therefore spelled long. The config is checked
+before every call: a read-write bind under the run, a bind that is neither in the run nor exactly
+one build dir, a build context outside the run, or a volume or network whose name is
+outside the gate's own project (so `down -v` cannot reach production's) is refused. Every `-f` file,
+whatever its name, is checked for `include:` and `extends.file`. The gate grants no extra binds, so the
+deploy policy's /etc/fleet/app-binds list is not read. composer, npm and vite run as the app uid
+(`--build`, `run --user <uid>:<gid>`) in /var/tmp/<app>-gate-build/<id>. Both of those directories
+are root's, 0755; root creates each build dir in `<id>` and hands only it to the app. Docker follows a
+bind source that is a symlink, and a check of the link alone races the app; ownership closes it,
+because the app cannot rename or replace an entry in a directory it cannot write. Before every compose
+call each build dir is still checked (not a link, the app's, in root's `<id>` in root's parent) as a
+backstop. Root never executes from them; at cleanup the app uid empties each one, then root removes the
+empty directories.
 
-**The limits, plainly.** The read is not atomic with the git call after it: an app that writes a
-filter in that instant still has its program run, by `status` as its own uid through `git-as`
-(no escalation), or by root's `worktree remove` in the shorter window the second read leaves. A
-submodule's own config is not read, and `status` recurses into submodules; `worktree remove`
-refuses a tree with submodules. A box whose app-user global config names a filter (git-lfs, say)
-keeps every worktree as `filter` until that changes. The hook probe covers git 2.39.5 only: a
-later git that runs a hook from `worktree remove` itself, or from a `status` that takes no locks,
-would reach root again. The `status` calls in `preflight.sh`, `compose.sh` and `ledger.sh` read
-no filter guard: a filter that `ROOT`'s or the gate tree's own config names still runs there, as
-whichever user that call's git runs as. A test that set one in `ROOT` saw the deploy's own checks
-run it before the cleanup began.
-
-**The rest of the library.** Its other git calls (`rev-parse`, `merge-base`, `branch -r`,
-`cat-file`, `show`, `fetch`, `worktree list`, and the commit-to-commit `diff`s in `resolve.sh` and
-`ledger.sh`) never read a working tree, so fsmonitor and filters never start; they are unchanged.
+Not closed: the sha's own code still runs as root, so review remains the guard on what a commit
+contains; the app-writable build dirs can still fake a result, but cannot reach root; host steps
+other than docker still run as root (backlog 720). The export-tree block is now one lib file;
+fleet-deploy and fleet-deploy-on-merge are installed under /usr/local/sbin and still carry their own
+copies until a packet makes them source it. Rejected: git archive through git-as, whose bytes
+nothing ties to the sha; and a pack route from the app user, which gate-once makes unnecessary.
