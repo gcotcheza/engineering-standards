@@ -2862,6 +2862,22 @@ contains 'a tree whose only ignored files are not .env* is removed' "${OUT}" \
     'worktrees removed 1 kept 0 (none)'
 equals 'and the tree with no .env is gone from disk' "$(on_disk "${WT}")" 'gone'
 
+# The owner's worktree config names a program as core.fsmonitor; status and the .env probe force it off.
+cleanup_fixture cleanup-fsmonitor-forced-off
+mkdir -p "${ROOT}/.git/info"
+printf '.env*\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}/.env"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>%q\nexit 1\n' "${CASE}/fsmonitor-ran" >"${CASE}/fsmonitor"
+chmod 0755 "${CASE}/fsmonitor"
+git_at config extensions.worktreeConfig true
+git -C "${WT}" config --worktree core.fsmonitor "${CASE}/fsmonitor"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree whose config sets core.fsmonitor reaches the .env probe and is kept there' "${OUT}" \
+    'worktrees removed 0 kept 1 (envfiles)'
+equals 'and neither of its git calls ran the fsmonitor program' "$([ -e "${CASE}/fsmonitor-ran" ] && printf ran || printf 'never ran')" 'never ran'
+git -C "${WT}" --no-optional-locks status --porcelain >/dev/null 2>&1
+equals 'and a plain status in that tree does run it, so the fixture is live' "$([ -e "${CASE}/fsmonitor-ran" ] && printf ran || printf 'never ran')" 'ran'
+
 # The shims exit 3 and print nothing: an error on stdout would be read as a found file,
 # which is the wrong reason reached by luck rather than the could-not-tell branch.
 cleanup_fixture cleanup-envfiles-unreadable
