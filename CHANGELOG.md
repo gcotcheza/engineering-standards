@@ -9,6 +9,35 @@ other value, a symlink, a file git does not track or a NUL byte judges nothing (
 unreadable file; no file changes nothing. `decisions-rollup.sh` refuses (exit 2) to fold a no-rollup
 project. The opt-out is read from the project, never listed in the checker. New cases in both
 fixture suites; deleting any one of these refusals, or the skip line, turns its case red.
+
+## 2026-10-25 — W2: the full gate runs once, on the final commit, after the adversarial review (VERSION 2026-10-25)
+**Ghie's rule of 2026-10-25, written into W2.** The order was self-review → gate → adversarial
+review; it is now self-review → adversarial review → the full gate once, on the final commit, and
+no PR goes ready without it. Until the review is clean only narrow checks run, quoted for the
+reviewer; the gate reruns only if it fails on that final commit, after the reviewer has read the
+fix. Why: the VPS gate queue waited
+20 to 55 minutes a run today, and every review bounce cost one. T1 is unchanged (a docs-only change
+still needs no test run, so it has no gate step), and S8 already named this order. `SOURCES.md`'s W2
+row cites the rule. The standard grew about 450 bytes. The standards text moved, so `VERSION` moves
+with it. Why: `docs/decisions/2026-10-25-1430-the-gate-runs-once-after-review.md`.
+
+## 2026-10-25 — every git call the cleanup makes in a worktree forces `core.fsmonitor` off (deploy-lib VERSION 2026-10-25.2; the standard is unchanged and VERSION is not bumped)
+**Card 694.** `cleanup.sh` forced `-c core.fsmonitor=false` only on the by-hand preview's `ls-files`.
+The dirty check's `status --porcelain` and `cleanup_envfiles`' `ls-files` ran in the owner's
+worktree without it, so a `core.fsmonitor` program set in that tree's config ran as whoever ran the
+cleanup; on git 2.39 both commands start it. Both now force it off, and all three calls put
+`-C <tree>` first (`${WT_GIT} -C <tree> [--no-optional-locks] -c core.fsmonitor=false ...`), the
+form `git-as <app> -C <tree>` takes everywhere else in the library. Not changed: `${GIT} worktree
+remove`, whose own inner `status` still starts the tree's fsmonitor program (probed; left to its own
+card). Also unchanged: the `status` calls in `preflight.sh` and `compose.sh` (in `ROOT`) and in
+`ledger.sh` (the gate's tree, at gate time). `ROLLOUT.md` now says a
+project sets `WT_GIT="git-as <app>"`: with plain `git`, root's git refuses an app-owned worktree
+(exit 128) and the cleanup keeps every worktree under `status`. The `cleanup_envfiles` comment now
+says what its pathspecs match: a `.env*` name, or a file in a `.env*` folder, at any depth, and
+nothing inside a `vendor/` or `node_modules/` folder. One new `test.sh` case (three checks), red
+on the old `cleanup.sh` and on each one-line mutant that drops one of the two new options.
+Every header is re-stamped for 2026-10-25.2. Why: `docs/decisions/2026-10-25-1105-every-worktree-git-call-forces-fsmonitor-off.md`.
+
 ## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
 **Card 684.** Deploy-on-merge must require every row the test scope owes, e2e included, as a hand
 deploy does (Ghie, 2026-10-24). `gated()` in `ledger.sh` gains three optional inputs so a judge

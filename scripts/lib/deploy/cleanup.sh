@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.1 sha256:183e2c8bca32602b93c38c205c47c8f119d24af07156fe588f1509da64fda74a
+# fleet-deploy-lib 2026-10-25.2 sha256:7550b9e36e07244e81e08b05c25e6d7bb8030aa97fed95b20e952e95dd1bfc6d
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -89,9 +89,9 @@ cleanup_rootfiles() {
 
 cleanup_envfiles() {
     local wt=$1 rc=0 out
-    # Any depth (api/.env, api/.env.d/prod), but not vendored packages' own .envrc files.
+    # A .env* name, or a file in a .env* folder, at any depth; none inside a vendor/ or node_modules/ folder.
     # shellcheck disable=SC2086
-    deploy_git_bounded ${WT_GIT-} -C "$wt" ls-files -o -i --exclude-standard -- '.env*' ':(glob)**/.env*' ':(glob)**/.env*/**' \
+    deploy_git_bounded ${WT_GIT-} -C "$wt" -c core.fsmonitor=false ls-files -o -i --exclude-standard -- '.env*' ':(glob)**/.env*' ':(glob)**/.env*/**' \
         ':(glob,exclude)**/vendor/**' ':(glob,exclude)**/node_modules/**' 2>/dev/null || rc=$?
     out=$DEPLOY_GIT_OUT$DEPLOY_GIT_STDERR
     [ "$rc" = 0 ] || { cleanup_keep envfiles "$wt (ls-files exited ${rc}, so an ignored .env could not be ruled out)"; return 1; }
@@ -129,9 +129,9 @@ cleanup_linked_say() {
 cleanup_linked_preview() {
     local real=$1 rc=0 n=0 shown='' p r
     printf -v r '%q' "$real"
-    # The owner's tree may set core.fsmonitor, the one ls-files setting that runs a program: forced off.
+    # The owner's tree may set core.fsmonitor, which runs a program: every git call in a worktree forces it off.
     # shellcheck disable=SC2086
-    deploy_git_bounded ${WT_GIT-} --no-optional-locks -c core.fsmonitor=false -c core.quotePath=true -C "$real" \
+    deploy_git_bounded ${WT_GIT-} -C "$real" --no-optional-locks -c core.fsmonitor=false -c core.quotePath=true \
         ls-files -o -i --exclude-standard --directory 2>/dev/null || rc=$?
     [ "$rc" = 0 ] || { say "CLEANUP #${PR-} kept $r: its ignored paths could not be listed (ls-files exited ${rc}), so no by-hand removal is printed"; return 1; }
     while IFS= read -r p; do
@@ -161,7 +161,7 @@ cleanup_worktree() {
     fi
     rc=0
     # shellcheck disable=SC2086
-    deploy_git_bounded ${WT_GIT-} -C "$wt" --no-optional-locks status --porcelain 2>/dev/null || rc=$?
+    deploy_git_bounded ${WT_GIT-} -C "$wt" --no-optional-locks -c core.fsmonitor=false status --porcelain 2>/dev/null || rc=$?
     out=$DEPLOY_GIT_OUT$DEPLOY_GIT_STDERR
     [ "$rc" = 0 ] || { cleanup_keep status "$wt (status --porcelain exited ${rc}, so uncommitted work could not be ruled out)"; return 0; }
     [ -z "$out" ] || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
