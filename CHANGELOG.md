@@ -11,6 +11,16 @@ throwaway repo and a fake docker, plus a comparison of the inline clone-lib bloc
 fleet-deploy's; each guard has a mutant in one of four `scripts/gate-run*-mutants.txt` tables. Not yet used by any app (the Memento pilot is next), and the
 installed fleet-deploy scripts still carry their own export-tree copy until a packet sources the lib.
 Why: `docs/DECISIONS.md#gate-run-exports-one-sha`.
+## 2026-10-25 — decisions-check honours a project's no-rollup mode (the standard is unchanged and VERSION is not bumped)
+**Card 696.** A project whose committed `.fleet/decisions-mode` reads exactly `no-rollup` (Fineprint:
+one file per decision never conflicts, and its archive is frozen by a test) is no longer told to fold
+at the 10th file or to carry the "Newer decisions" line. `decisions-check.sh` says in one line that it
+skipped those two, and runs every other check: file names, `# <Title>`, unique slugs, pointers. Any
+other value, a symlink, a file git does not track or a NUL byte judges nothing (exit 2), as does an
+unreadable file; no file changes nothing. `decisions-rollup.sh` refuses (exit 2) to fold a no-rollup
+project. The opt-out is read from the project, never listed in the checker. New cases in both
+fixture suites; deleting any one of these refusals, or the skip line, turns its case red.
+
 ## 2026-10-25 — W2: the full gate runs once, on the final commit, after the adversarial review (VERSION 2026-10-25)
 **Ghie's rule of 2026-10-25, written into W2.** The order was self-review → gate → adversarial
 review; it is now self-review → adversarial review → the full gate once, on the final commit, and
@@ -38,6 +48,7 @@ says what its pathspecs match: a `.env*` name, or a file in a `.env*` folder, at
 nothing inside a `vendor/` or `node_modules/` folder. One new `test.sh` case (three checks), red
 on the old `cleanup.sh` and on each one-line mutant that drops one of the two new options.
 Every header is re-stamped for 2026-10-25.2. Why: `docs/DECISIONS.md#every-worktree-git-call-forces-fsmonitor-off`.
+
 ## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
 **Card 684.** Deploy-on-merge must require every row the test scope owes, e2e included, as a hand
 deploy does (Ghie, 2026-10-24). `gated()` in `ledger.sh` gains three optional inputs so a judge
