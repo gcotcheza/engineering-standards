@@ -2415,12 +2415,31 @@ BEFORE_PRINT="$(tree_print "${WT}-moved")"
 BEFORE_FILES="$(find "${WT}-moved" -type f | wc -l)"
 run_lib "${CLEAN_CALL}"
 contains 'an unused worktree listed by its own link is kept' "${OUT}" 'worktrees removed 0 kept 1 (link)'
-contains 'and the summary says so in one line, with the command to remove it by hand' "${OUT}" \
-    "CLEANUP #73 kept ${WT} -> ${WT}-moved: linked worktree, not removed; remove by hand with git -C ${ROOT} worktree remove ${WT}"
+equals 'and the summary says so in one line, with the safe by-hand sequence' "$(grep -F 'linked worktree, not removed' <<<"${OUT}")" \
+    "CLEANUP #73 kept ${WT} -> ${WT}-moved: linked worktree, not removed; remove by hand with: git -C ${ROOT} worktree repair ${WT}-moved && { [ ! -L ${WT} ] || unlink -- ${WT}; } && git -C ${ROOT} worktree remove ${WT}-moved"
+equals 'and it never removes by the link path, which empties the target' "$(grep -cE "worktree remove ${WT//./\\.}( |;|\$)" <<<"${OUT}")" 0
 equals 'and the tracked file behind the link is still there' "$(cat "${WT}-moved/app/base.txt" 2>/dev/null)" 'base'
 equals 'and the real folder holds as many files' "$(find "${WT}-moved" -type f | wc -l)" "${BEFORE_FILES}"
 equals 'and its names and contents are unchanged' "$(tree_print "${WT}-moved")" "${BEFORE_PRINT}"
 absent 'and no removal was tried' "${OUT}" '(remove)'
+
+# Paths with a space and shell metacharacters: the printed line is %q-quoted, and run as printed it ends clean.
+cleanup_fixture cleanup-linked-quoted
+mkdir -p "${CASE}/real dir"
+mv "${WT}" "${CASE}/real dir/wt \$(touch pwned)"
+LNK="${CASE}/link 'a';b"
+ln -s "${CASE}/real dir/wt \$(touch pwned)" "${LNK}"
+printf '%s/.git\n' "${LNK}" >"${ROOT}/.git/worktrees/wt-pr/gitdir"
+run_lib "${CLEAN_CALL}"
+contains 'a linked worktree with metacharacters in its paths is kept' "${OUT}" 'worktrees removed 0 kept 1 (link)'
+BYHAND="$(grep -F 'linked worktree, not removed' <<<"${OUT}")"
+BYHAND="${BYHAND#*remove by hand with: }"
+(cd -- "${CASE}" && bash -c "${BYHAND}") >"${CASE}/byhand.out" 2>&1
+equals 'and the printed sequence, run as printed, exits 0' "$?" 0
+equals 'and leaves no link' "$([ -L "${LNK}" ] && echo there || echo gone)" 'gone'
+equals 'and no real folder' "$(on_disk "${CASE}/real dir/wt \$(touch pwned)")" 'gone'
+absent 'and no worktree record' "$(git_at worktree list --porcelain)" 'wt-pr'
+equals 'and ran nothing from the path' "$([ -e "${CASE}/pwned" ] && echo ran || echo quoted)" 'quoted'
 
 # Listed through a linked parent, with a process inside: a cwd reads as the real path, never the listed one.
 cleanup_fixture cleanup-parent-linked-in-use

@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25 sha256:9724b0e1eb5139d2de7abd21871544d453a14ccb9494ca90d6c6a0261a28d9cf
+# fleet-deploy-lib 2026-10-25 sha256:efca203e957732e6521bd4dbf69e18c4b24d32d039b22425927923a15e051a28
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -117,6 +117,14 @@ cleanup_lanekeep() {
     return 0
 }
 
+# The by-hand removal of a linked worktree, every path %q-quoted: remove by the link path empties the
+# target and fails, so the record is repaired to the real path, the link unlinked, and no --force used.
+cleanup_linked_say() {
+    local l r g
+    printf -v l '%q' "$1"; printf -v r '%q' "$2"; printf -v g '%q' "${ROOT-}"
+    say "CLEANUP #${PR-} kept $l -> $r: linked worktree, not removed; remove by hand with: git -C $g worktree repair $r && { [ ! -L $l ] || unlink -- $l; } && git -C $g worktree remove $r"
+}
+
 cleanup_worktree() {
     local wt=$1 head=$2 rc=0 out real
     cleanup_lanekeep "$wt" || return 0
@@ -140,7 +148,7 @@ cleanup_worktree() {
     [ -z "$out" ] || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
     # A worktree reached through a link is never removed: remove empties the target, then fails on the link.
     real=$("${CLEANUP_REALPATH}" -e -- "$wt" 2>/dev/null) || { cleanup_keep realpath "$wt (its real path could not be read, so a link could not be ruled out)"; return 0; }
-    [ "$real" = "$wt" ] || { cleanup_keep link "$wt (linked to $real)"; say "CLEANUP #${PR-} kept $wt -> $real: linked worktree, not removed; remove by hand with git -C ${ROOT-} worktree remove $wt"; return 0; }
+    [ "$real" = "$wt" ] || { cleanup_keep link "$wt (linked to $real)"; cleanup_linked_say "$wt" "$real"; return 0; }
     cleanup_procs "$wt" || return 0
     cleanup_mounts "$wt" || return 0
     cleanup_rootfiles "$wt" || return 0

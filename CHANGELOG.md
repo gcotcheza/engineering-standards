@@ -16,8 +16,9 @@ a cwd always reads as the real path, so a worktree listed through a link was rem
 sat in it. A clean worktree that is itself a link was emptied by `worktree remove`, which then failed
 on the link and was reported as `kept (remove)`. Now `cleanup_worktree` reads the worktree's
 `realpath -e` first: a worktree reached through any link is kept (reason `link`) and never removed,
-and the summary prints `kept <link> -> <real>: linked worktree, not removed; remove by hand with
-git -C <repo> worktree remove <link>`. A failing `realpath` keeps it too (reason `realpath`), and a
+and the summary prints `kept <link> -> <real>: linked worktree, not removed; remove by hand with:
+git -C <repo> worktree repair <real> && { [ ! -L <link> ] || unlink -- <link>; } && git -C <repo>
+worktree remove <real>`, every path `%q`-quoted (removing by the link path empties the target). A failing `realpath` keeps it too (reason `realpath`), and a
 mount source is also compared as its own `realpath -m`. decision: a-linked-worktree-is-kept-never-removed
 `realpath` is pinned as `find`, `timeout` and `grep` are. New cases in `ownership-test.sh` and
 `test.sh` fail with each new line removed. Every header is re-stamped for 2026-10-25. Each project
