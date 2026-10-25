@@ -14,6 +14,7 @@ equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], ex
 root_only_case() { [ "$(id -u)" = 0 ] || { printf 'skip %s (root only)\n' "$1"; return 1; }; }
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/ownership-test.XXXXXXXX")" || { printf 'cannot make a work directory\n' >&2; exit 1; }
 trap 'rm -rf "${WORK}"' EXIT
+WORK="$(cd -P -- "${WORK}" && pwd)" || exit 1
 DEVNULL_BEFORE="$(stat -c '%a %u %g %F' /dev/null)"
 ME="$(id -u)"
 TO=nobody:nogroup
@@ -117,8 +118,14 @@ for d in "${OF}/root-link/" "${OF}/root-link//"; do
 done
 for d in "${OF}/root-link/." "${OF}/root-link/a/.." "${OF}/root-link/./"; do
     orun "${d}" "${TO}"
-    contains "dir: [${d}] refuses its . or .. part" "${OUT}" "REFUSED: chown_root_owned: ${d%/} has a . or .. part"
+    contains "dir: [${d}] refuses its . or .. part" "${OUT}" "REFUSED: chown_root_owned: ${d%/} is not its own real path"
 done
+ln -s "${OF}" "${WORK}/parent-link"
+orun "${WORK}/parent-link/root" "${TO}"
+contains 'dir: a directory below a linked parent refuses' "${OUT}" "REFUSED: chown_root_owned: ${WORK}/parent-link/root is not its own real path"
+if root_only_case 'refusals: ownership as root'; then
+    equals 'refusals: the tree behind the links stays root'\''s' "$(owners "${OROOT}/top" "${OROOT}/a/sub/f")" 'root root'
+fi
 equals 'refusals: no chown ran' "${LOG}" ''
 for d in / //; do
     orun "${d}" nobody
@@ -182,8 +189,12 @@ done
 for d in "${WORK}/count/root-link/." "${WORK}/count/root-link/app/.."; do
     crun "${d}"
     equals "count: [${d}] refuses its . or .. part, and counts nothing" "${OUT}" \
-        "REFUSED: root_owned_count: ${d} has a . or .. part, which can reach the tree through a link"$'\nRC=1'
+        "REFUSED: root_owned_count: ${d} is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
 done
+ln -s "${WORK}/count" "${WORK}/count-link"
+crun "${WORK}/count-link/root"
+equals 'count: a directory below a linked parent refuses, and counts nothing' "${OUT}" \
+    "REFUSED: root_owned_count: ${WORK}/count-link/root is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
 
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 if [ "${fails}" -eq 0 ]; then printf '\nownership-test: all checks passed\n'; exit 0; fi

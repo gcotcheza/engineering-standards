@@ -1,20 +1,27 @@
 # Changelog
 
-## 2026-10-25 — the deploy library sees a worktree or app tree reached through a link however the path is written (deploy-lib VERSION 2026-10-25; the standard is unchanged and VERSION is not bumped)
+## 2026-10-25 — the deploy library sees through linked folders in its ownership and cleanup checks (deploy-lib VERSION 2026-10-25; the standard is unchanged and VERSION is not bumped)
 **Card 678.** `chown_root_owned` and `root_owned_count` in `ownership.sh` refused a link with
-`! -L`, but `link/` makes `-L` false and `find -P "link/"` then walks the link's target. Both now
-trim trailing slashes before the test (`/` stays `/`) and hand `find` the trimmed path, and both
-refuse a path with a `.` or `..` part (`link/.`, `link/a/..`), which reaches the target the same way.
-`compose.sh` needed no change: its root must match `FLEET_COMPOSE_WORD`, which allows no trailing
-slash, and its other `-L` tests name paths it builds with a fixed last name or takes from `dirname`,
-which drops trailing slashes.
-**Card 677.** `cleanup_procs` and `cleanup_mounts` in `cleanup.sh` compared a process's cwd and a
-container's mount source with the worktree path as written. A process's cwd always reads as the
-real path, so for a worktree listed by a link path a process inside it was never seen. Both now
-also compare with `realpath -e` of the worktree; when that fails the worktree is kept with the
-reason `realpath`. New cases in `ownership-test.sh` and `test.sh` (`cleanup-procs-real-path`,
-`cleanup-mounts-real-path`, `cleanup-realpath-unreadable`) fail with each new line removed. Every
-header is re-stamped for 2026-10-25. Each project reads STALE in the fleet check until it re-vendors.
+`! -L`, but `link/` makes `-L` false and `find -P "link/"` then walks the link's target; so did a
+`.` or `..` part, and a link above the directory. Both now trim trailing slashes (`/` stays `/`)
+and refuse any directory that is not its own `realpath -e`, so `find` walks only the path checked.
+`compose.sh` is unchanged. Its root must match `FLEET_COMPOSE_WORD`, which allows no trailing
+slash or `//` but does allow a `.` or `..` part; such a root is then refused by the later checks
+that compare `realpath` output with `$root/...` (the bind and build-context checks), since
+`realpath` never prints a `.` part. That refusal is reasoned from the code, not tested end to end.
+Its other `-L` tests name paths it builds with a fixed last name or takes from `dirname`. The
+limit left: none of them looks for a link above ROOT.
+**Card 677.** `cleanup_procs` compared a process's cwd with the worktree path as git lists it, and
+a cwd always reads as the real path, so a worktree listed through a link was removed while a process
+sat in it. A clean worktree that is itself a link was emptied by `worktree remove`, which then failed
+on the link and was reported as `kept (remove)`. Now `cleanup_worktree` reads the worktree's
+`realpath -e` first: a worktree reached through any link is kept (reason `link`) and never removed,
+and the summary prints `kept <link> -> <real>: linked worktree, not removed; remove by hand with
+git -C <repo> worktree remove <link>`. A failing `realpath` keeps it too (reason `realpath`), and a
+mount source is also compared as its own `realpath -m`. decision: a-linked-worktree-is-kept-never-removed
+`realpath` is pinned as `find`, `timeout` and `grep` are. New cases in `ownership-test.sh` and
+`test.sh` fail with each new line removed. Every header is re-stamped for 2026-10-25. Each project
+reads STALE in the fleet check until it re-vendors.
 
 ## 2026-10-24 — the after-deploy cleanup sees root-owned files behind a linked worktree path (deploy-lib VERSION 2026-10-24.2; the standard is unchanged and VERSION is not bumped)
 **Card 676.** `cleanup_rootfiles` in `cleanup.sh` ran `find -P "$wt"`. `find -P` never enters a start

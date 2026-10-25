@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25 sha256:b376cc2245cc74087535f5decf71301473ed3d52aa8eed721cd41dbf790bd92c
+# fleet-deploy-lib 2026-10-25 sha256:9724b0e1eb5139d2de7abd21871544d453a14ccb9494ca90d6c6a0261a28d9cf
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -8,11 +8,12 @@
 # shell, on the line before a success-path finish, stands for a deploy that reached it.
 unset DEPLOY_SUCCEEDED
 
-# find, timeout and grep are pinned to the binary: an exported shell function of that name
+# find, timeout, grep and realpath are pinned to the binary: an exported shell function of that name
 # must not decide what a removal run looks inside or keeps.
 CLEANUP_FIND=/usr/bin/find
 CLEANUP_TIMEOUT=/usr/bin/timeout
 CLEANUP_GREP=/usr/bin/grep
+CLEANUP_REALPATH=/usr/bin/realpath
 # Lane labels are read only below this root; a worktree outside it meets none.
 CLEANUP_SCRATCH_ROOT=/srv/worker-scratch
 
@@ -40,13 +41,13 @@ cleanup_unassigned() {
 }
 
 cleanup_procs() {
-    local wt=$1 real=$2 d target seen=0
+    local wt=$1 d target seen=0
     for d in "${PROC_ROOT-}"/[0-9]*; do
         [ -d "$d" ] || continue
         seen=1
         target=$(readlink -- "$d/cwd" 2>/dev/null) || continue
         case "$target" in
-            "$wt"|"$wt"/*|"$real"|"$real"/*) cleanup_keep procs "$wt (a running process has its working directory inside it)"; return 1 ;;
+            "$wt"|"$wt"/*) cleanup_keep procs "$wt (a running process has its working directory inside it)"; return 1 ;;
         esac
     done
     [ "$seen" = 1 ] || { cleanup_keep procs "$wt (no process list under ${PROC_ROOT-}, so no process could be ruled out)"; return 1; }
@@ -54,7 +55,7 @@ cleanup_procs() {
 }
 
 cleanup_mounts() {
-    local wt=$1 real=$2 rc=0 ids out t
+    local wt=$1 rc=0 ids out t s
     ids=$(${DOCKER-} ps -q 2>&1) || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep mounts "$wt (docker ps exited ${rc}, so no container could be ruled out)"; return 1; }
     [ -n "$ids" ] || return 0
@@ -64,8 +65,13 @@ cleanup_mounts() {
     [ "$rc" = 0 ] || { cleanup_keep mounts "$wt (docker inspect exited ${rc}, so no container could be ruled out)"; return 1; }
     while IFS= read -r t; do
         [ -n "$t" ] || continue
+        # A bind source can be written through a link of its own, so its real path is compared too.
+        s=$("${CLEANUP_REALPATH}" -m -- "$t" 2>/dev/null) || { cleanup_keep mounts "$wt (the real path of mount $t could not be read)"; return 1; }
         case "$t" in
-            "$wt"|"$wt"/*|"$real"|"$real"/*) cleanup_keep mounts "$wt (a running container mounts $t)"; return 1 ;;
+            "$wt"|"$wt"/*) cleanup_keep mounts "$wt (a running container mounts $t)"; return 1 ;;
+        esac
+        case "$s" in
+            "$wt"|"$wt"/*) cleanup_keep mounts "$wt (a running container mounts $t, which is $s)"; return 1 ;;
         esac
     done <<<"$out"
     return 0
@@ -132,10 +138,11 @@ cleanup_worktree() {
     out=$DEPLOY_GIT_OUT$DEPLOY_GIT_STDERR
     [ "$rc" = 0 ] || { cleanup_keep status "$wt (status --porcelain exited ${rc}, so uncommitted work could not be ruled out)"; return 0; }
     [ -z "$out" ] || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
-    # A process's cwd is always its real path, and a mount may name it: both are compared.
-    real=$(realpath -e -- "$wt" 2>/dev/null) || { cleanup_keep realpath "$wt (its real path could not be read, so a process or container in it could not be ruled out)"; return 0; }
-    cleanup_procs "$wt" "$real" || return 0
-    cleanup_mounts "$wt" "$real" || return 0
+    # A worktree reached through a link is never removed: remove empties the target, then fails on the link.
+    real=$("${CLEANUP_REALPATH}" -e -- "$wt" 2>/dev/null) || { cleanup_keep realpath "$wt (its real path could not be read, so a link could not be ruled out)"; return 0; }
+    [ "$real" = "$wt" ] || { cleanup_keep link "$wt (linked to $real)"; say "CLEANUP #${PR-} kept $wt -> $real: linked worktree, not removed; remove by hand with git -C ${ROOT-} worktree remove $wt"; return 0; }
+    cleanup_procs "$wt" || return 0
+    cleanup_mounts "$wt" || return 0
     cleanup_rootfiles "$wt" || return 0
     cleanup_envfiles "$wt" || return 0
     rc=0
