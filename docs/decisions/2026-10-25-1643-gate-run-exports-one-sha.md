@@ -1,0 +1,39 @@
+# Root gates run from a hash-verified export of one sha
+
+Root ran an app's scripts/check.sh, scripts/e2e.sh and docker compose straight from an app-owned
+worktree. bash reads a script as it runs and compose re-reads its files, so the app user could
+rewrite either before or during a run and have root execute it; that undid the root-owned env copy
+(card 716) and is a root escalation. A commit landing mid-run could also earn a ledger row for a sha
+that never ran (card 717).
+
+A gate now runs only through `scripts/gate-run.sh <app> <sha40> <script>`. The entry copies
+scripts/lib/gate and scripts/lib/deploy blob by blob from the box clone's origin/main, with
+fleet-deploy's clone_lib checks, and execs that copy. It takes an explicit 40-hex sha and fetches it
+from GitHub, and only from GitHub, so git hashes every object; an unpushed sha is refused. The
+objects land in the run's own `repo.git`, which borrows root's mirror through alternates, so the
+mirror keeps holding main only, as fleet-deploy-on-merge requires; origin/main comes from GitHub in
+the same fetch, never from the app's repo. Every entry is judged before a byte is written (links,
+submodules, odd paths, compose include and extends file, a committed .env), and the tree is written
+by root into /run/<app>-gate/<id>, after a check that /run has twice the tree's size free.
+
+Scripts, compose files and env files are read from there only. The gate script runs under `env -i`
+from `cd /`, with the existing ledger seams pointed into the run: GATE_LEDGER at `<run>/status` and
+the CI_GIT, CHECK_GIT, E2E_GIT and GATE_LEDGER_GIT seams at `repo.git` with the exported tree, so
+the deploy lib's own record rules (75 not recorded, rc 0 needs suite-passed) apply unchanged. After
+the run gate-run re-hashes the tree against its manifest; a changed or added file means rc 1. Only
+then does it append to the real ledger, and only the row for the exported sha.
+
+Compose goes through `$GATE_COMPOSE`, which runs docker compose with the tree as project directory,
+the deploy compose policy over the tree's files, and a root-written override that makes every tree
+bind read-only and lays the build dirs over each service that mounts the tree. Its `config --format
+json` is checked before every call: a read-write bind under the run, or a bind or build context
+outside the run and the build dir, is refused. composer, npm and vite run as the app uid (`--build`)
+in /var/tmp/<app>-gate-build/<id>, under a root-owned parent that is refused when it is a link or
+not root's; root never executes from it, and cleans it up as the app uid.
+
+Not closed: the sha's own code still runs as root, so review remains the guard on what a commit
+contains; the app-writable build dirs can still fake a result, but cannot reach root; host steps
+other than docker still run as root (backlog 720). The export-tree block is now one lib file;
+fleet-deploy and fleet-deploy-on-merge are installed under /usr/local/sbin and still carry their own
+copies until a packet makes them source it. Rejected: git archive through git-as, whose bytes
+nothing ties to the sha; and a pack route from the app user, which gate-once makes unnecessary.

@@ -1,0 +1,6 @@
+# T5 guard-deletion mutants for scripts/lib/gate/compose.sh (card 719), for scripts/guard-mutants.sh; gate-run itself runs as nobody (GR_AS_NOBODY)
+# except where a row needs a second uid (A10, artifacts) or a root-readable app clone (A18).
+#   GR_TEST=$PWD/scripts/gate-run-test.sh scripts/guard-mutants.sh scripts/lib/gate/compose.sh scripts/gate-run-lib-compose-mutants.txt
+c-tree-files@@GR_AS_NOBODY=1 GR_CASES="A2" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@            files+=(-f "$TREE/$2"); shift 2 ;;@@            files+=(-f "${RUN%/*/*}/../src/$2"); shift 2 ;;
+c-policy@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@deploy_compose_policy "$TREE" "$json" "$APP" "$envf" dc -p "$APP" "${files[@]}" --env-file "$envf" || die "$DEPLOY_COMPOSE_ERR"@@
+c-bind-check@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@' "$RUN" "$BUILD" || die "the compose config failed root's bind check"@@' "$RUN" "$BUILD" || true

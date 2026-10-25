@@ -58,6 +58,16 @@ the mutant; a mutant whose case stays green, whose bash copy does not parse, or 
 matches no line, or more than one, is refused (exit 2) before any case runs. Run it as `nobody` when
 the target copies, chmods or deletes.
 
+`scripts/gate-run.sh <app> <sha40> <script> [--keep] [-- args]` runs one app's gate script as root
+from a root-owned export of that sha, fetched from GitHub only, in `/run/<app>-gate/<id>`; it never
+reads the app's worktree. The script gets `$GATE_COMPOSE` for its docker compose calls (read-only
+tree, root's override and bind check, `--build` for composer/npm/vite as the app uid) and the
+ledger seams pointed into the run; gate-run writes the ledger row for the exported sha after
+re-hashing the tree. Refusals exit 2 with `gate-run: REFUSED: <why>`. The export-tree block it
+shares with fleet-deploy is `scripts/lib/gate/export.sh`. Its tests are `scripts/gate-run-test.sh`
+(root; one gate step) and four `scripts/gate-run*-mutants.txt` tables. Why:
+`docs/decisions/2026-10-25-1643-gate-run-exports-one-sha.md`.
+
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and one of this repo's gate steps
 runs its fixtures. Point it at a project root and it names the compose files it read, the image
 values it could not resolve, and any tag that project builds for both its gate and production. It

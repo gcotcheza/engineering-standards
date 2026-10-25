@@ -1,0 +1,7 @@
+# T5 guard-deletion mutants for scripts/gate-run.sh (card 719), for scripts/guard-mutants.sh; gate-run itself runs as nobody (GR_AS_NOBODY)
+# except where a row needs a second uid (A10, artifacts) or a root-readable app clone (A18).
+#   GR_TEST=$PWD/scripts/gate-run-test.sh scripts/guard-mutants.sh scripts/gate-run.sh scripts/gate-run-mutants.txt
+e-sha@@GR_AS_NOBODY=1 GR_CASES="A15" GR_ENTRY="$MUTANT_TARGET" bash "$GR_TEST"@@[[ $sha =~ ^[0-9a-f]{40}$ ]] || die "the sha is not 40 lowercase hex: a branch, HEAD or a short sha names no fixed bytes"@@
+e-script@@GR_AS_NOBODY=1 GR_CASES="A15" GR_ENTRY="$MUTANT_TARGET" bash "$GR_TEST"@@[[ $script =~ ^scripts/[A-Za-z0-9._/-]+\.sh$ && /$script/ != */../* && /$script/ != */./* ]] || die "the script is not a path under scripts/ ending in .sh"@@
+e-env-i@@GR_AS_NOBODY=1 GR_CASES="A11" GR_ENTRY="$MUTANT_TARGET" bash "$GR_TEST"@@exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8 \@@exec env PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8 \
+e-artifacts-path@@GR_AS_NOBODY=1 GR_CASES="A0" GR_ENTRY="$MUTANT_TARGET" bash "$GR_TEST"@@[ -z "$artifacts" ] || [[ $artifacts =~ ^/[A-Za-z0-9._/-]+$ && /$artifacts/ != */../* ]] || die "--artifacts-to is not an absolute path of [A-Za-z0-9._/-] without .."@@
