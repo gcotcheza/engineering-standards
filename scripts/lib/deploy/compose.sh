@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-24.2 sha256:caa763fe0ce0d5d80bc8c2726cd1df5db1ba149598087883a2e0b3d4cf56b0a0
+# fleet-deploy-lib 2026-10-25.1 sha256:caa763fe0ce0d5d80bc8c2726cd1df5db1ba149598087883a2e0b3d4cf56b0a0
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)

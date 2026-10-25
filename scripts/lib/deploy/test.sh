@@ -1386,6 +1386,44 @@ scope_gated
 contains 'a UI diff with ci and e2e green is gated' "${OUT}" "GATED ${SCOPE_SHA:0:7} ci and e2e both green in ${LEDGER}"
 contains 'and DONE records the ledger as before' "${OUT}" "GATED_IS ledger head ${SCOPE_SHA:0:7}"
 
+# GATE_BASE, GATE_CI_BY and GATE_ROUTE: a caller judging from a mirror, not the checkout (card 684).
+scope_fixture scope-base-unset bare docs
+rm -f "${LEDGER}"
+scope_gated
+contains 'without GATE_BASE the scope is read against the checkout HEAD' "${OUT}" "SCOPE ui: UI path: .fleet/test-scope ${RULE}"
+
+scope_fixture scope-base bare docs
+rm -f "${LEDGER}"
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_BASE=$(git_at rev-parse refs/scope/live); "'gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'GATE_BASE names the live commit the scope is read against' "${OUT}" "GATED_IS no row owed head ${SCOPE_SHA:0:7} (docs-only)"
+
+scope_fixture scope-ci-by live ui
+scope_rows e2e
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_CI_BY='github ci head ${SCOPE_SHA:0:7}'; "'gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'GATE_CI_BY fills an absent ci row of a UI diff' "${OUT}" \
+    "GATED ${SCOPE_SHA:0:7} ci green by github ci head ${SCOPE_SHA:0:7}, e2e green in ${LEDGER}"
+contains 'and DONE names both sources' "${OUT}" "GATED_IS github ci head ${SCOPE_SHA:0:7} + e2e ledger head ${SCOPE_SHA:0:7}"
+
+scope_fixture scope-ci-by-red live ui
+printf '%s ci 2026-10-04T10:00:00Z 1 -\n%s e2e 2026-10-04T10:00:00Z 0 -\n' "${SCOPE_SHA}" "${SCOPE_SHA}" >"${LEDGER}"
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_CI_BY='github ci head ${SCOPE_SHA:0:7}'; gated"
+contains 'GATE_CI_BY never fills a red ci row' "${OUT}" "$(no_green ci "${SCOPE_SHA}" 'ci red, e2e green')"
+absent 'and the red head is not gated' "${OUT}" "GATED ${SCOPE_SHA:0:7}"
+
+scope_fixture scope-ci-by-no-e2e live ui
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_CI_BY='github ci head ${SCOPE_SHA:0:7}'; GATE_ROUTE='Deploy by the runbook.'; gated"
+contains 'GATE_CI_BY does not stand in for e2e, and GATE_ROUTE ends the refusal' "${OUT}" \
+    "REFUSED: the ledger holds no green e2e for ${SCOPE_SHA:0:7} (ci absent, github ci head ${SCOPE_SHA:0:7}, e2e absent, e2e github: off (no config)): Deploy by the runbook."
+
+scope_fixture scope-ci-by-nonui live nonui
+run_lib "GATE_SHA=${SCOPE_SHA}; GATE_WHAT=head; GATE_CI_BY='github ci head ${SCOPE_SHA:0:7}'; "'gated; printf "GATED_IS %s\n" "$GATED" >&3'
+contains 'a non-UI diff takes GATE_CI_BY as its ci, and DONE names it' "${OUT}" "GATED_IS github ci head ${SCOPE_SHA:0:7} (non-UI)"
+
+scope_fixture scope-ci-by-inherited live ui
+scope_rows e2e
+GATE_CI_BY='inherited' scope_gated
+contains 'a GATE_CI_BY inherited from the environment is discarded on sourcing' "${OUT}" "$(no_green ci "${SCOPE_SHA}" 'ci absent, e2e green')"
+
 scope_fixture scope-no-declaration bare nodecl
 scope_rows ci
 scope_gated

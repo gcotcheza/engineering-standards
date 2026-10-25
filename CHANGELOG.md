@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
+**Card 684.** Deploy-on-merge must require every row the test scope owes, e2e included, as a hand
+deploy does (Ghie, 2026-10-24). `gated()` in `ledger.sh` gains three optional inputs so a judge
+that reads from root's mirror can call it: `GATE_BASE` (the live commit the scope is read
+against, instead of the checkout's HEAD), `GATE_CI_BY` (the caller's own ci evidence, which fills
+an absent ci row and never a red one or e2e) and `GATE_ROUTE` (the refusal's closing route).
+Unset, nothing changes. Six new `test.sh` cases; each new line has a mutant that turns one red.
+Every header is re-stamped for 2026-10-25.1. Why: `docs/decisions/2026-10-25-0244-gated-takes-a-callers-base-and-ci.md`.
+
 ## 2026-10-24 — the after-deploy cleanup sees root-owned files behind a linked worktree path (deploy-lib VERSION 2026-10-24.2; the standard is unchanged and VERSION is not bumped)
 **Card 676.** `cleanup_rootfiles` in `cleanup.sh` ran `find -P "$wt"`. `find -P` never enters a start
 point that is a symbolic link, and a worktree that was moved and linked back is listed by
