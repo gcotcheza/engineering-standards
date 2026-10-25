@@ -10,7 +10,7 @@ RUN=${GATE_RUN_DIR:?}
 ID=${RUN##*/}
 URL_PREFIX=${GATE_RUN_T_URL_PREFIX:-https://github.com/gcotcheza/}
 SRC=${GATE_RUN_T_SRC:-/var/lib/fleet/deploy-src}
-LEDGER=${GATE_RUN_T_LEDGER:-/var/lib/fleet/gate-ledger}
+LEDGER=${GATE_RUN_LEDGER:-${GATE_RUN_T_LEDGER:-/var/lib/fleet/gate-ledger}}
 BUILD_BASE=${GATE_RUN_T_BUILD_BASE:-/var/tmp}
 ENV_DIR=${GATE_RUN_T_ENV_DIR:-/etc/fleet/gate-env}
 RUN_PATH=${GATE_RUN_T_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}
@@ -19,11 +19,15 @@ ROOT_UID=${GATE_RUN_T_UID:-0}
 DF=${GATE_RUN_T_DF:-/usr/bin/df}
 GIT_BIN=/usr/bin/git
 TREE=$RUN/tree REPO=$RUN/repo.git BUILD=''
+BUILD_DIRS=(vendor node_modules public-build bootstrap-cache artifacts)
 KIND=ci
 case $SCRIPT in *e2e*) KIND=e2e ;; esac
 
 # shellcheck source=scripts/lib/gate/export.sh
 . "$LIB/export.sh" || exit 2
+# shellcheck source=scripts/lib/deploy/compose.sh
+. "$LIB/../deploy/compose.sh" || exit 2
+DEPLOY_ROOT_UID=$ROOT_UID
 die() { printf 'gate-run: REFUSED: %s\n' "$*" >&2; exit 2; }
 [[ $ID =~ ^[A-Za-z0-9]{10}$ && $RUN == */"$APP"-gate/"$ID" ]] || die "GATE_RUN_DIR $RUN is not a gate-run run directory"
 
@@ -33,8 +37,16 @@ root_git() {
 }
 mirror_git() { root_git --git-dir="$REPO" "$@"; }
 tree_git() { root_git --git-dir="$REPO" --work-tree="$TREE" "$@"; }
+# shellcheck disable=SC2317  # cleanup, a trap, is its only caller
 run_as() { if [ "$(id -u)" = "$APP_UID" ]; then env -i PATH=/usr/bin:/bin "$@"; else runuser -u "$APP_USER" -- env -i PATH=/usr/bin:/bin "$@"; fi; }
-owned_dir() { [ ! -L "$1" ] && [ -d "$1" ] && [ "$(stat -c %u "$1")" = "$ROOT_UID" ] && (( (8#$(stat -c %a "$1") & 8#022) == 0 )); }
+root_dir() { [ -d "$1" ] && deploy_compose_root_only "$1"; }
+root_owned_chain() { # $1 and every parent up to / are root's alone (uid 0 counts too under a test uid)
+    local d=$1
+    while :; do
+        deploy_compose_root_only "$d" || DEPLOY_ROOT_UID=0 deploy_compose_root_only "$d" || return 1
+        case $d in /) return 0 ;; /*) d=$(dirname -- "$d") ;; *) return 1 ;; esac
+    done
+}
 
 # shellcheck disable=SC2317
 cleanup() {
@@ -46,7 +58,10 @@ cleanup() {
     [ ! -e "$RUN/compose-used" ] || bash "$LIB/compose.sh" down -v --remove-orphans >/dev/null 2>&1 || printf 'gate-run: compose down for %s-gate-%s failed\n' "$APP" "$ID" >&2
     if [ -n "$BUILD" ]; then
         [ -z "${GATE_RUN_ARTIFACTS:-}" ] || run_as cp -r -- "$BUILD/artifacts/." "$GATE_RUN_ARTIFACTS/" || printf 'gate-run: %s could not copy the artifacts to %s\n' "$APP_USER" "$GATE_RUN_ARTIFACTS" >&2
-        run_as rm -rf -- "${BUILD:?}" 2>/dev/null
+        for d in "${BUILD_DIRS[@]}"; do
+            [ ! -d "$BUILD/$d" ] || [ -L "$BUILD/$d" ] || run_as find "${BUILD:?}/$d" -mindepth 1 -delete 2>/dev/null
+            rmdir -- "${BUILD:?}/$d" 2>/dev/null
+        done
         rmdir -- "${BUILD:?}" 2>/dev/null || [ ! -e "$BUILD" ] || printf 'gate-run: the build dir %s was not emptied by %s, left in place\n' "$BUILD" "$APP_USER" >&2
     fi
     rm -rf -- "${RUN_BASE_DIR:?}/${APP:?}-gate/${ID:?}"
@@ -61,8 +76,9 @@ APP_UID=$(id -u -- "$APP_USER" 2>/dev/null) && APP_GID=$(id -g -- "$APP_USER") |
 
 root_git init -q --bare "$REPO" || die "cannot create $REPO"
 mirror="$SRC/$APP.git"
-if [ -d "$mirror/objects" ] && owned_dir "$mirror"; then printf '%s\n' "$mirror/objects" >"$REPO/objects/info/alternates"; fi
-mirror_git fetch --quiet --no-tags "${URL_PREFIX}$APP.git" '+refs/heads/main:refs/remotes/origin/main' "$SHA" 2>/dev/null || die "${SHA:0:12} could not be fetched from ${URL_PREFIX}$APP.git: push it first, only a sha on GitHub is gated"
+if [ -d "$mirror/objects" ] && root_owned_chain "$mirror/objects"; then printf '%s\n' "$mirror/objects" >"$REPO/objects/info/alternates"
+elif [ -e "$mirror" ]; then printf "gate-run: %s is not root's alone, so it is not borrowed\n" "$mirror" >&2; fi
+mirror_git fetch --quiet --no-tags "${URL_PREFIX}$APP.git" '+refs/heads/main:refs/remotes/origin/main' "$SHA" || die "${SHA:0:12} could not be fetched from ${URL_PREFIX}$APP.git: push it first, only a sha on GitHub is gated"
 mirror_git cat-file -e "$SHA^{commit}" 2>/dev/null || die "${SHA:0:12} is not a commit after the fetch from GitHub"
 
 export_judge "$SHA" all || die "$EXPORT_ERR"
@@ -83,7 +99,7 @@ mkdir -p "$TREE/vendor" "$TREE/node_modules" "$TREE/public/build" "$TREE/bootstr
 
 mkdir -m 750 "$RUN/env" && chown "$ROOT_UID:$APP_GID" "$RUN/env" || die "cannot create $RUN/env"
 if [ -d "$ENV_DIR/$APP" ]; then
-    owned_dir "$ENV_DIR" && owned_dir "$ENV_DIR/$APP" || die "$ENV_DIR/$APP is not a root-owned directory only root can write"
+    root_dir "$ENV_DIR" && root_dir "$ENV_DIR/$APP" || die "$ENV_DIR/$APP is not a root-owned directory only root can write"
     for f in "$ENV_DIR/$APP"/.env*; do
         [ -e "$f" ] || continue
         [ -f "$f" ] && [ ! -L "$f" ] && [ "$(stat -c %u "$f")" = "$ROOT_UID" ] || die "$f is not a root-owned regular file"
@@ -93,13 +109,15 @@ fi
 
 bparent="$BUILD_BASE/$APP-gate-build"
 [ -e "$bparent" ] || [ -L "$bparent" ] || mkdir -m 755 "$bparent" || die "cannot create $bparent"
-owned_dir "$bparent" || die "$bparent is a symlink, not a directory, not root's, or writable by others"
+root_dir "$bparent" || die "$bparent is a symlink, not a directory, not root's, or writable by others"
 BUILD=$(mktemp -d "$bparent/XXXXXXXXXX") || die "no build directory under $bparent"
-chown -h "$APP_UID:$APP_GID" "$BUILD" || die "cannot hand $BUILD to $APP_USER"
-run_as mkdir -p "$BUILD/vendor" "$BUILD/node_modules" "$BUILD/public-build" "$BUILD/bootstrap-cache" "$BUILD/artifacts" || die "$APP_USER could not create the build dirs"
+chmod 755 "$BUILD" || die "cannot set the mode of $BUILD"
+for d in "${BUILD_DIRS[@]}"; do
+    mkdir -m 755 "$BUILD/$d" && chown -h "$APP_UID:$APP_GID" "$BUILD/$d" || die "cannot create $BUILD/$d for $APP_USER"
+done
 
 printf 'gate-run: %s %s -> %s\n' "$APP" "${SHA:0:7}" "$RUN"
-printf '%s %s %s %s %s\n' "$APP" "$ID" "$BUILD" "$APP_UID:$APP_GID" "$RUN_PATH" >"$RUN/compose-context"
+printf '%s %s %s %s %s %s\n' "$APP" "$ID" "$BUILD" "$APP_UID:$APP_GID" "$ROOT_UID" "$RUN_PATH" >"$RUN/compose-context"
 cd / || die "cannot cd to /"
 tgit="$GIT_BIN --git-dir=$REPO --work-tree=$TREE"
 env -i PATH="$RUN_PATH" HOME=/root LANG=C.UTF-8 TERM=dumb \
@@ -114,15 +132,15 @@ while read -r obj path; do
 done <"$RUN/manifest"
 [ "$(find "$TREE" ! -type d | wc -l)" = "$(wc -l <"$RUN/manifest")" ] || { intact=0; printf 'gate-run: files appeared in %s during the run\n' "$TREE" >&2; }
 
-row=$(awk -v s="$SHA" '$1 == s' "$RUN/status" 2>/dev/null | tail -1)
 if [ "$intact" = 0 ]; then
     row="$SHA $KIND $(date -u +%FT%TZ) 1 - -"
-fi
-if [ -n "$row" ]; then
-    printf '%s\n' "$row" >>"$LEDGER" || die "cannot append to $LEDGER"
-    printf 'gate-run: ledger %s\n' "$row"
 else
-    printf 'gate-run: the gate recorded no row for %s, so none is written\n' "${SHA:0:7}" >&2
+    rows=$(grep -c '' "$RUN/status" 2>/dev/null) row=$(cat "$RUN/status" 2>/dev/null)
+    [ "$rows" = 1 ] && [[ $row == "$SHA $KIND "* ]] || { printf 'gate-run: %s holds %s rows, not one %s row for %s, so no row is written\n' "$RUN/status" "${rows:-0}" "$KIND" "${SHA:0:7}" >&2; exit $(( rc == 0 ? 1 : rc )); }
+    read -r _ _ _ rrc _ <<<"$row"
+    [ "$rrc" = "$rc" ] || { printf 'gate-run: the row says rc %s but %s exited %s, so rc 1 is written\n' "$rrc" "$SCRIPT" "$rc" >&2; row=$(printf '%s\n' "$row" | awk '{$4 = 1; print}'); rc=1; }
 fi
+printf '%s\n' "$row" >>"$LEDGER" || die "cannot append to $LEDGER"
+printf 'gate-run: ledger %s\n' "$row"
 [ "$intact" = 1 ] || exit 1
 exit "$rc"

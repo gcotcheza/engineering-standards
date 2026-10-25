@@ -7,7 +7,7 @@ LIB=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || exit 2
 RUN=${LIB%/lib/scripts/lib/gate}
 TREE=$RUN/tree
 die() { printf 'gate-compose: REFUSED: %s\n' "$*" >&2; exit 2; }
-read -r APP ID BUILD OWNER RUN_PATH <"$RUN/compose-context" || die "$RUN/compose-context is unreadable"
+read -r APP ID BUILD OWNER ROOT_UID RUN_PATH <"$RUN/compose-context" || die "$RUN/compose-context is unreadable"
 [[ $ID =~ ^[A-Za-z0-9]{10}$ && $RUN == */"$APP"-gate/"$ID" ]] || die "$RUN is not a gate-run run directory"
 
 PROJECT=$APP-gate-$(printf '%s' "$ID" | od -An -tx1 | tr -d ' \n')
@@ -32,8 +32,16 @@ else
 fi
 
 dc() { env -i PATH="$RUN_PATH" HOME=/root docker compose --project-directory "$TREE" "$@"; }
+# shellcheck source=scripts/lib/gate/export.sh
+. "$LIB/export.sh" || die "the export lib could not be loaded"
+for f in "${files[@]}"; do
+    [ "$f" = -f ] && continue
+    env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c "$EXPORT_YAML_CHECK" "$f"; rc=$?
+    [ "$rc" = 0 ] || die "${f#"$TREE"/} has an include:, an extends: with file:, or is not YAML (exit $rc): it would read files from outside the tree"
+done
 # shellcheck source=scripts/lib/deploy/compose.sh
 . "$RUN/lib/scripts/lib/deploy/compose.sh" || die "the deploy compose policy could not be loaded"
+DEPLOY_APP_BINDS_DIR=$RUN/gate-grants-no-extra-binds DEPLOY_ROOT_UID=$ROOT_UID
 json=$(dc -p "$APP" "${files[@]}" --env-file "$envf" config --format json) || die "compose config failed over the exported files"
 deploy_compose_policy "$TREE" "$json" "$APP" "$envf" dc -p "$APP" "${files[@]}" --env-file "$envf" || die "$DEPLOY_COMPOSE_ERR"
 
@@ -59,10 +67,16 @@ json.dump({"services": out}, open(sys.argv[4], "w"))
 
 final=$(dc -p "$PROJECT" "${files[@]}" -f "$override" --env-file "$envf" config --format json) || die "compose config failed with $override"
 printf '%s' "$final" | env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
-import json, sys
-run, build = sys.argv[1], sys.argv[2]
+import json, os, sys
+run, build, project = sys.argv[1], sys.argv[2], sys.argv[3]
 under = lambda p, d: (p.rstrip("/") + "/").startswith(d + "/")
-for name, svc in (json.load(sys.stdin).get("services") or {}).items():
+cfg = json.load(sys.stdin)
+for kind in ("volumes", "networks"):
+    for key, v in (cfg.get(kind) or {}).items():
+        v = v or {}
+        if not v.get("external") and not str(v.get("name", project + "_" + key)).startswith(project + "_"):
+            sys.exit("compose %s %s: name %s is outside this gate project, so down -v would reach it" % (kind[:-1], key, v.get("name")))
+for name, svc in (cfg.get("services") or {}).items():
     ctx = (svc.get("build") or {}).get("context")
     if ctx and not under(ctx, run + "/tree"): sys.exit("compose %s: build.context %s is outside %s/tree" % (name, ctx, run))
     for v in svc.get("volumes") or []:
@@ -70,8 +84,17 @@ for name, svc in (json.load(sys.stdin).get("services") or {}).items():
         src = v.get("source", "")
         if under(src, run):
             if not v.get("read_only"): sys.exit("compose %s: %s is mounted read-write" % (name, src))
-        elif not under(src, build): sys.exit("compose %s: bind %s is outside %s and the build dir" % (name, src, run))
-' "$RUN" "$BUILD" || die "the compose config failed root's bind check"
+        elif os.path.dirname(src.rstrip("/")) != build: sys.exit("compose %s: bind %s is not the tree or a build dir in %s" % (name, src, build))
+' "$RUN" "$BUILD" "$PROJECT" || die "the compose config failed root's bind check"
+
+build_dirs_ok() { # every build bind source is the app's own real dir in root's $BUILD, in root's parent
+    local d
+    [ ! -L "$BUILD" ] && [ -d "$BUILD" ] && deploy_compose_root_only "$BUILD" && deploy_compose_root_only "${BUILD%/*}" || return 1
+    for d in vendor node_modules public-build bootstrap-cache artifacts; do
+        [ ! -L "$BUILD/$d" ] && [ -d "$BUILD/$d" ] && [ "$(stat -c %u "$BUILD/$d")" = "${OWNER%%:*}" ] || return 1
+    done
+}
+build_dirs_ok || die "a build dir in $BUILD is a link, not $APP's, or not in a root-owned directory only root can write"
 
 if [ "$build" = 1 ]; then
     [ "$1" = run ] || die "--build takes a compose run"

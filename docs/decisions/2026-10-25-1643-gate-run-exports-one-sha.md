@@ -10,7 +10,8 @@ A gate now runs only through `scripts/gate-run.sh <app> <sha40> <script>`. The e
 scripts/lib/gate and scripts/lib/deploy blob by blob from the box clone's origin/main, with
 fleet-deploy's clone_lib checks, and execs that copy. It takes an explicit 40-hex sha and fetches it
 from GitHub, and only from GitHub, so git hashes every object; an unpushed sha is refused. The
-objects land in the run's own `repo.git`, which borrows root's mirror through alternates, so the
+objects land in the run's own `repo.git`, which borrows root's mirror through alternates (root writes
+the mirror's literal path, and only when the mirror's objects and every parent are root's alone), so the
 mirror keeps holding main only, as fleet-deploy-on-merge requires; origin/main comes from GitHub in
 the same fetch, never from the app's repo. Every entry is judged before a byte is written (links,
 submodules, odd paths, compose include and extends file, a committed .env), and the tree is written
@@ -20,16 +21,28 @@ Scripts, compose files and env files are read from there only. The gate script r
 from `cd /`, with the existing ledger seams pointed into the run: GATE_LEDGER at `<run>/status` and
 the CI_GIT, CHECK_GIT, E2E_GIT and GATE_LEDGER_GIT seams at `repo.git` with the exported tree, so
 the deploy lib's own record rules (75 not recorded, rc 0 needs suite-passed) apply unchanged. After
-the run gate-run re-hashes the tree against its manifest; a changed or added file means rc 1. Only
-then does it append to the real ledger, and only the row for the exported sha.
+the run gate-run re-hashes the tree against its manifest; a changed or added file means rc 1. Then
+`<run>/status` must hold exactly one row, for the exported sha and the script's kind: zero rows, two,
+or another sha's row is refused with no ledger row at all, and a row whose rc differs from the
+script's real exit is written as rc 1. Only then does it append to the real ledger. A deliberate red
+proof (rule 20) passes `--ledger <file>`, refused unless the file and its directory chain are root's
+alone, so its row never reaches the real ledger.
 
 Compose goes through `$GATE_COMPOSE`, which runs docker compose with the tree as project directory,
 the deploy compose policy over the tree's files, and a root-written override that makes every tree
 bind read-only and lays the build dirs over each service that mounts the tree. Its `config --format
-json` is checked before every call: a read-write bind under the run, or a bind or build context
-outside the run and the build dir, is refused. composer, npm and vite run as the app uid (`--build`)
-in /var/tmp/<app>-gate-build/<id>, under a root-owned parent that is refused when it is a link or
-not root's; root never executes from it, and cleans it up as the app uid.
+json` is checked before every call: a read-write bind under the run, a bind that is neither in the
+run nor exactly one build dir, a build context outside the run, or a volume or network whose name is
+outside the gate's own project (so `down -v` cannot reach production's) is refused. Every `-f` file,
+whatever its name, is checked for `include:` and `extends.file`. The gate grants no extra binds, so the
+deploy policy's /etc/fleet/app-binds list is not read. composer, npm and vite run as the app uid
+(`--build`, `run --user <uid>:<gid>`) in /var/tmp/<app>-gate-build/<id>. Both of those directories
+are root's, 0755; root creates each build dir in `<id>` and hands only it to the app. Docker follows a
+bind source that is a symlink, and a check of the link alone races the app; ownership closes it,
+because the app cannot rename or replace an entry in a directory it cannot write. Before every compose
+call each build dir is still checked (not a link, the app's, in root's `<id>` in root's parent) as a
+backstop. Root never executes from them; at cleanup the app uid empties each one, then root removes the
+empty directories.
 
 Not closed: the sha's own code still runs as root, so review remains the guard on what a commit
 contains; the app-writable build dirs can still fake a result, but cannot reach root; host steps

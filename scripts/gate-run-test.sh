@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016,SC2034,SC1090,SC2317  # assertions are single-quoted strings ok() evals
-# Tests for scripts/gate-run.sh and scripts/lib/gate/: planted attacks A1-A5, A7-A18 of card 719 and the structural
-# export-tree check, against a throwaway app repo, a local "GitHub" and a fake docker (gate-run-fake-docker.py).
-#   GR_ENTRY / GR_RUN_SH / GR_EXPORT_SH / GR_COMPOSE_SH   a copy to test in place of this tree's file (T5 mutants)
-#   GR_REAL_DOCKER=1   the real docker in place of the fake: the build lane's one smoke run (A0 only)
-#   GR_CASES="A3 A8a"   only these cases;  GR_CALLERS="<file>…"   also judge those export-tree callers
-#   GR_AS_NOBODY=1   gate-run itself runs as nobody (T5 mutants, rule 26); fixtures are still committed by root, under the
-#   secrets hook. As root the app uid is nobody; under GR_AS_NOBODY gate-run's uid is the app's too, and A10 is skipped.
+# Planted attacks on scripts/gate-run.sh and scripts/lib/gate/ (card 719) against a throwaway repo, a local "GitHub" and
+# gate-run-fake-docker.py. Knobs (GR_ENTRY, GR_*_SH, GR_CASES, GR_AS_NOBODY, GR_REAL_DOCKER, GR_CALLERS): README.md.
 set -uo pipefail
 
 REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || exit 2
@@ -22,11 +17,11 @@ chmod 755 "$S"
 printf 'kind=lane\ncard=719\nowner=%s\n' "${FLEET_SCRATCH_OWNER:-pv}" >"$S/.fleet-scratch"
 trap 'rm -rf -- "${S:?}"' EXIT
 P=$S/probe RB=$S/run VT=$S/vartmp
-mkdir -m 755 "$P" "$RB" "$VT" "$S/deploy-src" "$S/gh" "$S/gate-env" "$S/gate-env/$APP" "$P/fake-etc"
+mkdir -m 755 "$P" "$RB" "$VT" "$S/deploy-src" "$S/gh" "$S/gate-env" "$S/gate-env/$APP" "$P/fake-etc" "$S/esp" "$S/redproof"
 printf 'probe\n' >"$P/fake-etc/probe"
 printf 'APP_KEY=gate-only\n' >"$S/gate-env/$APP/.env.e2e"
 chmod 644 "$S/gate-env/$APP/.env.e2e"
-[ "$ME" = 0 ] || chown -R nobody: "$P" "$RB" "$VT" "$S/gate-env"
+[ "$ME" = 0 ] || chown -R nobody: "$P" "$RB" "$VT" "$S/gate-env" "$S/redproof"
 mkdir -m 755 "$S/bin"
 cp -- "$ENTRY" "$S/bin/gate-run.sh" && ENTRY=$S/bin/gate-run.sh || exit 2
 cp -- "$REPO_ROOT/scripts/gate-run-fake-docker.py" "$P/docker.py"
@@ -36,16 +31,26 @@ printf '#!/bin/sh\necho Avail; echo lots\n' >"$S/bin/baddf"
 chmod 755 "$S/bin/smalldf" "$S/bin/baddf"; [ ! -e "$S/bin/docker" ] || chmod 755 "$S/bin/docker"
 g() { git -c user.name=gate-run-test -c user.email=gate-run-test@invalid "$@"; }
 
-# The box clone: this tree's lib (or a mutant copy) committed, with origin/main at HEAD.
-ES=$S/es
-mkdir -p "$ES/scripts/lib"
-cp -r -- "$REPO_ROOT/scripts/lib/gate" "$REPO_ROOT/scripts/lib/deploy" "$ES/scripts/lib/"
-[ -z "${GR_RUN_SH:-}" ] || cp -- "$GR_RUN_SH" "$ES/scripts/lib/gate/run.sh"
-[ -z "${GR_EXPORT_SH:-}" ] || cp -- "$GR_EXPORT_SH" "$ES/scripts/lib/gate/export.sh"
-[ -z "${GR_COMPOSE_SH:-}" ] || cp -- "$GR_COMPOSE_SH" "$ES/scripts/lib/gate/compose.sh"
-chmod -R go-w "$ES"
-g init -q -b main "$ES" && g -C "$ES" add scripts && g -C "$ES" commit -qm lib && g -C "$ES" update-ref refs/remotes/origin/main HEAD || exit 2
-[ "$ME" = 0 ] || chown -R nobody: "$ES"
+# The box clone: this tree's lib (or a mutant copy) committed twice, with origin/main at HEAD; es-link also commits a link.
+mk_es() { # dir [link]
+    local es=$1
+    mkdir -p "$es/scripts/lib"
+    cp -r -- "$REPO_ROOT/scripts/lib/gate" "$REPO_ROOT/scripts/lib/deploy" "$es/scripts/lib/"
+    [ -z "${GR_RUN_SH:-}" ] || cp -- "$GR_RUN_SH" "$es/scripts/lib/gate/run.sh"
+    [ -z "${GR_EXPORT_SH:-}" ] || cp -- "$GR_EXPORT_SH" "$es/scripts/lib/gate/export.sh"
+    [ -z "${GR_COMPOSE_SH:-}" ] || cp -- "$GR_COMPOSE_SH" "$es/scripts/lib/gate/compose.sh"
+    chmod -R go-w "$es"
+    g init -q -b main "$es" && g -C "$es" add scripts && g -C "$es" commit -qm lib && g -C "$es" commit -q --allow-empty -m second || return 1
+    if [ -n "${2:-}" ]; then
+        ln -s /etc/passwd "$es/scripts/lib/gate/evil.sh" && g -C "$es" add scripts && g -C "$es" commit -qm link || return 1
+        g -C "$es" update-index --skip-worktree scripts/lib/gate/evil.sh && rm -f -- "$es/scripts/lib/gate/evil.sh" || return 1
+    fi
+    g -C "$es" update-ref refs/remotes/origin/main HEAD || return 1
+    ES_FIRST=$(g -C "$es" rev-parse HEAD~1) ES_HEAD=$(g -C "$es" rev-parse HEAD)
+    [ "$ME" = 0 ] || chown -R nobody: "$es"
+}
+ES=$S/esp/es
+mk_es "$S/esp/es-link" link && mk_es "$ES" || exit 2
 
 # The app: a bare "GitHub" that serves reachable shas, and the app's own clone.
 GH=$S/gh/$APP.git SRC=$S/src
@@ -56,16 +61,32 @@ cp -- "$REPO_ROOT/scripts/lib/deploy/ledger.sh" "$SRC/scripts/lib/deploy/"
 cat >"$SRC/scripts/check.sh" <<EOF
 #!/usr/bin/env bash
 set -u
-P=$P
+P=$P mode=\${1:-}
 . "\$GATE_RUN/tree/scripts/lib/deploy/ledger.sh"
 gate_ledger_arm
-trap 'gate_ledger_record ci \$? -; [ "\${1:-}" != foreign ] || printf "%s ci t 0 - -\\n" 1111111111111111111111111111111111111111 >>"\$GATE_LEDGER"' EXIT
+other=1111111111111111111111111111111111111111
+fin() {
+    local rc=\$?
+    [ "\$mode" != lie ] || { gate_ledger_record ci 0 -; exit 1; }
+    gate_ledger_record ci "\$rc" -
+    case \$mode in
+        double) tail -1 "\$GATE_LEDGER" >>"\$GATE_LEDGER" ;;
+        other) printf "%s ci t 0 - -\\n" "\$other" >"\$GATE_LEDGER" ;;
+        norow) : >"\$GATE_LEDGER" ;;
+    esac
+}
+trap fin EXIT
 sha256sum <"\$0" | cut -d' ' -f1 >"\$P/selfhash"
 env | sort >"\$P/env"
 \$CI_GIT rev-parse refs/remotes/origin/main >"\$P/origin-main" 2>&1
+alt=\$GATE_RUN/repo.git/objects/info/alternates
+[ ! -f "\$alt" ] || { cat "\$alt"; stat -c %u "\$alt"; } >"\$P/alternates"
 [ ! -f "\$P/hold" ] || sleep 2
-case "\${1:-}" in
+case "\$mode" in
     badf) \$GATE_COMPOSE -f /etc/passwd config || exit \$? ;;
+    stack) \$GATE_COMPOSE -f stack.yml up -d || exit \$? ;;
+    preswap) mv "\$GATE_BUILD/artifacts" "\$GATE_BUILD/artifacts.old" && ln -s "\$P/fake-etc" "\$GATE_BUILD/artifacts"
+        \$GATE_COMPOSE -f docker-compose.yml up -d || exit \$? ;;
     badenv) \$GATE_COMPOSE -f docker-compose.yml --env-file ../manifest up -d || exit \$? ;;
     compose) \$GATE_COMPOSE -f docker-compose.yml --env-file .env.e2e up -d || exit \$? ;;
     build) \$GATE_COMPOSE --build -f docker-compose.yml run app true || exit \$?; \$GATE_COMPOSE -f docker-compose.yml up -d || exit \$? ;;
@@ -73,7 +94,7 @@ esac
 GATE_SUITE_PASSED=1
 EOF
 printf 'services:\n  app:\n    image: alpine:3.20\n    command: ["true"]\n    volumes:\n      - .:/var/www/html\n' >"$SRC/docker-compose.yml"
-printf 'readme\n' >"$SRC/README.md"
+printf 'readme\n' >"$SRC/README.md"; printf 'ignored.log\n' >"$SRC/.gitignore"
 g -C "$SRC" add -A && g -C "$SRC" commit -qm base && g -C "$SRC" remote add origin "$GH" && g -C "$SRC" push -q origin main || exit 2
 BASE=$(g -C "$SRC" rev-parse HEAD)
 
@@ -91,14 +112,17 @@ commit include 'printf "include:\n  - /var/www/x/compose.yml\nservices: {}\n" >c
 commit extends 'printf "services:\n  app:\n    extends: {file: /var/www/x/c.yml, service: a}\n" >compose.e2e.yml' && SHA_extends=$SHA || exit 2
 commit ahead 'printf more >>README.md' && SHA_ahead=$SHA || exit 2
 commit dotenv 'printf "X=1\n" >.env' && SHA_dotenv=$SHA || exit 2
+commit stack 'printf "include:\n  - /var/www/x/compose.yml\nservices: {}\n" >stack.yml' && SHA_stack=$SHA || exit 2
+commit named 'printf "services:\n  app:\n    image: alpine:3.20\n    volumes:\n      - .:/var/www/html\n      - data:/data\nvolumes:\n  data:\n    name: gt719_data\n" >docker-compose.yml' && SHA_named=$SHA || exit 2
 NOPUSH=1 commit unpushed 'printf local >>README.md' && SHA_unpushed=$SHA || exit 2
 g -C "$SRC" checkout -q "$BASE" || exit 2
+g clone -q --bare "$GH" "$S/mirror" || exit 2
 [ "$ME" = 0 ] || chown -R nobody: "$GH"
 
 
 gr() { # app sha script [args] -> OUT, RC; the ledger is $S/ledger
-    rm -f -- "$P/docker.log" "$P/selfhash" "$P/env"
-    OUT=$(env GATE_RUN_T_RUN_BASE="$RB" GATE_RUN_T_LIB_CLONE="$ES" GATE_RUN_T_UID="$ME" GATE_RUN_T_URL_PREFIX="$S/gh/" \
+    rm -f -- "$P/docker.log" "$P/selfhash" "$P/env" "$P/alternates"
+    OUT=$(env GATE_RUN_T_RUN_BASE="$RB" GATE_RUN_T_LIB_CLONE="${LIBC:-$ES}" GATE_RUN_T_UID="$ME" GATE_RUN_T_URL_PREFIX="$S/gh/" \
         GATE_RUN_T_SRC="$S/deploy-src" GATE_RUN_T_LEDGER="$P/ledger" GATE_RUN_T_BUILD_BASE="$VT" GATE_RUN_T_ENV_DIR="$S/gate-env" \
         GATE_RUN_T_PATH="$S/bin:/usr/bin:/bin" GATE_RUN_T_APP_USER="${GR_APPU:-$APPU}" GATE_RUN_T_DF="${DFBIN:-/usr/bin/df}" \
         "${PRE[@]}" "${RUNAS[@]}" bash "$ENTRY" "$@" 2>&1)
@@ -110,6 +134,8 @@ ok() { if eval "$2"; then pass=$((pass + 1)); else fail=$((fail + 1)); failed+=(
 want() { [ -z "${GR_CASES:-}" ] || [[ " $GR_CASES " == *" $1 "* ]]; }
 no_run() { [ -z "$(ls -A "$RB/$APP-gate" 2>/dev/null)" ]; }
 ledger_last() { tail -1 "$P/ledger" 2>/dev/null; }
+ledger_n() { grep -c '' "$P/ledger" 2>/dev/null || true; }
+fake_etc_clean() { [ "$(ls -A "$P/fake-etc")" = probe ]; }
 
 if want A0; then
     gr "$APP" "$BASE" scripts/check.sh
@@ -142,9 +168,11 @@ if want A2; then
 fi
 if want A3; then
     gr "$APP" "$SHA_host" scripts/check.sh -- compose
-    ok A3a '[ "$RC" = 2 ] && [[ $OUT == *"reaches outside"* ]] && ! grep -q "ARGV.* up" "$P/docker.log"'
+    ok A3a '[ "$RC" = 2 ] && [[ $OUT == *"reaches outside"* ]] && [ -f "$P/docker.log" ] && ! grep -q "ARGV.* up" "$P/docker.log"'
     touch "$P/ignore-override"; gr "$APP" "$BASE" scripts/check.sh -- compose; rm -f "$P/ignore-override"
-    ok A3b '[ "$RC" = 2 ] && [[ $OUT == *"mounted read-write"* ]] && ! grep -q "ARGV.* up" "$P/docker.log"'
+    ok A3b '[ "$RC" = 2 ] && [[ $OUT == *"mounted read-write"* ]] && [ -f "$P/docker.log" ] && ! grep -q "ARGV.* up" "$P/docker.log"'
+    touch "$P/deep-bind"; gr "$APP" "$BASE" scripts/check.sh -- compose; rm -f "$P/deep-bind"
+    ok A3c '[ "$RC" = 2 ] && [[ $OUT == *"is not the tree or a build dir"* ]] && [ -f "$P/docker.log" ] && ! grep -q "ARGV.* up" "$P/docker.log"'
 fi
 if want A4; then
     gr "$APP" "$SHA_link" scripts/check.sh
@@ -163,7 +191,7 @@ if want A5; then
 fi
 if want A7; then
     (sleep 1; g -C "$SRC" commit -q --allow-empty -m mid-run) &
-    touch "$P/hold"; gr "$APP" "$BASE" scripts/check.sh -- foreign; rm -f "$P/hold"; wait
+    touch "$P/hold"; gr "$APP" "$BASE" scripts/check.sh; rm -f "$P/hold"; wait
     ok A7 '[ "$RC" = 0 ] && [[ $(ledger_last) == "$BASE ci "* ]]'
     g -C "$SRC" checkout -q -f "$BASE"
 fi
@@ -178,6 +206,7 @@ if want A9; then
     PRE=(strace -f -qq -e trace=execve -o "$P/strace"); gr "$APP" "$BASE" scripts/check.sh -- build; PRE=()
     rm -f "$P/plant-build"
     ok A9 '[ ! -e "$P/pwn" ] && [ -s "$P/strace" ] && ! grep "^[0-9]* *execve(" "$P/strace" | grep -q "/bin/x\""'
+    ok A9-user 'grep -q "^ARGV compose .* run --user $(id -u nobody):$(id -g nobody) app true$" "$P/docker.log"'
 fi
 if want A10 && [ "$ME" = 0 ]; then
     touch "$P/plant-build"; gr "$APP" "$BASE" scripts/check.sh -- build; rm -f "$P/plant-build"
@@ -198,7 +227,7 @@ if want A12; then
     ok A12b '[ "$RC" = 2 ] && [[ $OUT == *"not a root-owned regular file"* ]]'
     rm -f "$S/gate-env/$APP/.env.e2e"; mv "$S/real-env" "$S/gate-env/$APP/.env.e2e"
     gr "$APP" "$BASE" scripts/check.sh -- badenv
-    ok A12c '[ "$RC" = 2 ] && [[ $OUT == *"is not a file root wrote to"* ]] && ! grep -q "ARGV.* up" "$P/docker.log"'
+    ok A12c '[ "$RC" = 2 ] && [[ $OUT == *"is not a file root wrote to"* ]] && [ ! -e "$P/docker.log" ]'
     chmod 777 "$S/gate-env/$APP"; gr "$APP" "$BASE" scripts/check.sh; chmod 755 "$S/gate-env/$APP"
     ok A12d '[ "$RC" = 2 ] && [[ $OUT == *"not a root-owned directory only root can write"* ]]'
 fi
@@ -252,6 +281,71 @@ fi
 if want A18; then
     gr "$APP" "$SHA_unpushed" scripts/check.sh
     ok A18 '[ "$RC" = 2 ] && [[ $OUT == *"only a sha on GitHub is gated"* ]] && no_run'
+fi
+if want B1 && [ "$ME" = 0 ]; then
+    printf '%s:%s\n' "$(id -u nobody)" "$(id -g nobody)" >"$P/swap-build"
+    gr "$APP" "$BASE" scripts/check.sh -- compose; rm -f "$P/swap-build"
+    ok B1a '[ "$RC" = 0 ] && grep -q "^SWAP refused" "$P/docker.log" && fake_etc_clean'
+fi
+if want B1; then
+    gr "$APP" "$BASE" scripts/check.sh -- preswap
+    ok B1b '[ "$RC" = 2 ] && [[ $OUT == *"a build dir in"*"is a link"* ]] && [ -f "$P/docker.log" ] && ! grep -q "ARGV.* up" "$P/docker.log" && fake_etc_clean'
+    find "$VT/$APP-gate-build" -mindepth 1 -delete
+fi
+if want L; then
+    chmod 777 "$S/esp"; gr "$APP" "$BASE" scripts/check.sh; chmod 755 "$S/esp"
+    ok L1 '[ "$RC" = 2 ] && [[ $OUT == *"esp is a symlink, not root'"'"'s, or writable by others"* ]] && no_run'
+    lib=$ES/scripts/lib/gate/export.sh; cp -- "$lib" "$S/lib.save"; printf '# dirty\n' >>"$lib"
+    gr "$APP" "$BASE" scripts/check.sh; cp -- "$S/lib.save" "$lib"
+    ok L2 '[ "$RC" = 2 ] && [[ $OUT == *"modified, untracked or ignored files under the lib"* ]] && no_run'
+    printf '%s\n' "$ES_FIRST" >"$ES/.git/refs/remotes/origin/main"; gr "$APP" "$BASE" scripts/check.sh
+    printf '%s\n' "$ES_HEAD" >"$ES/.git/refs/remotes/origin/main"
+    ok L3 '[ "$RC" = 2 ] && [[ $OUT == *"HEAD is not its origin/main"* ]] && no_run'
+    LIBC=$S/esp/es-link gr "$APP" "$BASE" scripts/check.sh
+    ok L4 '[ "$RC" = 2 ] && [[ $OUT == *"evil.sh at "*"mode 120000, not a plain file in scripts/lib/gate"* ]] && no_run'
+fi
+if want A19; then
+    mv -- "$S/mirror" "$S/deploy-src/$APP.git" || exit 2
+    gr "$APP" "$BASE" scripts/check.sh
+    ok A19a '[ "$RC" = 0 ] && [ "$(cat "$P/alternates" 2>/dev/null)" = "$S/deploy-src/$APP.git/objects"$'"'"'\n'"'"'"$ME" ]'
+    chmod 777 "$S/deploy-src/$APP.git/objects"; gr "$APP" "$BASE" scripts/check.sh
+    ok A19b '[ "$RC" = 0 ] && [ ! -e "$P/alternates" ] && [[ $OUT == *"is not root'"'"'s alone, so it is not borrowed"* ]]'
+    chmod 755 "$S/deploy-src/$APP.git/objects"; mv -- "$S/deploy-src/$APP.git" "$S/mirror"
+fi
+if want A20; then
+    gr "$APP" "$SHA_stack" scripts/check.sh -- stack
+    ok A20 '[ "$RC" = 2 ] && [[ $OUT == *"stack.yml has an include:"* ]] && [ ! -e "$P/docker.log" ]'
+fi
+if want N1; then
+    gr "$APP" "$SHA_named" scripts/check.sh -- compose
+    ok N1 '[ "$RC" = 2 ] && [[ $OUT == *"name gt719_data is outside this gate project"* ]] && [ -f "$P/docker.log" ] && ! grep -q "ARGV.* up" "$P/docker.log"'
+fi
+if want D2; then
+    for m in norow double other; do
+        n=$(ledger_n); gr "$APP" "$BASE" scripts/check.sh -- "$m"
+        ok "D2-$m" '[ "$RC" = 1 ] && [[ $OUT == *"so no row is written"* ]] && [ "$(ledger_n)" = "$n" ]'
+    done
+    gr "$APP" "$BASE" scripts/check.sh -- lie
+    ok D2-lie '[ "$RC" = 1 ] && [[ $OUT == *"the row says rc 0 but scripts/check.sh exited 1"* ]] && [[ $(ledger_last) == "$BASE ci "*" 1 - "* ]]'
+fi
+if want LG; then
+    n=$(ledger_n); gr "$APP" "$BASE" scripts/check.sh --ledger "$S/redproof/ledger"
+    ok LGa '[ "$RC" = 0 ] && [[ $(tail -1 "$S/redproof/ledger" 2>/dev/null) == "$BASE ci "* ]] && [ "$(ledger_n)" = "$n" ]'
+    install -d -m 777 "$P/open"; gr "$APP" "$BASE" scripts/check.sh --ledger "$P/open/ledger"
+    ok LGb '[ "$RC" = 2 ] && [[ $OUT == *"is not a root-only file"* ]] && no_run && [ ! -e "$P/open/ledger" ]'
+    gr "$APP" "$BASE" scripts/check.sh --ledger ledger
+    ok LGc '[ "$RC" = 2 ] && [[ $OUT == *"--ledger is not an absolute path"* ]] && no_run'
+fi
+if want C1; then
+    if [ -f "${GR_FLEET_DEPLOY:-/usr/local/sbin/fleet-deploy}" ]; then
+        block() { sed -n '/^# >>> clone-lib/,/^# <<< clone-lib/p' "$1" | sed -e 's/^[[:space:]]*//' -e '/^#/d' -e '/^$/d'; }
+        block "$ENTRY" | grep -vE 'LIB_SUB|\$sub|run\.sh|gate lib|HEAD\^\{commit\}|local d=|chmod 644|is not a git clone"|under the lib:|^done$' >"$S/c1-gate"
+        block "${GR_FLEET_DEPLOY:-/usr/local/sbin/fleet-deploy}" | grep -vE 'LIB_SUB|summary\.sh|deploy lib|origin/main\^\{commit\}|scripts/lib/deploy/|100755|local d=|^done$' >"$S/c1-deploy"
+        OUT=$(diff "$S/c1-gate" "$S/c1-deploy")
+        ok C1 '[ -z "$OUT" ] && [ "$(wc -l <"$S/c1-gate")" -ge 15 ]'
+    else
+        printf 'SKIP C1: no %s to compare the clone-lib block with\n' "${GR_FLEET_DEPLOY:-/usr/local/sbin/fleet-deploy}"
+    fi
 fi
 if want S1; then
     judge_caller() { grep -q '^\. .*scripts/lib/gate/export\.sh' "$1" && ! grep -qE '^(EXPORT_YAML_CHECK=|export_judge\(\)|export_write\(\))' "$1"; }

@@ -1,5 +1,4 @@
-# T5 guard-deletion mutants for scripts/lib/gate/export.sh (card 719), for scripts/guard-mutants.sh; gate-run itself runs as nobody (GR_AS_NOBODY)
-# except where a row needs a second uid (A10, artifacts) or a root-readable app clone (A18).
+# T5 guard-deletion mutants for scripts/lib/gate/export.sh (card 719); rows without GR_AS_NOBODY need a second uid or root (none here).
 #   GR_TEST=$PWD/scripts/gate-run-test.sh scripts/guard-mutants.sh scripts/lib/gate/export.sh scripts/gate-run-lib-export-mutants.txt
 x-path@@GR_AS_NOBODY=1 GR_CASES="A4" GR_EXPORT_SH="$MUTANT_TARGET" bash "$GR_TEST"@@        [[ $path =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ && /$path/ != */./* && /$path/ != */../* ]] || { EXPORT_ERR="an entry at $sha has a path outside [A-Za-z0-9._/-] or a . or .. component"; return 1; }@@
 x-mode@@GR_AS_NOBODY=1 GR_CASES="A4" GR_EXPORT_SH="$MUTANT_TARGET" bash "$GR_TEST"@@        [[ $type == blob && ( $mode == 100644 || $mode == 100755 ) ]] || { EXPORT_ERR="$path at $sha is $type mode $mode, not a plain file"; return 1; }@@

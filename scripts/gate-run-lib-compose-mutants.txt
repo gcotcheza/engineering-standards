@@ -1,8 +1,12 @@
-# T5 guard-deletion mutants for scripts/lib/gate/compose.sh (card 719), for scripts/guard-mutants.sh; gate-run itself runs as nobody (GR_AS_NOBODY)
-# except where a row needs a second uid (A10, artifacts) or a root-readable app clone (A18).
+# T5 guard-deletion mutants for scripts/lib/gate/compose.sh (card 719); rows without GR_AS_NOBODY need a second uid or root (none here).
 #   GR_TEST=$PWD/scripts/gate-run-test.sh scripts/guard-mutants.sh scripts/lib/gate/compose.sh scripts/gate-run-lib-compose-mutants.txt
 c-tree-files@@GR_AS_NOBODY=1 GR_CASES="A2" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@            files+=(-f "$TREE/$2"); shift 2 ;;@@            files+=(-f "${RUN%/*/*}/../src/$2"); shift 2 ;;
-c-policy@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@deploy_compose_policy "$TREE" "$json" "$APP" "$envf" dc -p "$APP" "${files[@]}" --env-file "$envf" || die "$DEPLOY_COMPOSE_ERR"@@
-c-bind-check@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@' "$RUN" "$BUILD" || die "the compose config failed root's bind check"@@' "$RUN" "$BUILD" || true
 c-file-guard@@GR_AS_NOBODY=1 GR_CASES="A2" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@        -f) [[ ${2:-} =~ ^[A-Za-z0-9._-]+\.ya?ml$ && -f $TREE/$2 && ! -L $TREE/$2 ]] || die "-f ${2:-} is not a compose file at the top of $TREE"@@        -f)
 c-envfile-guard@@GR_AS_NOBODY=1 GR_CASES="A12" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@        --env-file) [[ ${2:-} =~ ^\.env[A-Za-z0-9._-]*$ && -f $RUN/env/$2 && ! -L $RUN/env/$2 ]] || die "--env-file ${2:-} is not a file root wrote to $RUN/env"@@        --env-file)
+c-yaml-every@@GR_AS_NOBODY=1 GR_CASES="A20" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@    [ "$rc" = 0 ] || die "${f#"$TREE"/} has an include:, an extends: with file:, or is not YAML (exit $rc): it would read files from outside the tree"@@
+c-policy@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@deploy_compose_policy "$TREE" "$json" "$APP" "$envf" dc -p "$APP" "${files[@]}" --env-file "$envf" || die "$DEPLOY_COMPOSE_ERR"@@
+c-bind-check@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@' "$RUN" "$BUILD" "$PROJECT" || die "the compose config failed root's bind check"@@' "$RUN" "$BUILD" "$PROJECT" || true
+c-build-bind-exact@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@        elif os.path.dirname(src.rstrip("/")) != build: sys.exit("compose %s: bind %s is not the tree or a build dir in %s" % (name, src, build))@@        elif not under(src, build): sys.exit("compose %s: bind %s is not the tree or a build dir in %s" % (name, src, build))
+c-volume-name@@GR_AS_NOBODY=1 GR_CASES="N1" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@            sys.exit("compose %s %s: name %s is outside this gate project, so down -v would reach it" % (kind[:-1], key, v.get("name")))@@            pass
+c-build-dirs@@GR_AS_NOBODY=1 GR_CASES="B1" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@build_dirs_ok || die "a build dir in $BUILD is a link, not $APP's, or not in a root-owned directory only root can write"@@
+c-user@@GR_AS_NOBODY=1 GR_CASES="A9" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@    set -- run --user "$OWNER" "$@"@@    set -- run "$@"

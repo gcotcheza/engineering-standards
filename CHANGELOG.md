@@ -4,9 +4,11 @@
 **Card 719.** New `scripts/gate-run.sh` and `scripts/lib/gate/` (`run.sh`, `compose.sh`, and
 `export.sh`, the export-tree block fleet-deploy and fleet-deploy-on-merge carry, extracted). An app's
 gate script runs from `/run/<app>-gate/<id>`, never from its worktree; the ledger row is written by
-the helper for the exported sha. New gate step 11, `scripts/gate-run-test.sh`: planted attacks
-A1-A5 and A7-A18 against a throwaway repo and a fake docker; each guard has a mutant in one of four
-`scripts/gate-run*-mutants.txt` tables. Not yet used by any app (the Memento pilot is next), and the
+the helper for the exported sha, refused unless the run recorded exactly one row for it; a red proof
+uses `--ledger <file>`. Build dirs are app-owned children of a root-owned `<id>`, so a symlink swap
+cannot redirect a bind. New gate step 11, `scripts/gate-run-test.sh`: planted attacks against a
+throwaway repo and a fake docker, plus a comparison of the inline clone-lib block with the installed
+fleet-deploy's; each guard has a mutant in one of four `scripts/gate-run*-mutants.txt` tables. Not yet used by any app (the Memento pilot is next), and the
 installed fleet-deploy scripts still carry their own export-tree copy until a packet sources the lib.
 Why: `docs/decisions/2026-10-25-1643-gate-run-exports-one-sha.md`.
 ## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
