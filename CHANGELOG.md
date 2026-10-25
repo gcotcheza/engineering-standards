@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-25 — the cleanup keeps a worktree whose git config names a filter, and every status forces `core.fsmonitor` off (deploy-lib VERSION 2026-10-25.3; the standard is unchanged and VERSION is not bumped)
+**Card 714.** Card 694's leftovers. `cleanup.sh`'s `${GIT} worktree remove` is now `${GIT} -c
+core.fsmonitor=false worktree remove`: its own inner `status` started the tree's fsmonitor program.
+The `status` calls in `preflight.sh` (two, in `ROOT`), `compose.sh` (one, as the app user) and
+`ledger.sh` (two, in the gate's tree) force it off too; a non-root user can write each tree's
+config. A `filter.<name>.clean` or `.process` program still runs under `status` with fsmonitor off,
+and no single `-c` turns every filter off, so a new `cleanup_filters` reads `git config
+--show-scope --get-regexp` through `WT_GIT` before `status` and again before `worktree remove`;
+a filter in any scope but `system` keeps the tree as `filter`. Limits: the read is not atomic with
+the call after it (as the app's own uid for `status`, no escalation; root's `worktree remove` keeps
+a shorter window), a submodule's config is not read, and an app-user global filter such as git-lfs
+keeps every worktree. `compose-test.sh` expects the new argv; six new `test.sh` cases, each red
+when its one option or guard line is removed. Every header is re-stamped for 2026-10-25.3. Why:
+decision: a-worktree-whose-git-config-names-a-filter-is-kept.
+
 ## 2026-10-25 — W2: the full gate runs once, on the final commit, after the adversarial review (VERSION 2026-10-25)
 **Ghie's rule of 2026-10-25, written into W2.** The order was self-review → gate → adversarial
 review; it is now self-review → adversarial review → the full gate once, on the final commit, and

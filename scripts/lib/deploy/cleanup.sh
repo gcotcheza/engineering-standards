@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.2 sha256:7550b9e36e07244e81e08b05c25e6d7bb8030aa97fed95b20e952e95dd1bfc6d
+# fleet-deploy-lib 2026-10-25.3 sha256:b2839cdd0bda022e9d49c9f69a3cc445fc5c9608e078f96f8807516076a08bd6
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -99,6 +99,22 @@ cleanup_envfiles() {
     return 0
 }
 
+# A clean or process filter is a program status and remove's own status run; no single -c turns all off.
+# One only root could set (system scope) is root's own; any other keeps the tree (card 714).
+cleanup_filters() {
+    local wt=$1 rc=0 scope key named=''
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${WT_GIT-} -C "$wt" -c core.fsmonitor=false config --show-scope --get-regexp '^filter\..+\.(clean|process)$' 2>/dev/null || rc=$?
+    { [ -z "$DEPLOY_GIT_ERR" ] && { [ "$rc" = 0 ] || [ "$rc" = 1 ]; }; } \
+        || { cleanup_keep filter "$wt (git config exited ${rc}, so a filter program could not be ruled out)"; return 1; }
+    while IFS=$'\t' read -r scope key; do
+        case $scope in ''|system) continue ;; esac
+        named="${named}${named:+, }${key%% *} (${scope})"
+    done <<<"$DEPLOY_GIT_OUT"
+    [ -z "$named" ] || { cleanup_keep filter "$wt (its git config names a filter program, which status would run: ${named})"; return 1; }
+    return 0
+}
+
 # A .fleet-scratch label with a keep= line in a directory between the scratch root and the
 # worktree holds it, as the scratch reapers hold that lane (card 488).
 cleanup_lanekeep() {
@@ -159,6 +175,7 @@ cleanup_worktree() {
         { [ "$rc" = 0 ] && [ -n "$DEPLOY_GIT_OUT" ]; } \
             || { cleanup_keep headOnRemote "$wt (head ${head:0:7} is not in origin/main and no remote branch contains it)"; return 0; }
     fi
+    cleanup_filters "$wt" || return 0
     rc=0
     # shellcheck disable=SC2086
     deploy_git_bounded ${WT_GIT-} -C "$wt" --no-optional-locks -c core.fsmonitor=false status --porcelain 2>/dev/null || rc=$?
@@ -173,9 +190,11 @@ cleanup_worktree() {
     cleanup_envfiles "$real" || return 0
     # Only now the preview and by-hand line: remove deletes ignored files, so a refusal above prints none.
     [ "$real" = "$wt" ] || { cleanup_keep link "$wt (linked to $real)"; cleanup_linked_preview "$real" && cleanup_linked_say "$wt" "$real"; return 0; }
+    # Read again just before remove, whose own status runs a filter or fsmonitor as root's git.
+    cleanup_filters "$real" || return 0
     rc=0
     # shellcheck disable=SC2086
-    deploy_git_bounded ${GIT-} worktree remove "$wt" 2>/dev/null || rc=$?
+    deploy_git_bounded ${GIT-} -c core.fsmonitor=false worktree remove "$wt" 2>/dev/null || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep remove "$wt (worktree remove exited ${rc}; it is never re-run with --force)"; return 0; }
     CLEANUP_REMOVED=$((CLEANUP_REMOVED + 1))
     detail "CLEANUP removed $wt"
