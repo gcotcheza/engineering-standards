@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.3 sha256:b2839cdd0bda022e9d49c9f69a3cc445fc5c9608e078f96f8807516076a08bd6
+# fleet-deploy-lib 2026-10-25.3 sha256:d40e60731ec8149043e49695b30daff60f457bef7b5816a3af8ec824bb8b09ad
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -104,7 +104,7 @@ cleanup_envfiles() {
 cleanup_filters() {
     local wt=$1 rc=0 scope key named=''
     # shellcheck disable=SC2086
-    deploy_git_bounded ${WT_GIT-} -C "$wt" -c core.fsmonitor=false config --show-scope --get-regexp '^filter\..+\.(clean|process)$' 2>/dev/null || rc=$?
+    deploy_git_bounded ${WT_GIT-} -C "$wt" -c core.fsmonitor=false config --show-scope --get-regexp '^filter\..*\.(clean|process)$' 2>/dev/null || rc=$?
     { [ -z "$DEPLOY_GIT_ERR" ] && { [ "$rc" = 0 ] || [ "$rc" = 1 ]; }; } \
         || { cleanup_keep filter "$wt (git config exited ${rc}, so a filter program could not be ruled out)"; return 1; }
     while IFS=$'\t' read -r scope key; do
@@ -190,11 +190,12 @@ cleanup_worktree() {
     cleanup_envfiles "$real" || return 0
     # Only now the preview and by-hand line: remove deletes ignored files, so a refusal above prints none.
     [ "$real" = "$wt" ] || { cleanup_keep link "$wt (linked to $real)"; cleanup_linked_preview "$real" && cleanup_linked_say "$wt" "$real"; return 0; }
-    # Read again just before remove, whose own status runs a filter or fsmonitor as root's git.
+    # Read again just before remove, whose own status runs a filter or fsmonitor as root's git; with locks
+    # its status also writes the index and fires post-index-change as root, so none are taken.
     cleanup_filters "$real" || return 0
     rc=0
     # shellcheck disable=SC2086
-    deploy_git_bounded ${GIT-} -c core.fsmonitor=false worktree remove "$wt" 2>/dev/null || rc=$?
+    deploy_git_bounded ${GIT-} --no-optional-locks -c core.fsmonitor=false worktree remove "$wt" 2>/dev/null || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep remove "$wt (worktree remove exited ${rc}; it is never re-run with --force)"; return 0; }
     CLEANUP_REMOVED=$((CLEANUP_REMOVED + 1))
     detail "CLEANUP removed $wt"

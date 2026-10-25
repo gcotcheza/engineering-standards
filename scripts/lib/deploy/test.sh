@@ -2941,6 +2941,35 @@ run_lib "CLEANUP_FIND=${CASE}/find-late; ${CLEAN_CALL}"
 contains 'a filter named after status but before remove still keeps the tree' "${OUT}" 'worktrees removed 0 kept 1 (filter)'
 equals 'and worktree remove never ran it' "$(ran_or_not "${CASE}/filter-ran")" 'never ran'
 
+# A filter may have an empty name, which `* filter=` selects: the read matches it too (ES #70 review).
+cleanup_fixture cleanup-filter-empty-name
+plant_program "${CASE}/filter" "${CASE}/filter-ran" cat
+git_at config 'filter..clean' "${CASE}/filter"
+mkdir -p "${ROOT}/.git/info"
+printf '* filter=\n' >>"${ROOT}/.git/info/attributes"
+touch -d '2001-01-01' "${WT}/app/base.txt"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree whose config names an empty-named clean filter is kept' "${OUT}" 'worktrees removed 0 kept 1 (filter)'
+equals 'and the empty-named filter never ran' "$(ran_or_not "${CASE}/filter-ran")" 'never ran'
+git -C "${WT}" --no-optional-locks -c core.fsmonitor=false status --porcelain >/dev/null 2>&1
+equals 'and a status does run it, so the empty-name fixture is live' "$(ran_or_not "${CASE}/filter-ran")" 'ran'
+
+# worktree remove's own status would write the index and fire post-index-change as root: it takes no locks.
+# The tree's config.worktree names the hook folder by file, as a local one outranks the fleet's global.
+cleanup_fixture cleanup-remove-no-index-hook
+mkdir -p "${CASE}/hooks"
+plant_program "${CASE}/hooks/post-index-change" "${CASE}/hook-ran" 'exit 0'
+git_at config extensions.worktreeConfig true
+printf '[core]\n\thooksPath = %s\n' "${CASE}/hooks" >>"$(git -C "${WT}" rev-parse --path-format=absolute --git-path config.worktree)"
+touch -d '2001-01-01' "${WT}/app/base.txt"
+git -C "${WT}" status --porcelain >/dev/null 2>&1
+equals 'a status that takes locks in that tree fires the hook, so the fixture is live' "$(ran_or_not "${CASE}/hook-ran")" 'ran'
+rm -f -- "${CASE}/hook-ran"
+touch -d '2002-01-01' "${WT}/app/base.txt"
+run_lib "${CLEAN_CALL}"
+contains 'a clean worktree whose hooks name post-index-change is removed' "${OUT}" 'worktrees removed 1 kept 0 (none)'
+equals 'and worktree remove never fired the hook' "$(ran_or_not "${CASE}/hook-ran")" 'never ran'
+
 # A filter in the system config only root could have written is root's own and keeps nothing.
 cleanup_fixture cleanup-filter-system
 mkdir -p "${CASE}/shim"

@@ -1,19 +1,23 @@
 # Changelog
 
 ## 2026-10-25 — the cleanup keeps a worktree whose git config names a filter, and every status forces `core.fsmonitor` off (deploy-lib VERSION 2026-10-25.3; the standard is unchanged and VERSION is not bumped)
-**Card 714.** Card 694's leftovers. `cleanup.sh`'s `${GIT} worktree remove` is now `${GIT} -c
-core.fsmonitor=false worktree remove`: its own inner `status` started the tree's fsmonitor program.
-The `status` calls in `preflight.sh` (two, in `ROOT`), `compose.sh` (one, as the app user) and
-`ledger.sh` (two, in the gate's tree) force it off too; a non-root user can write each tree's
-config. A `filter.<name>.clean` or `.process` program still runs under `status` with fsmonitor off,
-and no single `-c` turns every filter off, so a new `cleanup_filters` reads `git config
---show-scope --get-regexp` through `WT_GIT` before `status` and again before `worktree remove`;
-a filter in any scope but `system` keeps the tree as `filter`. Limits: the read is not atomic with
-the call after it (as the app's own uid for `status`, no escalation; root's `worktree remove` keeps
-a shorter window), a submodule's config is not read, and an app-user global filter such as git-lfs
-keeps every worktree. `compose-test.sh` expects the new argv; six new `test.sh` cases, each red
-when its one option or guard line is removed. Every header is re-stamped for 2026-10-25.3. Why:
+**Card 714.** Card 694's leftovers. `cleanup.sh`'s `${GIT} worktree remove` is now `${GIT}
+--no-optional-locks -c core.fsmonitor=false worktree remove`: its own inner `status` started the
+tree's fsmonitor program, and wrote the index, which fired a `post-index-change` hook as root. The
+`status` calls in `preflight.sh` (two, in `ROOT`), `compose.sh` (one, as the app user) and
+`ledger.sh` (two, in the gate's tree) force fsmonitor off too; a non-root user can write each
+tree's config, and all five already take no locks. A `filter.<name>.clean` or `.process` program
+still runs under `status` with fsmonitor off, and no single `-c` turns every filter off, so a new
+`cleanup_filters` reads `git config --show-scope --get-regexp '^filter\..*\.(clean|process)$'`
+through `WT_GIT` before `status` and again before `worktree remove` (`.*`, so an empty filter
+name is matched); a filter in any scope but `system` keeps the tree as `filter`. Limits: the read
+is not atomic with the call after it (as the app's own uid for `status`, no escalation; root's
+`worktree remove` keeps a shorter window), a submodule's config is not read, an app-user global
+filter such as git-lfs keeps every worktree, and the hook probe covers git 2.39.5 only. Eight new
+`test.sh` cases, each red when its one option or guard line is removed; `compose-test.sh` expects
+the new argv. Every header is re-stamped for 2026-10-25.3. Why:
 decision: a-worktree-whose-git-config-names-a-filter-is-kept.
+
 ## 2026-10-25 — decisions-check honours a project's no-rollup mode (the standard is unchanged and VERSION is not bumped)
 **Card 696.** A project whose committed `.fleet/decisions-mode` reads exactly `no-rollup` (Fineprint:
 one file per decision never conflicts, and its archive is frozen by a test) is no longer told to fold
