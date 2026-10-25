@@ -3,6 +3,7 @@
 # Tests for scripts/gate-run.sh and scripts/lib/gate/: planted attacks A1-A5, A7-A18 of card 719 and the structural
 # export-tree check, against a throwaway app repo, a local "GitHub" and a fake docker (gate-run-fake-docker.py).
 #   GR_ENTRY / GR_RUN_SH / GR_EXPORT_SH / GR_COMPOSE_SH   a copy to test in place of this tree's file (T5 mutants)
+#   GR_REAL_DOCKER=1   the real docker in place of the fake: the build lane's one smoke run (A0 only)
 #   GR_CASES="A3 A8a"   only these cases;  GR_CALLERS="<file>…"   also judge those export-tree callers
 #   GR_AS_NOBODY=1   gate-run itself runs as nobody (T5 mutants, rule 26); fixtures are still committed by root, under the
 #   secrets hook. As root the app uid is nobody; under GR_AS_NOBODY gate-run's uid is the app's too, and A10 is skipped.
@@ -29,9 +30,9 @@ chmod 644 "$S/gate-env/$APP/.env.e2e"
 mkdir -m 755 "$S/bin"
 cp -- "$ENTRY" "$S/bin/gate-run.sh" && ENTRY=$S/bin/gate-run.sh || exit 2
 cp -- "$REPO_ROOT/scripts/gate-run-fake-docker.py" "$P/docker.py"
-printf '#!/bin/sh\nexec /usr/bin/python3 -I %s "$@"\n' "$P/docker.py" >"$S/bin/docker"
+[ "${GR_REAL_DOCKER:-0}" = 1 ] || printf '#!/bin/sh\nexec /usr/bin/python3 -I %s "$@"\n' "$P/docker.py" >"$S/bin/docker"
 printf '#!/bin/sh\necho Avail; echo 1000\n' >"$S/bin/smalldf"
-chmod 755 "$S/bin/docker" "$S/bin/smalldf"
+chmod 755 "$S/bin/smalldf"; [ ! -e "$S/bin/docker" ] || chmod 755 "$S/bin/docker"
 g() { git -c user.name=gate-run-test -c user.email=gate-run-test@invalid "$@"; }
 
 # The box clone: this tree's lib (or a mutant copy) committed, with origin/main at HEAD.
@@ -68,7 +69,7 @@ case "\${1:-}" in
 esac
 GATE_SUITE_PASSED=1
 EOF
-printf 'services:\n  app:\n    image: busybox\n    volumes:\n      - .:/var/www/html\n' >"$SRC/docker-compose.yml"
+printf 'services:\n  app:\n    image: alpine:3.20\n    command: ["true"]\n    volumes:\n      - .:/var/www/html\n' >"$SRC/docker-compose.yml"
 printf 'readme\n' >"$SRC/README.md"
 g -C "$SRC" add -A && g -C "$SRC" commit -qm base && g -C "$SRC" remote add origin "$GH" && g -C "$SRC" push -q origin main || exit 2
 BASE=$(g -C "$SRC" rev-parse HEAD)

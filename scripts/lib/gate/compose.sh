@@ -10,6 +10,7 @@ die() { printf 'gate-compose: REFUSED: %s\n' "$*" >&2; exit 2; }
 read -r APP ID BUILD OWNER RUN_PATH <"$RUN/compose-context" || die "$RUN/compose-context is unreadable"
 [[ $ID =~ ^[A-Za-z0-9]{10}$ && $RUN == */"$APP"-gate/"$ID" ]] || die "$RUN is not a gate-run run directory"
 
+PROJECT=$APP-gate-$(printf '%s' "$ID" | od -An -tx1 | tr -d ' \n')
 build=0 files=() envf=/dev/null
 [ "${1:-}" != --build ] || { build=1; shift; }
 while [ $# -gt 0 ]; do
@@ -56,7 +57,7 @@ for name, svc in (cfg.get("services") or {}).items():
 json.dump({"services": out}, open(sys.argv[4], "w"))
 ' "$TREE" "$BUILD" "$build" "$override" || die "cannot write $override"
 
-final=$(dc -p "$APP-gate-$ID" "${files[@]}" -f "$override" --env-file "$envf" config --format json) || die "compose config failed with $override"
+final=$(dc -p "$PROJECT" "${files[@]}" -f "$override" --env-file "$envf" config --format json) || die "compose config failed with $override"
 printf '%s' "$final" | env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
 import json, sys
 run, build = sys.argv[1], sys.argv[2]
@@ -77,4 +78,4 @@ if [ "$build" = 1 ]; then
     shift
     set -- run --user "$OWNER" "$@"
 fi
-dc -p "$APP-gate-$ID" "${files[@]}" -f "$override" --env-file "$envf" "$@"
+dc -p "$PROJECT" "${files[@]}" -f "$override" --env-file "$envf" "$@"

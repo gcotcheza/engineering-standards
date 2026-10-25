@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # gate-run-test.sh's docker: logs argv and each -f/--env-file source (owner, sha256 read now), and answers
 # compose config from the YAML it was given. Its log and probe dir are the directory it was installed in.
-import hashlib, json, os, sys
+import hashlib, json, os, re, sys
 import yaml
 
 here = os.path.dirname(os.path.realpath(__file__))
@@ -13,6 +13,8 @@ with open(os.path.join(here, "docker.log"), "a") as log:
             p = args[i + 1]
             st = os.stat(p)
             log.write("FILE %s %s %d %s\n" % (a, p, st.st_uid, hashlib.sha256(open(p, "rb").read()).hexdigest()))
+if "-p" in args and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args[args.index("-p") + 1]):
+    sys.exit("invalid project name %r" % args[args.index("-p") + 1])
 if args[:1] != ["compose"]:
     sys.exit(0)
 proj, files, rest, i = os.getcwd(), [], [], 1
@@ -53,6 +55,13 @@ if "config" in rest:
     name = args[args.index("-p") + 1] if "-p" in args else "x"
     print(json.dumps({"name": name, "services": services}))
     sys.exit(0)
+if "up" in rest or "run" in rest:
+    for name, svc in services.items():
+        vols = svc.get("volumes", [])
+        for p in (x for x in vols if x.get("type") == "bind" and x.get("read_only")):
+            for v in vols:
+                if v["target"].startswith(p["target"].rstrip("/") + "/") and not os.path.isdir(os.path.join(p["source"], v["target"][len(p["target"].rstrip("/")) + 1:])):
+                    sys.exit("make mountpoint %s: read-only file system" % v["target"])
 if "up" in rest:
     for f in files:
         if "/override" in f:

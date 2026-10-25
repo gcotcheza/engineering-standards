@@ -78,6 +78,7 @@ free=$("$DF" -B1 --output=avail "$RUN_BASE_DIR" | tail -1 | tr -d ' ')
 
 export_write "$SHA" "$RUN" || die "$EXPORT_ERR"
 printf '%s\n' "${EXPORT_ENTRIES[@]}" | awk '{print $3, $4}' >"$RUN/manifest" || die "cannot write the manifest"
+mkdir -p "$TREE/vendor" "$TREE/node_modules" "$TREE/public/build" "$TREE/bootstrap/cache" "$TREE/e2e/artifacts" || die "cannot create the build mount points in $TREE"
 { tree_git read-tree "$SHA" && mirror_git update-ref --no-deref HEAD "$SHA" && tree_git update-index -q --refresh >/dev/null; } || die "cannot set up $REPO at ${SHA:0:12}"
 
 mkdir -m 750 "$RUN/env" && chown "$ROOT_UID:$APP_GID" "$RUN/env" || die "cannot create $RUN/env"
