@@ -13,7 +13,8 @@ through `WT_GIT` before `status` and again before `worktree remove` (`.*`, so an
 name is matched); a filter in any scope but `system` keeps the tree as `filter`. Limits: the read
 is not atomic with the call after it (as the app's own uid for `status`, no escalation; root's
 `worktree remove` keeps a shorter window), a submodule's config is not read, an app-user global
-filter such as git-lfs keeps every worktree, and the hook probe covers git 2.39.5 only. Eight new
+filter such as git-lfs keeps every worktree, the hook probe covers git 2.39.5 only, and a filter
+named in `ROOT`'s or the gate tree's own config still runs in those trees' `status` calls. Eight new
 `test.sh` cases, each red when its one option or guard line is removed; `compose-test.sh` expects
 the new argv. Every header is re-stamped for 2026-10-25.3. Why:
 decision: a-worktree-whose-git-config-names-a-filter-is-kept.

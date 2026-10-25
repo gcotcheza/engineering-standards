@@ -2121,7 +2121,10 @@ submodule's own config is not read, and `status` recurses into submodules; `work
 refuses a tree with submodules. A box whose app-user global config names a filter (git-lfs, say)
 keeps every worktree as `filter` until that changes. The hook probe covers git 2.39.5 only: a
 later git that runs a hook from `worktree remove` itself, or from a `status` that takes no locks,
-would reach root again.
+would reach root again. The `status` calls in `preflight.sh`, `compose.sh` and `ledger.sh` read
+no filter guard: a filter that `ROOT`'s or the gate tree's own config names still runs there, as
+whichever user that call's git runs as. A test that set one in `ROOT` saw the deploy's own checks
+run it before the cleanup began.
 
 **The rest of the library.** Its other git calls (`rev-parse`, `merge-base`, `branch -r`,
 `cat-file`, `show`, `fetch`, `worktree list`, and the commit-to-commit `diff`s in `resolve.sh` and

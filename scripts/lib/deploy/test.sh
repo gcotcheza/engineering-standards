@@ -2944,7 +2944,8 @@ equals 'and worktree remove never ran it' "$(ran_or_not "${CASE}/filter-ran")" '
 # A filter may have an empty name, which `* filter=` selects: the read matches it too (ES #70 review).
 cleanup_fixture cleanup-filter-empty-name
 plant_program "${CASE}/filter" "${CASE}/filter-ran" cat
-git_at config 'filter..clean' "${CASE}/filter"
+git_at config extensions.worktreeConfig true
+git -C "${WT}" config --worktree 'filter..clean' "${CASE}/filter"
 mkdir -p "${ROOT}/.git/info"
 printf '* filter=\n' >>"${ROOT}/.git/info/attributes"
 touch -d '2001-01-01' "${WT}/app/base.txt"
