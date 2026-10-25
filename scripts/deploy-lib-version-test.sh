@@ -15,7 +15,7 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-# Here-strings, not `printf | grep -q`: grep -q quits early, printf dies of SIGPIPE, pipefail flips it.
+# decision: grep-q-reads-a-here-string-not-a-pipe
 matches() { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
 no_ok() { equals "$1: no ok line is printed" "$(printf '%s' "${OUT}" | grep -c 'deploy-lib-version: ok')" 0; }
 

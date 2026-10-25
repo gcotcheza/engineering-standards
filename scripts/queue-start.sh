@@ -200,7 +200,7 @@ busy_reason(){
   rc=0
   out="$("$HEAVY" --status 2>/dev/null)" || rc=$?
   if [ "$rc" -ne 0 ]; then printf 'heavy-work could not be asked (exit %s)' "$rc"; return 0; fi
-  kept="$(grep -v '^[[:space:]]*last:' <<<"$out")" || true   # no pipe into grep -q: SIGPIPE + pipefail
+  kept="$(grep -v '^[[:space:]]*last:' <<<"$out")" || true   # decision: grep-q-reads-a-here-string-not-a-pipe
   if grep -qE "(^|[[:space:]])session=$s([[:space:]]|$)" <<<"$kept"; then
     printf 'heavy-work holds a slot for %s' "$s"; return 0
   fi

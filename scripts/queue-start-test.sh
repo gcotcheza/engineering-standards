@@ -20,7 +20,7 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals()   { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-# Here-strings, not `printf | grep -q`: grep -q quits early, printf dies of SIGPIPE, pipefail flips it.
+# decision: grep-q-reads-a-here-string-not-a-pipe
 matches()  { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
 contains() { if grep -qF "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not contain [$3]"; fi; }
 lacks()    { if grep -qF "$3" <<<"$2"; then fail "$1 — [$2] must not contain [$3]"; else pass "$1"; fi; }

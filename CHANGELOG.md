@@ -1,16 +1,19 @@
 # Changelog
 
-## 2026-10-25 — the test helpers and queue-start's held-slot check read long output safely (the standard is unchanged and VERSION is not bumped)
-**Card 704.** Under `set -o pipefail`, `printf '%s' "$2" | grep -q` lets grep quit on the first
-match; when the text is longer than the pipe takes in one go, printf dies of SIGPIPE and the pipeline
-reads as a miss, so `matches`/`contains` fail a real match and `lacks`/`unmatches` pass one. The
-helpers in nine fixture suites now use a here-string (`grep -q ... <<<"$2"`), and `queue-start.sh`'s
-heavy-work check, which piped through `grep -v` into `grep -q` and could miss a held slot, filters
-into a variable first. Each suite gains one large-output case (queue-start-test also 5e, a long HELD
-status), and putting any one helper or the old queue-start line back turns its case red. Card 730
-(case 30 of gate-image-tags-test failed once) was suspected; its output is one 570-byte write, too
-small for this, so it is probably not the cause. `scripts/lib/deploy/test.sh` and `lib/dialog-lib.sh`
-keep the old form for now.
+## 2026-10-25 — grep -q reads a here-string, never a pipe, in the test helpers and three scripts (the standard is unchanged and VERSION is not bumped)
+**Cards 704 and 730.** Under `set -o pipefail`, `<writer> | grep -q` lets grep quit at the first
+match; if the writer writes again it dies of SIGPIPE and the pipeline reads as a miss, so
+`matches`/`contains` fail a real match and `lacks`/`unmatches` or `! ... | grep -q` pass one. The
+helpers in nine fixture suites now take a here-string. `queue-start.sh`'s heavy-work check (could
+miss a held slot), `decisions-check.sh`'s DECISIONS.md header check (could call a present header
+missing) and `gate-run-test.sh` A2 and A9 (could pass on a long log) capture first. New large-output
+cases make the long form deterministic, and each goes red with its old line back. Card 730
+(gate-image-tags-test case 30, red once in #71's gate) is very likely the short form of the same
+race: on the VPS's bash 5.2.21, printf writes case 30's 577 bytes in 7 calls with the match in the
+6th, and the old pipe missed 1 run in 3000 there, the here-string 0. The large cases do not cover
+that timing form; this change fixes it all the same. `scripts/lib/deploy/test.sh` (#70's file) and
+`scripts/lib/dialog-lib.sh` keep the old form for now. Why:
+`docs/decisions/2026-10-25-2215-grep-q-reads-a-here-string-not-a-pipe.md`.
 
 ## 2026-10-25 — gate-run.sh runs a root gate from a hash-verified export of one sha (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 719.** New `scripts/gate-run.sh` and `scripts/lib/gate/` (`run.sh`, `compose.sh`, and
