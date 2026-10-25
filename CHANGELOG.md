@@ -5,9 +5,10 @@
 one file per decision never conflicts, and its archive is frozen by a test) is no longer told to fold
 at the 10th file or to carry the "Newer decisions" line. `decisions-check.sh` says in one line that it
 skipped those two, and runs every other check: file names, `# <Title>`, unique slugs, pointers. Any
-other value in that file judges nothing (exit 2); no file changes nothing. The opt-out is read from
-the project, never listed in the checker. Three new cases in `decisions-check-test.sh`; deleting the
-skip line or the unknown-value refusal turns one red.
+other value, a symlink, a file git does not track or a NUL byte judges nothing (exit 2), as does an
+unreadable file; no file changes nothing. `decisions-rollup.sh` refuses (exit 2) to fold a no-rollup
+project. The opt-out is read from the project, never listed in the checker. New cases in both
+fixture suites; deleting any one of these refusals, or the skip line, turns its case red.
 ## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
 **Card 684.** Deploy-on-merge must require every row the test scope owes, e2e included, as a hand
 deploy does (Ghie, 2026-10-24). `gated()` in `ledger.sh` gains three optional inputs so a judge

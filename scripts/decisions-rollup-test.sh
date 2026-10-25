@@ -161,5 +161,10 @@ fresh; printf '# T\r\n\r\nBody\r\n' >"${R}/docs/decisions/2026-02-01-0900-file-1
 matches 'case 14: CRLF refuses' "${OUT}" 'file-1\.md has CRLF line endings; save it with LF endings'
 equals  'case 14: exit code' "${RC}" 1; unchanged 'case 14'
 
+# --- 15. a no-rollup project is never folded --------------------------------------------------------------
+fresh; mkdir -p "${R}/.fleet"; printf 'no-rollup\n' >"${R}/.fleet/decisions-mode"; git -C "${R}" add -- .fleet; git -C "${R}" commit -q -m 'No roll-up'; snap; run
+matches 'case 15: a no-rollup project refuses' "${OUT}" '^decisions-rollup: \.fleet/decisions-mode is no-rollup, so this project never folds — nothing was written\.$'
+equals  'case 15: exit code' "${RC}" 2; unchanged 'case 15'
+
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'decisions-rollup-test: all cases passed\n'

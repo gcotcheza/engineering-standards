@@ -8,7 +8,7 @@
 # Refuses, writing nothing, on a root that is not the top of its work tree, uncommitted
 # decision files, a file changed on main since the branch point, a slug collision, a bad
 # name, a symlink or directory, CRLF endings, or a file not in the full form (# <Title>,
-# blank line, prose); .gitkeep is kept; a second run is a no-op.
+# blank line, prose); .gitkeep is kept; a second run is a no-op. A no-rollup project exits 2.
 # DECISIONS_GIT (it may be several words: git-as <app> -C <tree>), DECISIONS_BASE_REF and
 # DECISIONS_CHECK_SH are the seams.
 # Each guard below is one deletable line, so T5's mutant is a line deletion.
@@ -29,6 +29,7 @@ refuse() { printf 'decisions-rollup: %s — nothing was written.\n' "$*" >&2; ex
 export LC_ALL=C
 top=$("${GIT[@]}" rev-parse --show-toplevel 2>&1) || { printf 'decisions-rollup: %s is not a git work tree: %s — nothing was written.\n' "${ROOT}" "${top}" >&2; exit 2; }
 [ "${top}" = "$(pwd -P)" ] || { printf 'decisions-rollup: %s is not the top of its work tree (%s) — nothing was written.\n' "${ROOT}" "${top}" >&2; exit 2; }
+[ "$(cat -- .fleet/decisions-mode 2>/dev/null)" != no-rollup ] || { printf 'decisions-rollup: .fleet/decisions-mode is no-rollup, so this project never folds — nothing was written.\n' >&2; exit 2; }
 files=()
 [ -d "${DIR}" ] && for f in "${DIR}"/*; do { [ -e "$f" ] || [ -L "$f" ]; } && files+=("$f"); done
 [ "${#files[@]}" -gt 0 ] || { printf 'decisions-rollup: %s/ holds no decisions; nothing to roll up.\n' "${DIR}"; exit 0; }

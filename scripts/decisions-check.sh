@@ -8,8 +8,8 @@
 # a duplicate slug, a bad file name, a symlink or directory, CRLF endings, a malformed file
 # (# <Title>, blank line, prose), a missing opening line, 10 unrolled files, a roll-up that
 # collided with another branch's. Pointers are judged in every tracked file, fenced blocks too.
-# A project whose .fleet/decisions-mode reads no-rollup skips only the fold and the opening line;
-# any other value there judges nothing (2).
+# A project whose tracked .fleet/decisions-mode reads no-rollup skips only the fold and the opening
+# line; any other value, a symlink, an untracked file or a NUL byte there judges nothing (2).
 # Exit 0 clean, 1 with one line per finding, 2 when nothing could be judged.
 # DECISIONS_GIT is the git seam (it may be several words: git-as <app> -C <tree>),
 # DECISIONS_BASE_REF the main it compares against.
@@ -42,7 +42,10 @@ top=$("${GIT[@]}" rev-parse --show-toplevel 2>&1) || { printf 'decisions-check: 
 
 rollup=yes
 if [ -e "${MODE}" ] || [ -L "${MODE}" ]; then
+    [ ! -L "${MODE}" ] || { printf 'decisions-check: %s is a symlink, so nothing was judged\n' "${MODE}" >&2; exit 2; }
+    "${GIT[@]}" ls-files --error-unmatch -- "${MODE}" >/dev/null 2>&1 || { printf 'decisions-check: %s is not tracked by git, so nothing was judged\n' "${MODE}" >&2; exit 2; }
     mode=$(cat -- "${MODE}" 2>&1) || { printf 'decisions-check: %s could not be read, so nothing was judged: %s\n' "${MODE}" "${mode}" >&2; exit 2; }
+    tr -d '\000' <"${MODE}" | cmp -s -- - "${MODE}" || { printf 'decisions-check: %s holds a NUL byte, so nothing was judged\n' "${MODE}" >&2; exit 2; }
     [ "${mode}" = 'no-rollup' ] || { printf 'decisions-check: %s must read exactly no-rollup (or not exist), so nothing was judged\n' "${MODE}" >&2; exit 2; }
     rollup=no
     printf 'decisions-check: %s is no-rollup: the project never folds, so the 10-file fold and the opening line are not checked; every other check runs\n' "${MODE}"

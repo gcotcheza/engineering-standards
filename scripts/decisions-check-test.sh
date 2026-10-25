@@ -186,7 +186,7 @@ equals  'case 21: empty argument exit code' "${RC}" 2
 
 # --- 22. .fleet/decisions-mode no-rollup skips the fold and the opening line, nothing else -------------
 SKIPPED='^decisions-check: \.fleet/decisions-mode is no-rollup: .* the 10-file fold and the opening line are not checked; every other check runs$'
-no_rollup() { mkdir -p "${R}/.fleet"; printf '%s\n' "$1" >"${R}/.fleet/decisions-mode"; }
+no_rollup() { mkdir -p "${R}/.fleet"; printf '%s\n' "$1" >"${R}/.fleet/decisions-mode"; git -C "${R}" add -- .fleet; }
 ten_without_header() { sed -i 3d "${R}/docs/DECISIONS.md"; for i in 3 4 5 6 7 8 9; do add_decision "2026-02-0${i}-0900-file-${i}" "File ${i}"; done; add_decision 2026-02-10-0900-file-ten 'File ten'; }
 fresh; ten_without_header; no_rollup no-rollup; run
 matches 'case 22a: the skip is said in one line' "${OUT}" "${SKIPPED}"
@@ -209,6 +209,21 @@ matches 'case 24: the fold is judged' "${OUT}" 'decisions-check: 10 unrolled dec
 matches 'case 24: the opening line is judged' "${OUT}" 'its first 10 lines must carry'
 equals  'case 24: no skip line' "$(grep -c 'is no-rollup' <<<"${OUT}")" 0
 equals  'case 24: exit code' "${RC}" 1
+
+# --- 25. a mode file the checker cannot trust judges nothing ----------------------------------------------
+NOTHING=', so nothing was judged$'
+fresh; ten_without_header; printf 'no-rollup\n' >"${WORK}/mode${n}"; mkdir -p "${R}/.fleet"; ln -s "${WORK}/mode${n}" "${R}/.fleet/decisions-mode"; git -C "${R}" add -- .fleet; run
+matches 'case 25a: a symlinked mode is refused' "${OUT}" "^decisions-check: \\.fleet/decisions-mode is a symlink${NOTHING}"
+equals  'case 25a: exit code' "${RC}" 2
+fresh; ten_without_header; mkdir -p "${R}/.fleet"; printf 'no-rollup\n' >"${R}/.fleet/decisions-mode"; run
+matches 'case 25b: an untracked mode is refused' "${OUT}" "^decisions-check: \\.fleet/decisions-mode is not tracked by git${NOTHING}"
+equals  'case 25b: exit code' "${RC}" 2
+fresh; mkdir -p "${R}/.fleet/decisions-mode"; : >"${R}/.fleet/decisions-mode/x"; git -C "${R}" add -- .fleet; run
+matches 'case 25c: an unreadable mode is refused' "${OUT}" '^decisions-check: \.fleet/decisions-mode could not be read, so nothing was judged: '
+equals  'case 25c: exit code' "${RC}" 2
+fresh; ten_without_header; mkdir -p "${R}/.fleet"; printf 'no-rollup\000\n' >"${R}/.fleet/decisions-mode"; git -C "${R}" add -- .fleet; run
+matches 'case 25d: a NUL byte is refused' "${OUT}" "^decisions-check: \\.fleet/decisions-mode holds a NUL byte${NOTHING}"
+equals  'case 25d: exit code' "${RC}" 2
 
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'decisions-check-test: all cases passed\n'
