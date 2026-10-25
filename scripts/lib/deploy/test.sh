@@ -2384,6 +2384,7 @@ chown -h 65534:65534 "${WT}"
 run_lib "${CLEAN_CALL}"
 contains 'a worktree listed by a link path, carrying a privileged-uid file, is kept' "${OUT}" \
     'worktrees removed 0 kept 1 (rootfiles)'
+absent 'and no by-hand removal line is printed for it' "${OUT}" 'linked worktree, not removed'
 equals 'and the directory behind the link is still on disk' "$(on_disk "${WT}-moved")" 'there'
 contains 'and git still lists it, so no half-removal deleted its record' "$(git_at worktree list --porcelain)" \
     "worktree ${WT}"$'\n'
@@ -2467,6 +2468,128 @@ run_lib "${CLEAN_CALL}"
 contains 'a docker that cannot be asked keeps the worktree' "${OUT}" \
     'worktrees removed 0 kept 1 (mounts)'
 equals 'and it is still on disk' "$(on_disk "${WT}")" 'there'
+
+# git's record names the worktree through a linked parent, ${CASE}/via -> ${CASE} (card 677).
+via_parent() {
+    ln -s "${CASE}" "${CASE}/via"
+    printf '%s/via/wt-pr/.git\n' "${CASE}" >"${ROOT}/.git/worktrees/wt-pr/gitdir"
+}
+# Every name, type and file content under a folder, as one hash: any change to it changes the hash.
+tree_print() { (cd -- "$1" && find . -printf '%y %p\n' | LC_ALL=C sort && find . -type f -exec sha256sum {} + | LC_ALL=C sort) 2>&1 | sha256sum; }
+
+# The worktree itself moved and linked back, unused: worktree remove would empty the target, then fail.
+cleanup_fixture cleanup-linked-unused
+mv "${WT}" "${WT}-moved"
+ln -s "${WT}-moved" "${WT}"
+BEFORE_PRINT="$(tree_print "${WT}-moved")"
+BEFORE_FILES="$(find "${WT}-moved" -type f | wc -l)"
+run_lib "${CLEAN_CALL}"
+contains 'an unused worktree listed by its own link is kept' "${OUT}" 'worktrees removed 0 kept 1 (link)'
+equals 'and the summary says so in one line, with the safe by-hand sequence' "$(grep -F 'linked worktree, not removed' <<<"${OUT}")" \
+    "CLEANUP #73 kept ${WT} -> ${WT}-moved: linked worktree, not removed; remove by hand with: git -C ${ROOT} worktree repair ${WT}-moved && { [ ! -L ${WT} ] || unlink -- ${WT}; } && git -C ${ROOT} worktree remove ${WT}-moved"
+equals 'and it never removes by the link path, which empties the target' "$(grep -cE "worktree remove ${WT//./\\.}( |;|\$)" <<<"${OUT}")" 0
+equals 'and the tracked file behind the link is still there' "$(cat "${WT}-moved/app/base.txt" 2>/dev/null)" 'base'
+equals 'and the real folder holds as many files' "$(find "${WT}-moved" -type f | wc -l)" "${BEFORE_FILES}"
+equals 'and its names and contents are unchanged' "$(tree_print "${WT}-moved")" "${BEFORE_PRINT}"
+absent 'and no removal was tried' "${OUT}" '(remove)'
+contains 'and the read-only preview says it carries no ignored path' "${OUT}" "CLEANUP #73 preview of ${WT}-moved: 0 ignored paths"
+
+# A linked worktree with an ignored build/out.log and no .env: the preview counts and names it (S7), then the line.
+cleanup_fixture cleanup-linked-ignored-build
+mv "${WT}" "${WT}-moved"
+ln -s "${WT}-moved" "${WT}"
+mkdir -p "${ROOT}/.git/info" "${WT}-moved/build"
+printf 'build/\n' >>"${ROOT}/.git/info/exclude"
+printf 'log\n' >"${WT}-moved/build/out.log"
+run_lib "${CLEAN_CALL}"
+contains 'a linked worktree with only an ignored build/ is kept as a link' "${OUT}" 'worktrees removed 0 kept 1 (link)'
+contains 'and the read-only preview counts and names the ignored path' "${OUT}" \
+    "CLEANUP #73 preview of ${WT}-moved: 1 ignored path(s), which worktree remove deletes: build/"$'\n'
+equals 'and the by-hand line comes right after it' "$(grep -F -A1 'preview of' <<<"${OUT}" | tail -n 1 | grep -cF 'linked worktree, not removed')" 1
+equals 'and the ignored file is still there' "$(cat "${WT}-moved/build/out.log" 2>/dev/null)" 'log'
+
+# Paths with a space and shell metacharacters: the printed line is %q-quoted, and run as printed it ends clean.
+cleanup_fixture cleanup-linked-quoted
+mkdir -p "${CASE}/real dir"
+mv "${WT}" "${CASE}/real dir/wt \$(touch pwned)"
+LNK="${CASE}/link 'a';b"
+ln -s "${CASE}/real dir/wt \$(touch pwned)" "${LNK}"
+printf '%s/.git\n' "${LNK}" >"${ROOT}/.git/worktrees/wt-pr/gitdir"
+run_lib "${CLEAN_CALL}"
+contains 'a linked worktree with metacharacters in its paths is kept' "${OUT}" 'worktrees removed 0 kept 1 (link)'
+BYHAND="$(grep -F 'linked worktree, not removed' <<<"${OUT}")"
+BYHAND="${BYHAND#*remove by hand with: }"
+(cd -- "${CASE}" && bash -c "${BYHAND}") >"${CASE}/byhand.out" 2>&1
+equals 'and the printed sequence, run as printed, exits 0' "$?" 0
+equals 'and leaves no link' "$([ -L "${LNK}" ] && echo there || echo gone)" 'gone'
+equals 'and no real folder' "$(on_disk "${CASE}/real dir/wt \$(touch pwned)")" 'gone'
+absent 'and no worktree record' "$(git_at worktree list --porcelain)" 'wt-pr'
+equals 'and ran nothing from the path' "$([ -e "${CASE}/pwned" ] && echo ran || echo quoted)" 'quoted'
+
+# Listed through a linked parent, unused: kept as a link, and the line names both paths.
+cleanup_fixture cleanup-parent-linked-unused
+via_parent
+BEFORE_PRINT="$(tree_print "${WT}")"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree listed through a linked parent is kept' "${OUT}" 'worktrees removed 0 kept 1 (link)'
+contains 'and the summary names the listed and the real path' "${OUT}" "CLEANUP #73 kept ${CASE}/via/wt-pr -> ${WT}: linked worktree, not removed"
+equals 'and its real folder is unchanged' "$(tree_print "${WT}")" "${BEFORE_PRINT}"
+
+# Listed through a linked parent, with a process inside: a cwd reads as the real path, never the listed one.
+cleanup_fixture cleanup-parent-linked-proc-inside
+via_parent
+mkdir -p "${CASE}/proc/4242"
+ln -s "${WT}/app" "${CASE}/proc/4242/cwd"
+run_lib "${CLEAN_CALL}"
+contains 'a linked worktree with a process in its real folder is kept for the process' "${OUT}" 'worktrees removed 0 kept 1 (procs)'
+absent 'and no by-hand removal line is printed for it' "${OUT}" 'linked worktree, not removed'
+
+# A linked worktree with an ignored .env: worktree remove without --force deletes ignored files, so no line.
+cleanup_fixture cleanup-linked-ignored-env
+mv "${WT}" "${WT}-moved"
+ln -s "${WT}-moved" "${WT}"
+mkdir -p "${ROOT}/.git/info"
+printf '.env\n' >>"${ROOT}/.git/info/exclude"
+printf 'fixture\n' >"${WT}-moved/.env"
+run_lib "${CLEAN_CALL}"
+contains 'a linked worktree carrying an ignored .env is kept for the .env' "${OUT}" 'worktrees removed 0 kept 1 (envfiles)'
+absent 'and no by-hand removal line is printed for it' "${OUT}" 'linked worktree, not removed'
+equals 'and the .env is still there' "$(cat "${WT}-moved/.env" 2>/dev/null)" 'fixture'
+
+# A bind source written through a link of its own still names the worktree.
+cleanup_fixture cleanup-mounts-source-link
+ln -s "${CASE}" "${CASE}/via"
+DOCKER_IDS='c1'
+DOCKER_MOUNTS="${CASE}/via/wt-pr/storage"
+run_lib "${CLEAN_CALL}"
+contains 'a container whose bind source reaches the worktree through a link keeps it' "${OUT}" \
+    'worktrees removed 0 kept 1 (mounts)'
+equals 'and its tracked file is still there' "$(cat "${WT}/app/base.txt" 2>/dev/null)" 'base'
+
+# CLEANUP_REALPATH is the pin: a realpath earlier on PATH must not decide where a worktree really is.
+cleanup_fixture cleanup-realpath-pinned
+printf '#!/bin/sh\nprintf "/nowhere\\n"\n' >"${BIN}/realpath"
+chmod 0755 "${BIN}/realpath"
+run_lib "${CLEAN_CALL}"
+rm -f "${BIN}/realpath"
+contains 'a realpath on PATH does not decide the real path: a plain unused worktree is removed' "${OUT}" \
+    'worktrees removed 1 kept 0 (none)'
+
+# The worktree vanishes after the status check: no real path, so nothing is ruled out.
+cleanup_fixture cleanup-realpath-unreadable
+mkdir -p "${CASE}/vanish"
+printf '#!/bin/sh
+git "$@"; rc=$?
+case " $* " in *" status "*) mv -- "%s" "%s.gone" ;; esac
+exit "$rc"
+' \
+    "${WT}" "${WT}" >"${CASE}/vanish/git"
+chmod 0755 "${CASE}/vanish/git"
+WT_GIT_SEAM="${CASE}/vanish/git"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree whose real path cannot be read is kept, and the reason says so' "${OUT}" \
+    'worktrees removed 0 kept 1 (realpath)'
+equals 'and it is still on disk' "$(on_disk "${WT}.gone")" 'there'
 
 # The dirty check passes, then the mounts step dirties the tree: the only shape in which
 # `worktree remove` itself refuses, and so the only shape a --force would rescue.

@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.1 sha256:d3476684884be9635f12e2aa83c2371e67ab2a858eb6da780848d97ec0907335
+# fleet-deploy-lib 2026-10-25.1 sha256:183e2c8bca32602b93c38c205c47c8f119d24af07156fe588f1509da64fda74a
 # shellcheck shell=bash
 
 # deploy_cleanup removes the worktrees and the scratch lanes of the one pull request
@@ -8,11 +8,12 @@
 # shell, on the line before a success-path finish, stands for a deploy that reached it.
 unset DEPLOY_SUCCEEDED
 
-# find, timeout and grep are pinned to the binary: an exported shell function of that name
+# find, timeout, grep and realpath are pinned to the binary: an exported shell function of that name
 # must not decide what a removal run looks inside or keeps.
 CLEANUP_FIND=/usr/bin/find
 CLEANUP_TIMEOUT=/usr/bin/timeout
 CLEANUP_GREP=/usr/bin/grep
+CLEANUP_REALPATH=/usr/bin/realpath
 # Lane labels are read only below this root; a worktree outside it meets none.
 CLEANUP_SCRATCH_ROOT=/srv/worker-scratch
 
@@ -54,7 +55,7 @@ cleanup_procs() {
 }
 
 cleanup_mounts() {
-    local wt=$1 rc=0 ids out t
+    local wt=$1 rc=0 ids out t s
     ids=$(${DOCKER-} ps -q 2>&1) || rc=$?
     [ "$rc" = 0 ] || { cleanup_keep mounts "$wt (docker ps exited ${rc}, so no container could be ruled out)"; return 1; }
     [ -n "$ids" ] || return 0
@@ -64,8 +65,13 @@ cleanup_mounts() {
     [ "$rc" = 0 ] || { cleanup_keep mounts "$wt (docker inspect exited ${rc}, so no container could be ruled out)"; return 1; }
     while IFS= read -r t; do
         [ -n "$t" ] || continue
+        # A bind source can be written through a link of its own, so its real path is compared too.
+        s=$("${CLEANUP_REALPATH}" -m -- "$t" 2>/dev/null) || { cleanup_keep mounts "$wt (the real path of mount $t could not be read)"; return 1; }
         case "$t" in
             "$wt"|"$wt"/*) cleanup_keep mounts "$wt (a running container mounts $t)"; return 1 ;;
+        esac
+        case "$s" in
+            "$wt"|"$wt"/*) cleanup_keep mounts "$wt (a running container mounts $t, which is $s)"; return 1 ;;
         esac
     done <<<"$out"
     return 0
@@ -111,8 +117,35 @@ cleanup_lanekeep() {
     return 0
 }
 
+# The by-hand removal of a linked worktree, every path %q-quoted: remove by the link path empties the
+# target and fails, so the record is repaired to the real path, the link unlinked, and no --force used.
+cleanup_linked_say() {
+    local l r g
+    printf -v l '%q' "$1"; printf -v r '%q' "$2"; printf -v g '%q' "${ROOT-}"
+    say "CLEANUP #${PR-} kept $l -> $r: linked worktree, not removed; remove by hand with: git -C $g worktree repair $r && { [ ! -L $l ] || unlink -- $l; } && git -C $g worktree remove $r"
+}
+
+# Read-only preview (S7) of the ignored paths that remove deletes; 1 when they cannot be listed.
+cleanup_linked_preview() {
+    local real=$1 rc=0 n=0 shown='' p r
+    printf -v r '%q' "$real"
+    # The owner's tree may set core.fsmonitor, the one ls-files setting that runs a program: forced off.
+    # shellcheck disable=SC2086
+    deploy_git_bounded ${WT_GIT-} --no-optional-locks -c core.fsmonitor=false -c core.quotePath=true -C "$real" \
+        ls-files -o -i --exclude-standard --directory 2>/dev/null || rc=$?
+    [ "$rc" = 0 ] || { say "CLEANUP #${PR-} kept $r: its ignored paths could not be listed (ls-files exited ${rc}), so no by-hand removal is printed"; return 1; }
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        n=$((n + 1))
+        [ "$n" -gt 5 ] || shown="${shown} ${p}"
+    done <<<"$DEPLOY_GIT_OUT"
+    [ "$n" != 0 ] || { say "CLEANUP #${PR-} preview of $r: 0 ignored paths"; return 0; }
+    [ "$n" -le 5 ] || shown="${shown} (and $((n - 5)) more)"
+    say "CLEANUP #${PR-} preview of $r: ${n} ignored path(s), which worktree remove deletes:${shown}"
+}
+
 cleanup_worktree() {
-    local wt=$1 head=$2 rc=0 out
+    local wt=$1 head=$2 rc=0 out real
     cleanup_lanekeep "$wt" || return 0
     [ -n "$head" ] || { cleanup_keep headInMain "$wt (git named no HEAD for it)"; return 0; }
     # shellcheck disable=SC2086
@@ -132,10 +165,14 @@ cleanup_worktree() {
     out=$DEPLOY_GIT_OUT$DEPLOY_GIT_STDERR
     [ "$rc" = 0 ] || { cleanup_keep status "$wt (status --porcelain exited ${rc}, so uncommitted work could not be ruled out)"; return 0; }
     [ -z "$out" ] || { cleanup_keep dirty "$wt (uncommitted or untracked work)"; return 0; }
-    cleanup_procs "$wt" || return 0
-    cleanup_mounts "$wt" || return 0
-    cleanup_rootfiles "$wt" || return 0
-    cleanup_envfiles "$wt" || return 0
+    # A worktree reached through a link is never removed: remove empties the target, then fails on the link.
+    real=$("${CLEANUP_REALPATH}" -e -- "$wt" 2>/dev/null) || { cleanup_keep realpath "$wt (its real path could not be read, so a link could not be ruled out)"; return 0; }
+    cleanup_procs "$real" || return 0
+    cleanup_mounts "$real" || return 0
+    cleanup_rootfiles "$real" || return 0
+    cleanup_envfiles "$real" || return 0
+    # Only now the preview and by-hand line: remove deletes ignored files, so a refusal above prints none.
+    [ "$real" = "$wt" ] || { cleanup_keep link "$wt (linked to $real)"; cleanup_linked_preview "$real" && cleanup_linked_say "$wt" "$real"; return 0; }
     rc=0
     # shellcheck disable=SC2086
     deploy_git_bounded ${GIT-} worktree remove "$wt" 2>/dev/null || rc=$?
