@@ -4,3 +4,5 @@
 c-tree-files@@GR_AS_NOBODY=1 GR_CASES="A2" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@            files+=(-f "$TREE/$2"); shift 2 ;;@@            files+=(-f "${RUN%/*/*}/../src/$2"); shift 2 ;;
 c-policy@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@deploy_compose_policy "$TREE" "$json" "$APP" "$envf" dc -p "$APP" "${files[@]}" --env-file "$envf" || die "$DEPLOY_COMPOSE_ERR"@@
 c-bind-check@@GR_AS_NOBODY=1 GR_CASES="A3" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@' "$RUN" "$BUILD" || die "the compose config failed root's bind check"@@' "$RUN" "$BUILD" || true
+c-file-guard@@GR_AS_NOBODY=1 GR_CASES="A2" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@        -f) [[ ${2:-} =~ ^[A-Za-z0-9._-]+\.ya?ml$ && -f $TREE/$2 && ! -L $TREE/$2 ]] || die "-f ${2:-} is not a compose file at the top of $TREE"@@        -f)
+c-envfile-guard@@GR_AS_NOBODY=1 GR_CASES="A12" GR_COMPOSE_SH="$MUTANT_TARGET" bash "$GR_TEST"@@        --env-file) [[ ${2:-} =~ ^\.env[A-Za-z0-9._-]*$ && -f $RUN/env/$2 && ! -L $RUN/env/$2 ]] || die "--env-file ${2:-} is not a file root wrote to $RUN/env"@@        --env-file)

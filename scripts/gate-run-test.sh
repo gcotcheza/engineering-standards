@@ -32,7 +32,8 @@ cp -- "$ENTRY" "$S/bin/gate-run.sh" && ENTRY=$S/bin/gate-run.sh || exit 2
 cp -- "$REPO_ROOT/scripts/gate-run-fake-docker.py" "$P/docker.py"
 [ "${GR_REAL_DOCKER:-0}" = 1 ] || printf '#!/bin/sh\nexec /usr/bin/python3 -I %s "$@"\n' "$P/docker.py" >"$S/bin/docker"
 printf '#!/bin/sh\necho Avail; echo 1000\n' >"$S/bin/smalldf"
-chmod 755 "$S/bin/smalldf"; [ ! -e "$S/bin/docker" ] || chmod 755 "$S/bin/docker"
+printf '#!/bin/sh\necho Avail; echo lots\n' >"$S/bin/baddf"
+chmod 755 "$S/bin/smalldf" "$S/bin/baddf"; [ ! -e "$S/bin/docker" ] || chmod 755 "$S/bin/docker"
 g() { git -c user.name=gate-run-test -c user.email=gate-run-test@invalid "$@"; }
 
 # The box clone: this tree's lib (or a mutant copy) committed, with origin/main at HEAD.
@@ -64,6 +65,8 @@ env | sort >"\$P/env"
 \$CI_GIT rev-parse refs/remotes/origin/main >"\$P/origin-main" 2>&1
 [ ! -f "\$P/hold" ] || sleep 2
 case "\${1:-}" in
+    badf) \$GATE_COMPOSE -f /etc/passwd config || exit \$? ;;
+    badenv) \$GATE_COMPOSE -f docker-compose.yml --env-file ../manifest up -d || exit \$? ;;
     compose) \$GATE_COMPOSE -f docker-compose.yml --env-file .env.e2e up -d || exit \$? ;;
     build) \$GATE_COMPOSE --build -f docker-compose.yml run app true || exit \$?; \$GATE_COMPOSE -f docker-compose.yml up -d || exit \$? ;;
 esac
@@ -97,7 +100,7 @@ gr() { # app sha script [args] -> OUT, RC; the ledger is $S/ledger
     rm -f -- "$P/docker.log" "$P/selfhash" "$P/env"
     OUT=$(env GATE_RUN_T_RUN_BASE="$RB" GATE_RUN_T_LIB_CLONE="$ES" GATE_RUN_T_UID="$ME" GATE_RUN_T_URL_PREFIX="$S/gh/" \
         GATE_RUN_T_SRC="$S/deploy-src" GATE_RUN_T_LEDGER="$P/ledger" GATE_RUN_T_BUILD_BASE="$VT" GATE_RUN_T_ENV_DIR="$S/gate-env" \
-        GATE_RUN_T_PATH="$S/bin:/usr/bin:/bin" GATE_RUN_T_APP_USER="$APPU" GATE_RUN_T_DF="${DFBIN:-/usr/bin/df}" \
+        GATE_RUN_T_PATH="$S/bin:/usr/bin:/bin" GATE_RUN_T_APP_USER="${GR_APPU:-$APPU}" GATE_RUN_T_DF="${DFBIN:-/usr/bin/df}" \
         "${PRE[@]}" "${RUNAS[@]}" bash "$ENTRY" "$@" 2>&1)
     RC=$?
 }
@@ -132,6 +135,10 @@ if want A2; then
     blob=$(g -C "$SRC" cat-file blob "$BASE:docker-compose.yml" | sha256sum | cut -d' ' -f1)
     ok A2 '[ "$RC" = 0 ] && grep -q "^FILE -f .*/tree/docker-compose.yml [0-9]* $blob$" "$P/docker.log" && ! grep "^FILE -f" "$P/docker.log" | grep -vq -e "/tree/docker-compose.yml " -e "/override.yml "'
     g -C "$SRC" checkout -q -f "$BASE"
+fi
+if want A2; then
+    gr "$APP" "$BASE" scripts/check.sh -- badf
+    ok A2b '[ "$RC" = 2 ] && [[ $OUT == *"is not a compose file at the top of"* ]]'
 fi
 if want A3; then
     gr "$APP" "$SHA_host" scripts/check.sh -- compose
@@ -190,6 +197,10 @@ if want A12; then
     gr "$APP" "$BASE" scripts/check.sh -- compose
     ok A12b '[ "$RC" = 2 ] && [[ $OUT == *"not a root-owned regular file"* ]]'
     rm -f "$S/gate-env/$APP/.env.e2e"; mv "$S/real-env" "$S/gate-env/$APP/.env.e2e"
+    gr "$APP" "$BASE" scripts/check.sh -- badenv
+    ok A12c '[ "$RC" = 2 ] && [[ $OUT == *"is not a file root wrote to"* ]] && ! grep -q "ARGV.* up" "$P/docker.log"'
+    chmod 777 "$S/gate-env/$APP"; gr "$APP" "$BASE" scripts/check.sh; chmod 755 "$S/gate-env/$APP"
+    ok A12d '[ "$RC" = 2 ] && [[ $OUT == *"not a root-owned directory only root can write"* ]]'
 fi
 if want A13; then
     g -C "$SRC" update-ref refs/remotes/origin/main "$SHA_ahead"
@@ -225,10 +236,18 @@ if want A16; then
     gr "$APP" "$BASE" scripts/check.sh
     ok A16b '[ "$RC" = 2 ] && [[ $OUT == *"gate-build is a symlink"* ]] && [ -z "$(ls -A "$VT/$APP-gate-build")" ]'
     rmdir -- "$VT/$APP-gate-build"
+    mv "$RB/$APP-gate" "$RB/gates.real"; ln -s "$P/fake-etc" "$RB/$APP-gate"
+    gr "$APP" "$BASE" scripts/check.sh
+    ok A16c '[ "$RC" = 2 ] && [[ $OUT == *"-gate is a symlink"* ]] && [ "$(ls "$P/fake-etc")" = probe ]'
+    rm -f -- "$RB/$APP-gate"; mv "$RB/gates.real" "$RB/$APP-gate"
+    GR_APPU=root gr "$APP" "$BASE" scripts/check.sh
+    ok A16d '[ "$RC" = 2 ] && [[ $OUT == *"is root: the build would not be confined"* ]] && no_run'
 fi
 if want A17; then
     DFBIN=$S/bin/smalldf gr "$APP" "$BASE" scripts/check.sh
     ok A17 '[ "$RC" = 2 ] && [[ $OUT == *"under twice"* ]] && no_run'
+    DFBIN=$S/bin/baddf gr "$APP" "$BASE" scripts/check.sh
+    ok A17b '[ "$RC" = 2 ] && [[ $OUT == *"free space"*"could not be read"* ]] && no_run'
 fi
 if want A18; then
     gr "$APP" "$SHA_unpushed" scripts/check.sh
