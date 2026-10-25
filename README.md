@@ -69,7 +69,7 @@ The export-tree block it shares with fleet-deploy is `scripts/lib/gate/export.sh
 `scripts/gate-run-test.sh` (root; one gate step; `GR_CASES="A3 L"` picks cases, `GR_AS_NOBODY=1` runs
 gate-run as nobody, `GR_ENTRY`/`GR_RUN_SH`/`GR_COMPOSE_SH`/`GR_EXPORT_SH` test a mutant copy,
 `GR_REAL_DOCKER=1` is the one real-docker smoke run, `GR_CALLERS` judges export-tree callers) and four
-`scripts/gate-run*-mutants.txt` tables. Why: `docs/decisions/2026-10-25-1643-gate-run-exports-one-sha.md`.
+`scripts/gate-run*-mutants.txt` tables. Why: `docs/DECISIONS.md#gate-run-exports-one-sha`.
 
 `scripts/gate-image-tags.sh <project-root>` is rule T9's check, and one of this repo's gate steps
 runs its fixtures. Point it at a project root and it names the compose files it read, the image

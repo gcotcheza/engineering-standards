@@ -10,7 +10,7 @@ cannot redirect a bind. New gate step 11, `scripts/gate-run-test.sh`: planted at
 throwaway repo and a fake docker, plus a comparison of the inline clone-lib block with the installed
 fleet-deploy's; each guard has a mutant in one of four `scripts/gate-run*-mutants.txt` tables. Not yet used by any app (the Memento pilot is next), and the
 installed fleet-deploy scripts still carry their own export-tree copy until a packet sources the lib.
-Why: `docs/decisions/2026-10-25-1643-gate-run-exports-one-sha.md`.
+Why: `docs/DECISIONS.md#gate-run-exports-one-sha`.
 ## 2026-10-25 — W2: the full gate runs once, on the final commit, after the adversarial review (VERSION 2026-10-25)
 **Ghie's rule of 2026-10-25, written into W2.** The order was self-review → gate → adversarial
 review; it is now self-review → adversarial review → the full gate once, on the final commit, and
@@ -20,7 +20,7 @@ fix. Why: the VPS gate queue waited
 20 to 55 minutes a run today, and every review bounce cost one. T1 is unchanged (a docs-only change
 still needs no test run, so it has no gate step), and S8 already named this order. `SOURCES.md`'s W2
 row cites the rule. The standard grew about 450 bytes. The standards text moved, so `VERSION` moves
-with it. Why: `docs/decisions/2026-10-25-1430-the-gate-runs-once-after-review.md`.
+with it. Why: `docs/DECISIONS.md#the-gate-runs-once-after-review`.
 
 ## 2026-10-25 — every git call the cleanup makes in a worktree forces `core.fsmonitor` off (deploy-lib VERSION 2026-10-25.2; the standard is unchanged and VERSION is not bumped)
 **Card 694.** `cleanup.sh` forced `-c core.fsmonitor=false` only on the by-hand preview's `ls-files`.
@@ -37,7 +37,7 @@ project sets `WT_GIT="git-as <app>"`: with plain `git`, root's git refuses an ap
 says what its pathspecs match: a `.env*` name, or a file in a `.env*` folder, at any depth, and
 nothing inside a `vendor/` or `node_modules/` folder. One new `test.sh` case (three checks), red
 on the old `cleanup.sh` and on each one-line mutant that drops one of the two new options.
-Every header is re-stamped for 2026-10-25.2. Why: `docs/decisions/2026-10-25-1105-every-worktree-git-call-forces-fsmonitor-off.md`.
+Every header is re-stamped for 2026-10-25.2. Why: `docs/DECISIONS.md#every-worktree-git-call-forces-fsmonitor-off`.
 ## 2026-10-25 — gated takes a caller's base, ci evidence and refusal route (deploy-lib VERSION 2026-10-25.1; the standard is unchanged and VERSION is not bumped)
 **Card 684.** Deploy-on-merge must require every row the test scope owes, e2e included, as a hand
 deploy does (Ghie, 2026-10-24). `gated()` in `ledger.sh` gains three optional inputs so a judge
@@ -49,7 +49,7 @@ not the commit itself; anything else, a set but empty value included, reads ever
 value of any of the three inherited from the environment is discarded on sourcing. Unset, nothing
 changes. Thirteen new `test.sh` cases (fifteen checks); each new guard line has a mutant that turns
 one red.
-Every header is re-stamped for 2026-10-25.1. Why: `docs/decisions/2026-10-25-0244-gated-takes-a-callers-base-and-ci.md`.
+Every header is re-stamped for 2026-10-25.1. Why: `docs/DECISIONS.md#gated-takes-a-callers-base-and-ci`.
 ## 2026-10-25 — the deploy library sees through linked folders in its ownership and cleanup checks (deploy-lib VERSION 2026-10-25; the standard is unchanged and VERSION is not bumped)
 **Card 678.** `chown_root_owned` and `root_owned_count` in `ownership.sh` refused a link with
 `! -L`, but `link/` makes `-L` false and `find -P "link/"` then walks the link's target; so did a
@@ -153,12 +153,12 @@ a delivery through the fake tmux, and the verdicts on the autoclear's screens; `
 is the T5 table for the new guards. `README.md` names the second install copy. The Pi's
 session-autoclear vendors the lib byte-identical.
 
-Why: `docs/decisions/2026-10-23-1950-one-shared-dialog-check.md`.
+Why: `docs/DECISIONS.md#one-shared-dialog-check`.
 
 ## 2026-10-23 — one shared runner for guard mutants (the standard is unchanged and VERSION is not bumped)
 **Card 578.** New `scripts/guard-mutants.sh <target> <table>`: per table row it changes one exact line in a copy of the target on disk and runs the row's case with `MUTANT_TARGET` set to the copy. Each case runs in its own fresh directory under a time limit (`GUARD_MUTANTS_TIMEOUT`, default 120s). The case must be green on an unmutated copy (else exit 2) and red on the mutant; a survivor, a mutant that does not parse and a timeout each exit 1, named. A row matching no line or several is refused before any case runs. Its own suite, `scripts/guard-mutants-test.sh`, is gate step 3; the old steps 3 to 8 are now 4 to 9.
 
-Why: `docs/decisions/2026-10-23-0117-one-guard-mutant-runner.md`.
+Why: `docs/DECISIONS.md#one-guard-mutant-runner`.
 
 ## 2026-10-22 — S8: a security finding is fixed first (VERSION 2026-10-22.1)
 **New rule S8; the standard now has 40 rules** (Ghie, 2026-10-22). An advisory on an app's
@@ -189,7 +189,7 @@ decision file explains the cadence, and #57's guard-mutant entry moves out of `D
 file of its own. `README.md` and `SOURCES.md` follow. The standards text moved,
 so `VERSION` moves with it.
 
-Why: `docs/decisions/2026-10-22-2050-decisions-are-one-file-each.md`.
+Why: `docs/DECISIONS.md#decisions-are-one-file-each`.
 
 ## 2026-10-16 — the deploy library counts root-owned paths, `.claude/**` aside (deploy-lib VERSION 2026-10-16; the standard is unchanged and VERSION is not bumped)
 **Card 527.** New `root_owned_count <dir>` in `ownership.sh` prints how many paths under `<dir>` root
