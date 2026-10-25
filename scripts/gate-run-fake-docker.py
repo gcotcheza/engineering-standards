@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # gate-run-test.sh's docker: logs argv and each -f/--env-file source (owner, sha256 read now) and answers compose config
-# from the YAML it was given; container writes run as --user. Its log and probe dir are the directory it is installed in.
+# from the YAML and --profile it was given; container writes run as --user. Its log and probe dir are its own directory.
 import hashlib, json, os, re, sys
 import yaml
 
@@ -17,12 +17,13 @@ if "-p" in args and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args[args.index("-p
     sys.exit("invalid project name %r" % args[args.index("-p") + 1])
 if args[:1] != ["compose"]:
     sys.exit(0)
-proj, files, rest, i = os.getcwd(), [], [], 1
+proj, files, profiles, rest, i = os.getcwd(), [], set(), [], 1
 while i < len(args):
     a = args[i]
     if a in ("--project-directory", "-p", "-f", "--env-file", "--profile"):
         if a == "--project-directory": proj = args[i + 1]
         if a == "-f": files.append(args[i + 1])
+        if a == "--profile": profiles.add(args[i + 1])
         i += 2
     else:
         rest.append(a); i += 1
@@ -41,11 +42,13 @@ def as_user(uid_gid, fn):
 def override_sources(suffix):
     return [v["source"] for f in files if "/override" in f for svc in (json.load(open(f)).get("services") or {}).values()
             for v in svc["volumes"] if v["source"].endswith(suffix)]
-skip_override = os.path.exists(os.path.join(here, "ignore-override"))
+skip_override = os.path.exists(os.path.join(here, "ignore-override")) and set(open(os.path.join(here, "ignore-override")).read().split())
 services, top = {}, {"volumes": {}, "networks": {}}
 for f in files:
-    if skip_override and "/override" in f: continue
     doc = yaml.safe_load(open(f)) or {}
+    if skip_override is not False and "/override" in f:
+        if not skip_override: continue
+        doc = {"services": {k: v for k, v in (doc.get("services") or {}).items() if k not in skip_override}}
     for kind in top:
         for key, v in (doc.get(kind) or {}).items():
             top[kind][key] = dict(v or {})
@@ -70,7 +73,9 @@ for f in files:
                 out["build"] = {"context": os.path.normpath(os.path.join(proj, ctx))}
             else:
                 out[k] = v
+active = lambda svc: not svc.get("profiles") or "*" in profiles or profiles & set(svc["profiles"])
 if "config" in rest:
+    services = {k: v for k, v in services.items() if active(v)}
     name = args[args.index("-p") + 1] if "-p" in args else "x"
     for kind in top:
         for key, v in top[kind].items():
@@ -84,6 +89,9 @@ if "config" in rest:
 if "up" in rest or "run" in rest:
     for name, svc in services.items():
         vols = svc.get("volumes", [])
+        if "up" in rest and active(svc):
+            with open(os.path.join(here, "docker.log"), "a") as log:
+                log.writelines("MOUNT %s %s %s\n" % (name, v["target"], "ro" if v.get("read_only") else "rw") for v in vols if v.get("type") == "bind")
         for p in (x for x in vols if x.get("type") == "bind" and x.get("read_only")):
             for v in vols:
                 if v["target"].startswith(p["target"].rstrip("/") + "/") and not os.path.isdir(os.path.join(p["source"], v["target"][len(p["target"].rstrip("/")) + 1:])):

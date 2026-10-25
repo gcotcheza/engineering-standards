@@ -76,8 +76,9 @@ APP_UID=$(id -u -- "$APP_USER" 2>/dev/null) && APP_GID=$(id -g -- "$APP_USER") |
 
 root_git init -q --bare "$REPO" || die "cannot create $REPO"
 mirror="$SRC/$APP.git"
-if [ -d "$mirror/objects" ] && root_owned_chain "$mirror/objects"; then printf '%s\n' "$mirror/objects" >"$REPO/objects/info/alternates"
-elif [ -e "$mirror" ]; then printf "gate-run: %s is not root's alone, so it is not borrowed\n" "$mirror" >&2; fi
+if [ -d "$mirror/objects" ] && root_owned_chain "$mirror/objects" && [ -z "$(find "$mirror/objects" \( \( ! -uid "$ROOT_UID" ! -uid 0 \) -o -perm /022 -o -type l \) -print -quit 2>&1)" ]; then
+    printf '%s\n' "$mirror/objects" >"$REPO/objects/info/alternates"
+elif [ -e "$mirror" ]; then printf "gate-run: %s or something in its objects is not root's alone, so it is not borrowed\n" "$mirror" >&2; fi
 mirror_git fetch --quiet --no-tags "${URL_PREFIX}$APP.git" '+refs/heads/main:refs/remotes/origin/main' "$SHA" || die "${SHA:0:12} could not be fetched from ${URL_PREFIX}$APP.git: push it first, only a sha on GitHub is gated"
 mirror_git cat-file -e "$SHA^{commit}" 2>/dev/null || die "${SHA:0:12} is not a commit after the fetch from GitHub"
 

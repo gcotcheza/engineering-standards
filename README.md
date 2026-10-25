@@ -64,7 +64,7 @@ runs one app's gate script as root from a root-owned export of that sha, fetched
 docker compose calls (read-only tree, root's override and bind check, `--build` for composer/npm/vite
 as the app uid) and the ledger seams pointed into the run; gate-run writes the one ledger row for the
 exported sha after re-hashing the tree. A deliberate red proof (rule 20) passes `--ledger <file>`, a
-file only root can write, so no real row is written. Refusals exit 2 with `gate-run: REFUSED: <why>`.
+file named `*ledger*` only root can write, so no real row is written; `GATE_LEDGER=` alone is refused. Refusals exit 2 with `gate-run: REFUSED: <why>`.
 The export-tree block it shares with fleet-deploy is `scripts/lib/gate/export.sh`. Its tests are
 `scripts/gate-run-test.sh` (root; one gate step; `GR_CASES="A3 L"` picks cases, `GR_AS_NOBODY=1` runs
 gate-run as nobody, `GR_ENTRY`/`GR_RUN_SH`/`GR_COMPOSE_SH`/`GR_EXPORT_SH` test a mutant copy,

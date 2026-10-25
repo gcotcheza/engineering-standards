@@ -30,6 +30,7 @@ while [ $# -gt 0 ]; do
         *) die "after <script> only --keep, --artifacts-to, --ledger and -- args are accepted" ;;
     esac
 done
+[ -z "${GATE_LEDGER:-}" ] || [ -n "$ledger" ] || die "GATE_LEDGER is set but gate-run never reads it: a red proof passes --ledger <file>, or its row lands in the real ledger"
 [ -z "$artifacts" ] || [[ $artifacts =~ ^/[A-Za-z0-9._/-]+$ && /$artifacts/ != */../* ]] || die "--artifacts-to is not an absolute path of [A-Za-z0-9._/-] without .."
 [[ $app =~ ^[a-z0-9-]+$ ]] || die "the app name is not one word of a-z, 0-9 and -"
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || die "the sha is not 40 lowercase hex: a branch, HEAD or a short sha names no fixed bytes"
@@ -60,7 +61,6 @@ clone_lib() { # destination -> LIB_SHA; 1 and LIB_ERR on refusal
     root_only_chain "$c" || { LIB_ERR="$BAD is a symlink, not root's, or writable by others: the gate lib is not read from under it"; return 1; }
     bad=$(cd / && find "$c" "$c/scripts" "$c/scripts/lib" -maxdepth 0 \( ! -uid "$LIB_UID" -o -type l -o -perm /022 \) -print 2>&1 && find "$c/.git" "${LIB_SUBS[@]/#/$c/}" \( ! -uid "$LIB_UID" -o -type l -o -perm /022 \) -print 2>&1) || bad="find failed under $c"
     [ -z "$bad" ] || { LIB_ERR="$c is not root's alone: $(printf '%s' "$bad" | tr '\n' ' ' | cut -c1-160)"; return 1; }
-    [ "$LIB_REF" != refs/heads/main ] || [ "$(clone_git symbolic-ref -q HEAD 2>/dev/null)" = refs/heads/main ] || { LIB_ERR="$c is not on main"; return 1; }
     LIB_SHA=$(clone_git rev-parse --verify --quiet "$LIB_REF^{commit}" 2>/dev/null) && [[ $LIB_SHA =~ ^[0-9a-f]{40}$ ]] || { LIB_ERR="$c $LIB_REF does not resolve to a sha1 commit"; return 1; }
     bad=$(clone_git status --porcelain=v1 --untracked-files=all --ignored=matching -- "${LIB_SUBS[@]}" 2>/dev/null) || bad="git status failed"
     [ -z "$bad" ] || { LIB_ERR="$c has modified, untracked or ignored files under the lib: $(printf '%s' "$bad" | tr '\n' ' ' | cut -c1-160)"; return 1; }
@@ -84,6 +84,7 @@ clone_lib() { # destination -> LIB_SHA; 1 and LIB_ERR on refusal
 
 if [ -n "$ledger" ]; then
     [[ $ledger =~ ^/[A-Za-z0-9._/-]+$ && /$ledger/ != */../* && /$ledger/ != */./* ]] || die "--ledger is not an absolute path of [A-Za-z0-9._/-] without . or .."
+    [[ ${ledger##*/} == *ledger* ]] || die "--ledger $ledger is not named *ledger*"
     root_only_chain "$(dirname -- "$ledger")" && { [ ! -e "$ledger" ] && [ ! -L "$ledger" ] || { [ -f "$ledger" ] && root_only "$ledger"; }; } || die "--ledger $ledger is not a root-only file in a directory chain only root can write"
 fi
 

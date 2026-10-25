@@ -23,6 +23,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ $# -gt 0 ] || die "no compose command"
+for a in "$@"; do [[ $a =~ ^-[A-Za-z]*[fp] || $a =~ ^--(file|project-name|project-directory|env-file)(=|$) ]] && die "$a after the compose options could name another file, project or env file: give -f and --env-file first, and spell a subcommand's own flag long (--follow, --force, --publish)"; done
 if [ ${#files[@]} -eq 0 ]; then
     [ -f "$RUN/compose-used" ] || die "no -f given and no earlier call named the compose files"
     mapfile -t files <"$RUN/compose-used"
@@ -42,7 +43,7 @@ done
 # shellcheck source=scripts/lib/deploy/compose.sh
 . "$RUN/lib/scripts/lib/deploy/compose.sh" || die "the deploy compose policy could not be loaded"
 DEPLOY_APP_BINDS_DIR=$RUN/gate-grants-no-extra-binds DEPLOY_ROOT_UID=$ROOT_UID
-json=$(dc -p "$APP" "${files[@]}" --env-file "$envf" config --format json) || die "compose config failed over the exported files"
+json=$(dc -p "$APP" "${files[@]}" --env-file "$envf" --profile '*' config --format json) || die "compose config failed over the exported files"
 deploy_compose_policy "$TREE" "$json" "$APP" "$envf" dc -p "$APP" "${files[@]}" --env-file "$envf" || die "$DEPLOY_COMPOSE_ERR"
 
 override=$RUN/override.yml
@@ -65,7 +66,7 @@ for name, svc in (cfg.get("services") or {}).items():
 json.dump({"services": out}, open(sys.argv[4], "w"))
 ' "$TREE" "$BUILD" "$build" "$override" || die "cannot write $override"
 
-final=$(dc -p "$PROJECT" "${files[@]}" -f "$override" --env-file "$envf" config --format json) || die "compose config failed with $override"
+final=$(dc -p "$PROJECT" "${files[@]}" -f "$override" --env-file "$envf" --profile '*' config --format json) || die "compose config failed with $override"
 printf '%s' "$final" | env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c '
 import json, os, sys
 run, build, project = sys.argv[1], sys.argv[2], sys.argv[3]

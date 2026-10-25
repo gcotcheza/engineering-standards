@@ -88,12 +88,14 @@ case "\$mode" in
     preswap) mv "\$GATE_BUILD/artifacts" "\$GATE_BUILD/artifacts.old" && ln -s "\$P/fake-etc" "\$GATE_BUILD/artifacts"
         \$GATE_COMPOSE -f docker-compose.yml up -d || exit \$? ;;
     badenv) \$GATE_COMPOSE -f docker-compose.yml --env-file ../manifest up -d || exit \$? ;;
-    compose) \$GATE_COMPOSE -f docker-compose.yml --env-file .env.e2e up -d || exit \$? ;;
+    compose) \$GATE_COMPOSE -f docker-compose.yml --env-file .env.e2e up || exit \$? ;;
+    profiled) \$GATE_COMPOSE -f docker-compose.yml --profile assets up -d || exit \$? ;;
+    passf) shift; \$GATE_COMPOSE -f docker-compose.yml "\$@" || exit \$? ;;
     build) \$GATE_COMPOSE --build -f docker-compose.yml run app true || exit \$?; \$GATE_COMPOSE -f docker-compose.yml up -d || exit \$? ;;
 esac
 GATE_SUITE_PASSED=1
 EOF
-printf 'services:\n  app:\n    image: alpine:3.20\n    command: ["true"]\n    volumes:\n      - .:/var/www/html\n' >"$SRC/docker-compose.yml"
+printf 'services:\n  app:\n    image: alpine:3.20\n    command: [sh, -c, "echo report >/var/www/html/e2e/artifacts/report.txt"]\n    volumes:\n      - .:/var/www/html\n' >"$SRC/docker-compose.yml"
 printf 'readme\n' >"$SRC/README.md"; printf 'ignored.log\n' >"$SRC/.gitignore"
 g -C "$SRC" add -A && g -C "$SRC" commit -qm base && g -C "$SRC" remote add origin "$GH" && g -C "$SRC" push -q origin main || exit 2
 BASE=$(g -C "$SRC" rev-parse HEAD)
@@ -114,6 +116,7 @@ commit ahead 'printf more >>README.md' && SHA_ahead=$SHA || exit 2
 commit dotenv 'printf "X=1\n" >.env' && SHA_dotenv=$SHA || exit 2
 commit stack 'printf "include:\n  - /var/www/x/compose.yml\nservices: {}\n" >stack.yml' && SHA_stack=$SHA || exit 2
 commit named 'printf "services:\n  app:\n    image: alpine:3.20\n    volumes:\n      - .:/var/www/html\n      - data:/data\nvolumes:\n  data:\n    name: gt719_data\n" >docker-compose.yml' && SHA_named=$SHA || exit 2
+commit profiled 'printf "  assets:\n    image: alpine:3.20\n    profiles: [assets]\n    volumes:\n      - .:/app\n" >>docker-compose.yml' && SHA_profiled=$SHA || exit 2
 NOPUSH=1 commit unpushed 'printf local >>README.md' && SHA_unpushed=$SHA || exit 2
 g -C "$SRC" checkout -q "$BASE" || exit 2
 g clone -q --bare "$GH" "$S/mirror" || exit 2
@@ -308,9 +311,15 @@ if want A19; then
     mv -- "$S/mirror" "$S/deploy-src/$APP.git" || exit 2
     gr "$APP" "$BASE" scripts/check.sh
     ok A19a '[ "$RC" = 0 ] && [ "$(cat "$P/alternates" 2>/dev/null)" = "$S/deploy-src/$APP.git/objects"$'"'"'\n'"'"'"$ME" ]'
-    chmod 777 "$S/deploy-src/$APP.git/objects"; gr "$APP" "$BASE" scripts/check.sh
+    chmod 777 "$S/deploy-src"; gr "$APP" "$BASE" scripts/check.sh
     ok A19b '[ "$RC" = 0 ] && [ ! -e "$P/alternates" ] && [[ $OUT == *"is not root'"'"'s alone, so it is not borrowed"* ]]'
-    chmod 755 "$S/deploy-src/$APP.git/objects"; mv -- "$S/deploy-src/$APP.git" "$S/mirror"
+    chmod 755 "$S/deploy-src"
+    for bad in 'chmod 777 objects/info' 'ln -s /etc objects/info/evil'; do
+        (cd "$S/deploy-src/$APP.git" && eval "$bad"); gr "$APP" "$BASE" scripts/check.sh
+        ok "A19c:$bad" '[ "$RC" = 0 ] && [ ! -e "$P/alternates" ] && [[ $OUT == *"something in its objects is not root'"'"'s alone"* ]]'
+        chmod 755 "$S/deploy-src/$APP.git/objects/info"; rm -f -- "$S/deploy-src/$APP.git/objects/info/evil"
+    done
+    mv -- "$S/deploy-src/$APP.git" "$S/mirror"
 fi
 if want A20; then
     gr "$APP" "$SHA_stack" scripts/check.sh -- stack
@@ -319,6 +328,18 @@ fi
 if want N1; then
     gr "$APP" "$SHA_named" scripts/check.sh -- compose
     ok N1 '[ "$RC" = 2 ] && [[ $OUT == *"name gt719_data is outside this gate project"* ]] && [ -f "$P/docker.log" ] && ! grep -q "ARGV.* up" "$P/docker.log"'
+fi
+if want PF; then
+    gr "$APP" "$SHA_profiled" scripts/check.sh -- profiled
+    ok PFa '[ "$RC" = 0 ] && grep -q "^MOUNT assets /app ro$" "$P/docker.log" && grep -q "^MOUNT assets /app/vendor ro$" "$P/docker.log" && ! grep -q "^MOUNT assets /app rw" "$P/docker.log"'
+    printf 'assets\n' >"$P/ignore-override"; gr "$APP" "$SHA_profiled" scripts/check.sh -- profiled; rm -f "$P/ignore-override"
+    ok PFb '[ "$RC" = 2 ] && [[ $OUT == *"compose assets: "*"mounted read-write"* ]] && ! grep -q "ARGV.* up" "$P/docker.log"'
+fi
+if want PT; then
+    for a in '-f /etc/x.yml' '--file=/etc/x.yml' '-fx.yml' '-dp other' '--project-name other' '--project-directory=/' '--env-file=.env.e2e'; do
+        read -ra extra <<<"$a"; gr "$APP" "$BASE" scripts/check.sh -- passf up "${extra[@]}"
+        ok "PT:$a" '[ "$RC" = 2 ] && [[ $OUT == *"after the compose options could name another file"* ]] && [ ! -e "$P/docker.log" ]'
+    done
 fi
 if want D2; then
     for m in norow double other; do
@@ -335,12 +356,16 @@ if want LG; then
     ok LGb '[ "$RC" = 2 ] && [[ $OUT == *"is not a root-only file"* ]] && no_run && [ ! -e "$P/open/ledger" ]'
     gr "$APP" "$BASE" scripts/check.sh --ledger ledger
     ok LGc '[ "$RC" = 2 ] && [[ $OUT == *"--ledger is not an absolute path"* ]] && no_run'
+    gr "$APP" "$BASE" scripts/check.sh --ledger "$S/redproof/out"
+    ok LGd '[ "$RC" = 2 ] && [[ $OUT == *"is not named *ledger*"* ]] && no_run && [ ! -e "$S/redproof/out" ]'
+    n=$(ledger_n); PRE=(env "GATE_LEDGER=$S/redproof/ledger-env"); gr "$APP" "$BASE" scripts/check.sh; PRE=()
+    ok LGe '[ "$RC" = 2 ] && [[ $OUT == *"GATE_LEDGER is set but gate-run never reads it"* ]] && no_run && [ "$(ledger_n)" = "$n" ]'
 fi
 if want C1; then
     if [ -f "${GR_FLEET_DEPLOY:-/usr/local/sbin/fleet-deploy}" ]; then
         block() { sed -n '/^# >>> clone-lib/,/^# <<< clone-lib/p' "$1" | sed -e 's/^[[:space:]]*//' -e '/^#/d' -e '/^$/d'; }
         block "$ENTRY" | grep -vE 'LIB_SUB|\$sub|run\.sh|gate lib|HEAD\^\{commit\}|local d=|chmod 644|is not a git clone"|under the lib:|^done$' >"$S/c1-gate"
-        block "${GR_FLEET_DEPLOY:-/usr/local/sbin/fleet-deploy}" | grep -vE 'LIB_SUB|summary\.sh|deploy lib|origin/main\^\{commit\}|scripts/lib/deploy/|100755|local d=|^done$' >"$S/c1-deploy"
+        block "${GR_FLEET_DEPLOY:-/usr/local/sbin/fleet-deploy}" | grep -vE 'LIB_SUB|summary\.sh|deploy lib|origin/main\^\{commit\}|scripts/lib/deploy/|100755|local d=|symbolic-ref|^done$' >"$S/c1-deploy"
         OUT=$(diff "$S/c1-gate" "$S/c1-deploy")
         ok C1 '[ -z "$OUT" ] && [ "$(wc -l <"$S/c1-gate")" -ge 15 ]'
     else
