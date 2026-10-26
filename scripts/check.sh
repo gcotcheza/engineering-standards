@@ -7,7 +7,8 @@
 #   2) scripts/version-text-pair.sh and its own test — VERSION and
 #      ENGINEERING-STANDARDS.md move together, or neither moves — then
 #      scripts/deploy-lib-version.sh and its test (a lib change raises the lib's
-#      VERSION), W7's decisions-check.sh on this tree and the W4 closing-line test
+#      VERSION), W7's decisions-check.sh on this tree, the W4 closing-line test, and
+#      S1's scripts/hook-bypass-scan.sh on this tree and its own test
 #   3) scripts/guard-mutants-test.sh, the T5 guard-mutant runner's own test
 #   4) scripts/fleet-versions-test.sh, the fleet check's own test
 #   5) scripts/fleet-budget-test.sh, the budget gate's own test
@@ -126,6 +127,11 @@ step_2() {
     "${REPO_ROOT}/scripts/deploy-lib-version-test.sh" || fail_step 2
     DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 2
     bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 2
+    # The prose names the routes; the mutant tables are test data that rewrite the root gate's env -i lines or the scanner's;
+    # the deploy lib's test.sh has a git-as shim that drops HOME on purpose until card 759, in the next lib VERSION bump.
+    HOOK_BYPASS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
+        scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/hook-bypass-scan-mutants.txt scripts/lib/deploy/test.sh || fail_step 2
+    bash "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 2
 }
 
 step_3() {
