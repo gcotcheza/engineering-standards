@@ -127,9 +127,10 @@ step_2() {
     "${REPO_ROOT}/scripts/deploy-lib-version-test.sh" || fail_step 2
     DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 2
     bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 2
-    # The prose names the routes; the mutant tables are test data that rewrite the root gate's env -i lines or the scanner's.
+    # The prose names the routes; the mutant tables are test data that rewrite the root gate's env -i lines or the scanner's;
+    # the deploy lib's test.sh has a git-as shim that drops HOME on purpose, and the lib changes only with a VERSION bump.
     HOOK_BYPASS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
-        scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/hook-bypass-scan-mutants.txt || fail_step 2
+        scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/hook-bypass-scan-mutants.txt scripts/lib/deploy/test.sh || fail_step 2
     bash "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 2
 }
 

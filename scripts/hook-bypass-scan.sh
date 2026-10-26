@@ -128,6 +128,7 @@ function rules(t, s,    h, e, rest) {
     if (t ~ /git_config_[a-z0-9_]+/) hit("a GIT_CONFIG_ shim")
     if (index(t, "commit-tree")) hit("commit-tree")
     if (index(t, "fast-import")) hit("fast-import")
+    if (index(t, "include.path") || t ~ /includeif\.[^=;&|]*\.path/) hit("include.path (a config file can set core.hooksPath)")
     if (t ~ /hash-object[^;|&]*[ \t]-[a-z]*w/) hit("hash-object -w")
     # Env names keep their case. A -e HOME= in a docker run, before a command end, $( or backtick, hands a container its env.
     h = s
@@ -140,9 +141,14 @@ function rules(t, s,    h, e, rest) {
         h = h e rest
     }
     # One pass: env -i, assignments, HOME=/root, assignments, then a command word, all one command: root keeps its own home.
-    if (match(h, ROOTHOME)) { e = substr(h, RSTART, RLENGTH); sub("[ \t]" ROOT "[ \t]", " ", e); h = substr(h, 1, RSTART - 1) e substr(h, RSTART + RLENGTH) }
+    if (match(h, ROOTHOME)) { e = substr(h, RSTART, RLENGTH); sub("[ \t]" ROOT "[ \t]", " ", e); sub(/env[ \t]+-i/, "env", e); h = substr(h, 1, RSTART - 1) e substr(h, RSTART + RLENGTH) }
     if (h ~ /(^|[^A-Za-z0-9_])HOME\+?=/) hit("HOME= (another home drops a hook set in ~/.gitconfig)")
     if (h ~ /XDG_CONFIG_HOME\+?=/) hit("XDG_CONFIG_HOME=")
+    # A home taken away is another home: env -i past the pass above with git next, or env -u or unset of either home.
+    if (h ~ ENV_CMD "(-[0iv]*i[^ \t;&|]*|--ignore-e[a-z]*|-)" ENV_OPTS "[ \t]+(" ASSIGN ")*" GITWORD) hit("env -i (git with no HOME at all)")
+    if (h ~ ENV_CMD "(-[0iv]*u[ \t]*|--u[a-z]*([ \t]+|=))" HOMES WORDEND || h ~ WORD "unset" ARGS "[ \t]+" HOMES WORDEND) hit("env -u or unset of a home")
+    # A home set without the text HOME=: an index, read, printf -v, declare or local, a loop variable, or let or (( )).
+    if (h ~ "(^|[^A-Za-z0-9_])" HOMES "\\[[^]]*\\]\\+?=" || h ~ SETS HOMES WORDEND || h ~ ARITH) hit("a home set by read, declare, printf -v, for, let or an index")
 }
 function judge(file, n, s, argvn,    d) {
     found = ""
@@ -169,6 +175,16 @@ BEGIN {
     ROOT = "HOME=/root"
     COMMAND = "[^ \t;&|=]+([ \t;&|)`]|$)"
     ROOTHOME = "(^|[ \t;&|({`])env[ \t]+-i[ \t]+(" ASSIGN ")*" ROOT "[ \t]+(" ASSIGN ")*" COMMAND
+    HOMES = "(XDG_CONFIG_)?HOME"
+    WORDEND = "([^A-Za-z0-9_]|$)"
+    WORD = "(^|[^A-Za-z0-9_.-])"
+    ARGS = "([ \t]+[^ \t;&|]+)*"
+    # The options of env, each with at most one argument, so a -i or -u after -v or -C dir is still read.
+    ENV_OPTS = "([ \t]+-[^ \t;&|]*([ \t]+[^- \t;&|][^ \t;&|]*)?)*"
+    ENV_CMD = WORD "env" ENV_OPTS "[ \t]+"
+    GITWORD = "[^ \t;&|=]*(git|GIT)[^ \t;&|=]*([ \t;&|)`]|$)"
+    SETS = WORD "((read|readarray|mapfile|local|declare|typeset)" ARGS "[ \t]+|export" ARGS "[ \t]+-[a-z]*n" ARGS "[ \t]+|printf" ARGS "[ \t]+-v[ \t]*|(for|select)[ \t]+)"
+    ARITH = "(" WORD "let" ARGS "[ \t]+|\\(\\(([^)]*[^A-Za-z0-9_])?)" HOMES "[ \t]*(\\+\\+|--|([-+*/%&|^]|<<|>>)?=([^=]|$))"
     CONTAINER_ENV = "(^|[ \t])(-e|--env)[ \t=]+[\"" q "]?HOME="
     VALUEOPT = "^(-[a-z]*[mfct]|--(message|file|author|date|template|trailer|cleanup|fixup|squash|reuse-message|reedit-message))$"
     ELEM = "(" Q "[^\"" q "]*" Q "|[^][ \t,\"" q "()]+)"
