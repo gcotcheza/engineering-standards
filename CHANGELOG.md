@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-26 — a sanity check for deletion mutants (the standard is unchanged and VERSION is not bumped)
+New `scripts/mutant-sane.sh <original> <mutant> [<from>[-<to>]]`, run before a sweep trusts a red: it
+refuses a mutant that is not a regular file on disk (missing, FIFO, `/dev/fd/*`, `<(...)`), is
+byte-identical, has a different mode, fails `bash -n` when the original is a bash/sh script, or is not
+exactly the intended deletion. Its suite, `scripts/mutant-sane-test.sh` (case groups 0–6), joins gate
+step 3; `scripts/mutant-sane-mutants.txt` deletes each guard line and every one turns the suite red.
+Why: `docs/decisions/2026-10-26-1915-mutant-sane-before-red.md`.
+
 ## 2026-10-26 — T9's check follows the shared deploy lib (the standard is unchanged and VERSION is not bumped)
 **Card 749.** `gate-image-tags.sh` now follows a gate's `. "${DEPLOY_LIB}/…"` into `scripts/lib/deploy`
 of the clone it runs from, so a bare compose call below the ledger arm is judged instead of

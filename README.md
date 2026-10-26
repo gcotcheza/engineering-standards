@@ -60,6 +60,14 @@ the mutant; a mutant whose case stays green, whose bash copy does not parse, or 
 matches no line, or more than one, is refused (exit 2) before any case runs. Run it as `nobody` when
 the target copies, chmods or deletes.
 
+`scripts/mutant-sane.sh <original> <mutant> [<from>[-<to>]]` is what a deletion sweep runs before it
+believes a red. Silent and exit 0 when the mutant is a regular file on disk, differs from the original,
+keeps its mode, still parses (`bash -n`, when the original has a bash or sh shebang) and is the
+original with exactly the given lines removed (exactly one line when no range is given); otherwise
+one `mutant-sane: REFUSED <why>` line and exit 1. It cannot see a deleted `exit` that still prints the
+grepped text, so suites assert the exit code too. Its T5 table is `scripts/mutant-sane-mutants.txt`;
+why: `docs/decisions/2026-10-26-1915-mutant-sane-before-red.md`.
+
 `scripts/gate-run.sh <app> <sha40> <script> [--keep] [--artifacts-to <dir>] [--ledger <file>] [-- args]`
 runs one app's gate script as root from a root-owned export of that sha, fetched from GitHub only, in
 `/run/<app>-gate/<id>`; it never reads the app's worktree. The script gets `$GATE_COMPOSE` for its
