@@ -810,6 +810,28 @@ BIG="needle$(printf '\nfiller%.0s' {1..200000})"
 equals 'case 65: matches sees the match' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
 equals 'case 65: lacks reports the match' "$( (lacks x "${BIG}" 'needle') 2>&1 >/dev/null | grep -c '^FAIL x ')" 1
 
+# --- 66. a here-string is not a heredoc -> the build below it is still judged --
+service hstr docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script hstr check.sh 'read -r a <<<y
+read -r b <<< "$v"
+read -r c <<<'"'"'EOF'"'"'
+x=1; read -r d <<<EOF
+docker compose -f docker-compose.yml build app'
+run hstr
+matches 'case 66: the build below four here-strings is found' "${OUT}" \
+    'FAIL .*: the gate run at scripts/check\.sh:5 builds image tag x/app:latest'
+equals  'case 66: exit code' "${RC}" 1
+
+# --- 67. a quoted <<- heredoc still hides its body ------------------------------
+service hdocq docker-compose.yml 'x/app:latest' build
+gate_script hdocq check.sh "cat <<-'EOF'
+	docker compose -f docker-compose.yml build app
+	EOF"
+run hdocq
+lacks   'case 67: a <<- heredoc body is not a call' "${OUT}" 'builds image tag|unjudged calls'
+equals  'case 67: exit code' "${RC}" 0
+
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
     exit 0
