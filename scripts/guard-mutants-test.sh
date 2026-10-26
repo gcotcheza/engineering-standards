@@ -45,14 +45,14 @@ run "G1@@${REFUSES}@@${GUARD}@@" "G2@@${REFUSES}@@${GUARD}@@true"
 matches 'case 1: the deleted guard is red' "${OUT}" '^MUTANT G1: red \(case exit 1\)'
 matches 'case 1: the rewritten guard is red' "${OUT}" '^MUTANT G2: red \(case exit 1\)'
 matches 'case 1: a red mutant shows its case last line' "${OUT}" '^    last line: done$'
-matches 'case 1: the summary counts both red' "${OUT}" '^guard mutants: 2, 2 red, 0 survived, 0 do not parse, 0 timed out$'
+matches 'case 1: the summary counts both red' "${OUT}" '^guard mutants: 2, 2 red, 0 survived, 0 do not parse, 0 timed out, 0 refused as insane$'
 equals  'case 1: exit code' "${RC}" 0
 
 # --- 2. a mutant whose case stays green -> the runner fails, naming it ----------
 run "G1@@${REFUSES}@@${GUARD}@@" "S1@@${REFUSES}@@${GREET}@@echo \"hi \${1:-nobody}\""
 matches 'case 2: the green mutant is named' "${OUT}" '^MUTANT S1: SURVIVED, its case stayed green'
 matches 'case 2: the red one still counts' "${OUT}" '^MUTANT G1: red'
-matches 'case 2: the summary counts the survivor' "${OUT}" '^guard mutants: 2, 1 red, 1 survived, 0 do not parse, 0 timed out$'
+matches 'case 2: the summary counts the survivor' "${OUT}" '^guard mutants: 2, 1 red, 1 survived, 0 do not parse, 0 timed out, 0 refused as insane$'
 equals  'case 2: exit code' "${RC}" 1
 
 # --- 3. a line that matches nothing -> refused before any case runs -------------
@@ -111,7 +111,7 @@ if cmp -s -- "${WORK}/greet.sh.before" "${TARGET}"; then pass 'case 8: the targe
 run "P1@@${GREETS}@@${GREET}@@echo \"hello \${1"
 matches 'case 9: the unparsable mutant is refused' "${OUT}" '^MUTANT P1: REFUSED, does not parse'
 lacks   'case 9: it is not counted red' "${OUT}" '^MUTANT P1: red'
-matches 'case 9: the summary counts it' "${OUT}" '^guard mutants: 1, 0 red, 0 survived, 1 do not parse, 0 timed out$'
+matches 'case 9: the summary counts it' "${OUT}" '^guard mutants: 1, 0 red, 0 survived, 1 do not parse, 0 timed out, 0 refused as insane$'
 equals  'case 9: exit code' "${RC}" 1
 
 # --- 10. each case runs in its own fresh directory, never the caller's ------------
@@ -124,7 +124,7 @@ if [ -e "${CALLER}/state" ]; then fail 'case 10: a case wrote into the caller cw
 # --- 11. a case over its time limit is a failure, not red ---------------------------
 GUARD_MUTANTS_TIMEOUT=0.2 run "T1@@${GREETS}@@${GREET}@@sleep 4"
 matches 'case 11: the slow mutant is named' "${OUT}" '^MUTANT T1: TIMED OUT after 0.2s'
-matches 'case 11: the summary counts it' "${OUT}" '^guard mutants: 1, 0 red, 0 survived, 0 do not parse, 1 timed out$'
+matches 'case 11: the summary counts it' "${OUT}" '^guard mutants: 1, 0 red, 0 survived, 0 do not parse, 1 timed out, 0 refused as insane$'
 equals  'case 11: exit code' "${RC}" 1
 GUARD_MUTANTS_TIMEOUT=0.2 run "O1@@sleep 4@@${GUARD}@@"
 matches 'case 11: a case slow on the original is refused' "${OUT}" '^guard-mutants: REFUSED mutant O1: its case timed out after 0.2s on the unmutated original'
@@ -150,6 +150,22 @@ for sig in TERM HUP; do
     for _ in $(seq 20); do kill -0 "${case_pid:-0}" 2>/dev/null || break; sleep 0.1; done
     if [ -n "${case_pid}" ] && ! kill -0 "${case_pid}" 2>/dev/null; then pass "case 12: the case is stopped after ${sig}"; else fail "case 12: the case [${case_pid}] still runs after ${sig}"; fi
 done
+
+# --- 13. a mutant mutant-sane refuses is never red, and fails the run ----------------
+NOTRAIL=${WORK}/no-newline.sh
+printf '%s\n%s\n%s' '#!/usr/bin/env bash' "${GUARD}" "${GREET}" >"${NOTRAIL}"
+printf '%s\n' "I1@@${REFUSES}@@${GUARD}@@" >"${TABLE}"
+OUT="$(cd -- "${CALLER}" && bash "${RUNNER}" "${NOTRAIL}" "${TABLE}" 2>&1)"; RC=$?
+matches 'case 13: the mutant that gained a final newline is refused' "${OUT}" '^MUTANT I1: REFUSED as insane \(the mutant is not the original with exactly line\(s\) 2 removed\)'
+lacks   'case 13: it is not counted red' "${OUT}" '^MUTANT I1: red'
+matches 'case 13: the summary counts it' "${OUT}" '^guard mutants: 1, 0 red, 0 survived, 0 do not parse, 0 timed out, 1 refused as insane$'
+equals  'case 13: exit code' "${RC}" 1
+mkdir -- "${WORK}/lone"
+cp -p -- "${RUNNER}" "${WORK}/lone/guard-mutants.sh"
+run "G1@@${REFUSES}@@${GUARD}@@"
+OUT="$(bash "${WORK}/lone/guard-mutants.sh" "${TARGET}" "${TABLE}" 2>&1)"; RC=$?
+matches 'case 13: no mutant-sane.sh beside the runner is refused' "${OUT}" '^guard-mutants: REFUSED mutant-sane.sh is not beside this script'
+equals  'case 13: exit code, no mutant-sane' "${RC}" 2
 
 # --- 12. the helpers read a big output whose first line matches (card 704) ---
 # Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE

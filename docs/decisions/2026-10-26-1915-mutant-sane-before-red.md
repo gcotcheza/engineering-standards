@@ -1,4 +1,4 @@
-# A deletion mutant is checked before its red is believed
+# A mutant is checked before its red is believed
 
 A deletion mutant can go red for a reason that has nothing to do with the guard it removed, and the
 red then reads as proof. Three of these have happened: deleting one line inside an if-block left the
@@ -18,6 +18,13 @@ the original), and without one, `diff` must show one removed line and nothing ad
 `/dev/*` and `/proc/*` paths are refused by name even when `[ -f ]` says regular file: `/dev/fd/N`
 names whatever descriptor N holds in the process that opens it, so a case's child can read something
 else, or nothing.
+
+A replacement mutant, `<line> --replaced-with <text>`, must equal the original with exactly that line
+swapped for exactly that text; the line keeps its newline or its lack of one, so a sweep that adds a
+final newline is refused. `scripts/guard-mutants.sh` runs the check on every mutant it writes, after
+its own `bash -n`, which stays a separate outcome: it parse-checks any target `bash -n` accepts,
+including sourced libs with no shebang that this check skips. A refused mutant is never counted red,
+and the summary line only gains a last field, so anything reading the older fields still matches.
 
 It cannot see a deleted `exit` after which the script still prints the message a suite greps for:
 the mutant is sane and the suite is weak. Suites assert the exit code as well as the text.

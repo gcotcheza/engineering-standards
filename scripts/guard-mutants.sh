@@ -6,7 +6,8 @@
 #   a row is   id@@case@@exact line@@replacement   (an empty replacement deletes the line; blank and # lines skip)
 #   a case is a bash command run in a fresh empty directory with MUTANT_TARGET set to the copy: exit 0 is
 #   green, anything else is red, except a case over GUARD_MUTANTS_TIMEOUT seconds (default 120), a failure
-#   exit 0: every mutant went red; 1: a mutant survived, timed out or does not parse; 2: usage, or a refused row or original
+#   every mutant is first checked by scripts/mutant-sane.sh (beside this script); one it refuses is never red
+#   exit 0: every mutant went red; 1: a mutant survived, timed out, does not parse or was refused as insane; 2: usage, or a refused row or original
 set -euo pipefail
 
 usage() { printf 'usage: guard-mutants.sh <target> <table>\n' >&2; exit 2; }
@@ -17,12 +18,14 @@ TARGET=$1
 TABLE=$2
 [ -f "${TARGET}" ] || refuse "the target is not a regular file: ${TARGET}"
 [ -f "${TABLE}" ] || refuse "the table is not a regular file: ${TABLE}"
+SANE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/mutant-sane.sh"
+[ -f "${SANE}" ] || refuse "mutant-sane.sh is not beside this script: ${SANE}"
 LIMIT=${GUARD_MUTANTS_TIMEOUT:-120}
 [[ ${LIMIT} =~ ^(0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(\.[0-9]+)?)$ ]] || refuse "GUARD_MUTANTS_TIMEOUT is not a number of seconds above 0: ${LIMIT}"
 NAME=${TARGET##*/}
 SEP='@@'
 
-ids=() cases=() olds=() news=()
+ids=() cases=() olds=() news=() ats=()
 declare -A seen=()
 row_no=0
 while IFS= read -r row || [ -n "${row}" ]; do
@@ -39,7 +42,8 @@ while IFS= read -r row || [ -n "${row}" ]; do
     [ "${old}" != "${new}" ] || refuse "mutant ${id}: the replacement is the line itself, so nothing would change"
     hits=$(OLD=${old} awk '($0 "") == ENVIRON["OLD"] { n++ } END { print n + 0 }' "${TARGET}")
     [ "${hits}" -eq 1 ] || refuse "mutant ${id}: its line matches ${hits} lines of ${TARGET}, not exactly one: ${old}"
-    ids+=("${id}"); cases+=("${case_cmd}"); olds+=("${old}"); news+=("${new}")
+    at=$(OLD=${old} awk '($0 "") == ENVIRON["OLD"] { print NR; exit }' "${TARGET}")
+    ids+=("${id}"); cases+=("${case_cmd}"); olds+=("${old}"); news+=("${new}"); ats+=("${at}")
 done <"${TABLE}"
 [ "${#ids[@]}" -gt 0 ] || refuse "the table names no mutant: ${TABLE}"
 
@@ -81,7 +85,7 @@ for i in "${!ids[@]}"; do
     original_green[${cases[i]}]=1
 done
 
-red=0 survived=0 unparsed=0 slow=0
+red=0 survived=0 unparsed=0 slow=0 insane=0
 for i in "${!ids[@]}"; do
     d=${WORK}/m-${ids[i]}
     mkdir -- "${d}"
@@ -92,6 +96,11 @@ for i in "${!ids[@]}"; do
     if [ "${parse_check}" -eq 1 ] && ! bash -n -- "${d}/${NAME}" 2>/dev/null; then
         unparsed=$((unparsed + 1)); printf 'MUTANT %s: REFUSED, does not parse: %s\n' "${ids[i]}" "${olds[i]}"; continue
     fi
+    sane_args=("${TARGET}" "${d}/${NAME}" "${ats[i]}")
+    [ -z "${news[i]}" ] || sane_args+=(--replaced-with "${news[i]}")
+    if ! why=$(bash "${SANE}" "${sane_args[@]}" 2>&1); then
+        insane=$((insane + 1)); printf 'MUTANT %s: REFUSED as insane (%s): %s\n' "${ids[i]}" "${why#mutant-sane: REFUSED }" "${olds[i]}"; continue
+    fi
     run_case "${d}" "${cases[i]}"
     ! timed_out "${rc}" || { slow=$((slow + 1)); printf 'MUTANT %s: TIMED OUT after %ss, which is not red: %s\n' "${ids[i]}" "${LIMIT}" "${olds[i]}"; continue; }
     [ "${rc}" -ne 0 ] || { survived=$((survived + 1)); printf 'MUTANT %s: SURVIVED, its case stayed green with this line changed: %s\n' "${ids[i]}" "${olds[i]}"; continue; }
@@ -99,5 +108,5 @@ for i in "${!ids[@]}"; do
     printf 'MUTANT %s: red (case exit %s): %s\n    last line: %s\n' "${ids[i]}" "${rc}" "${olds[i]}" "$(last_line "${d}")"
 done
 
-printf 'guard mutants: %s, %s red, %s survived, %s do not parse, %s timed out\n' "${#ids[@]}" "${red}" "${survived}" "${unparsed}" "${slow}"
-[ "$((survived + unparsed + slow))" -eq 0 ] || exit 1
+printf 'guard mutants: %s, %s red, %s survived, %s do not parse, %s timed out, %s refused as insane\n' "${#ids[@]}" "${red}" "${survived}" "${unparsed}" "${slow}" "${insane}"
+[ "$((survived + unparsed + slow + insane))" -eq 0 ] || exit 1

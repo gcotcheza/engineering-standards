@@ -1,4 +1,4 @@
-# T5 mutants for scripts/mutant-sane.sh, for scripts/guard-mutants.sh: each guard line deleted (or its condition dropped).
+# T5 mutants for scripts/mutant-sane.sh, for scripts/guard-mutants.sh: each guard line deleted (or its condition dropped or replaced).
 #   MUTANT_SANE_TEST=$PWD/scripts/mutant-sane-test.sh scripts/guard-mutants.sh scripts/mutant-sane.sh scripts/mutant-sane-mutants.txt
 not-on-disk@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@saved_on_disk "${MUTANT}" || refuse "the mutant is not a regular file saved on disk: ${MUTANT}"@@
 identical@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@! cmp -s -- "${ORIGINAL}" "${MUTANT}" || refuse "the mutant is byte-identical to the original"@@
@@ -9,6 +9,12 @@ exact-range@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    sed -
 exact-one-line@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    [ "${changes}" = - ] || refuse "the mutant is not the original with exactly one line removed and nothing added or changed"@@
 range-bounds@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    ((from <= to && to <= lines)) || refuse "the range ${RANGE} is not inside the original's ${lines} lines"@@
 dev-proc-path@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    case "$1" in /dev/* | /proc/*) return 1 ;; esac@@
-usage-argc@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "$#" -eq 2 ] || [ "$#" -eq 3 ] || usage@@
+usage-argc@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "$#" -eq 2 ] || [ "$#" -eq 3 ] || { [ "$#" -eq 5 ] && [ "$4" = --replaced-with ]; } || usage@@
 usage-range@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[[ -z ${RANGE} || ${RANGE} =~ ^[1-9][0-9]*(-[1-9][0-9]*)?$ ]] || usage@@
 usage-original@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@saved_on_disk "${ORIGINAL}" || usage@@
+usage-flag@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "$#" -eq 2 ] || [ "$#" -eq 3 ] || { [ "$#" -eq 5 ] && [ "$4" = --replaced-with ]; } || usage@@[ "$#" -eq 2 ] || [ "$#" -eq 3 ] || [ "$#" -eq 5 ] || usage
+usage-replacement@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "$#" -ne 5 ] || [[ ${RANGE} =~ ^[1-9][0-9]*$ && -n ${REPLACEMENT} ]] || usage@@
+replace-branch@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@if [ -n "${REPLACEMENT}" ]; then@@if false; then
+replace-bounds@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    ((RANGE <= total)) || refuse "the line ${RANGE} is not inside the original's ${total} lines"@@
+replace-exact@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    with_line_replaced "${RANGE}" | cmp -s - "${MUTANT}" || refuse "the mutant is not the original with exactly line ${RANGE} replaced by the given text"@@
+replace-keeps-newline@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    sed -n -e "$1{s/.*//;p}" -- "${ORIGINAL}"@@    printf '\n'

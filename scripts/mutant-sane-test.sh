@@ -102,6 +102,31 @@ run "${ORIG}" "${WORK}/one-line.sh" 4-
 is_refused 'case 6b: a malformed range' '^usage: mutant-sane.sh ' 2
 run "${WORK}/missing.sh" "${WORK}/one-line.sh"
 is_refused 'case 6c: the original is not on disk' '^usage: mutant-sane.sh ' 2
+run "${ORIG}" "${WORK}/one-line.sh" 8 --with 'echo "bye $1"'
+is_refused 'case 6d: a fourth argument that is not --replaced-with' '^usage: mutant-sane.sh ' 2
+run "${ORIG}" "${WORK}/one-line.sh" 4-5 --replaced-with 'echo x'
+is_refused 'case 6e: a range with --replaced-with' '^usage: mutant-sane.sh ' 2
+run "${ORIG}" "${WORK}/one-line.sh" 8 --replaced-with ''
+is_refused 'case 6f: an empty replacement' '^usage: mutant-sane.sh ' 2
+
+# --- 7. a replacement: exactly line N swapped for exactly the given text ---
+BYE='echo "bye $1"'
+REPLACED='^mutant-sane: REFUSED the mutant is not the original with exactly line 8 replaced by the given text$'
+mutate "${ORIG}" bye.sh "8s/.*/${BYE}/"; run "${ORIG}" "${M}" 8 --replaced-with "${BYE}"
+is_sane 'case 7a: line 8 replaced'
+mutate "${ORIG}" wrong-line.sh "4s/.*/${BYE}/"; run "${ORIG}" "${M}" 8 --replaced-with "${BYE}"
+is_refused 'case 7b: another line replaced' "${REPLACED}"
+mutate "${ORIG}" bye-extra.sh "8s/.*/${BYE}/;2a echo extra"; run "${ORIG}" "${M}" 8 --replaced-with "${BYE}"
+is_refused 'case 7c: the replacement plus an extra line' "${REPLACED}"
+mutate "${ORIG}" bye-other.sh "8s/.*/${BYE}/"; run "${ORIG}" "${M}" 8 --replaced-with 'echo "bye"'
+is_refused 'case 7d: the text does not match the replacement' "${REPLACED}"
+NOTRAIL=${WORK}/no-newline.txt
+printf 'first\nlast' >"${NOTRAIL}"
+printf 'first\nLAST' >"${WORK}/no-newline-m.txt"
+run "${NOTRAIL}" "${WORK}/no-newline-m.txt" 2 --replaced-with LAST
+is_sane 'case 7e: a last line with no newline stays without one'
+run "${ORIG}" "${WORK}/bye.sh" 9 --replaced-with "${BYE}"
+is_refused 'case 7f: a line past the end' "^mutant-sane: REFUSED the line 9 is not inside the original's 8 lines$"
 
 if [ "${fails}" -eq 0 ]; then
     printf 'mutant-sane-test: all cases passed\n'
