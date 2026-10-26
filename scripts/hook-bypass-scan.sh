@@ -24,6 +24,8 @@ if ! "${GIT[@]}" ls-files -z --cached --others --exclude-standard >"${list}"; th
 fi
 files=()
 while IFS= read -r -d '' f; do
+    # A listed path that is not here means git listed another tree.
+    [ -e "${f}" ] || [ -L "${f}" ] || { printf 'hook-bypass-scan: git listed %s, which is not under %s, so nothing was judged.\n' "${f}" "${HERE}" >&2; exit 2; }
     case "${f}" in docs/*) continue ;; esac
     # The scanner never judges itself, since it names every route; a path the caller names is skipped whole.
     [ "${HERE}/${f}" != "${SELF}" ] || continue
@@ -40,32 +42,49 @@ function comment(file, s) {
     if (s ~ /^[ \t]*#/) return 1
     return file ~ /\.(php|js|mjs|cjs|ts|vue|css|scss)$/ && s ~ /^[ \t]*(\/\/|\/\*|\*)/
 }
-# A quoted word that is a whole flag cluster is the flag, unless the word before it is a short cluster
-# ending in m, f, c or t, or a long option in VALUEOPT: then it is the value of that option.
-function flagword(out, w, before, after,    p) {
-    p = out
-    sub(/[ \t]+$/, "", p)
-    sub(/.*[ \t]/, "", p)
-    return w ~ /^-[a-z]+$/ && before ~ /^([ \t]|)$/ && after ~ AFTER && p !~ VALUEOPT
-}
-# The words after commit, each other quoted string left as a _ word, up to a ;, & or | outside them that ends a command:
-# the & of >&, <& or &> and the | of >| are redirections, so the words after them still belong to commit.
-function unquoted(s,    i, c, qc, st, w, out) {
+# Quotes as bash reads them: a quoted string with no blank or operator joins its word, unless it opens the value of a
+# VALUEOPT option; any other is one _ word. With bs a backslash keeps the next char; a $ before a quote is dropped.
+function shellwords(s, bs,    i, c, b, qc, st, esc, w, p, out) {
     out = ""
     for (i = 1; i <= length(s); i++) {
         c = substr(s, i, 1)
+        if (bs && c == "\\") { c = substr(s, ++i, 1); out = out (c ~ /[ \t;&|<>()`$]/ ? "_" : c); continue }
+        b = i > 1 ? substr(s, i - 1, 1) : ""
+        esc = 0
+        if (c == "$" && (substr(s, i + 1, 1) == "\"" || substr(s, i + 1, 1) == q)) { i++; esc = substr(s, i, 1) == q; c = substr(s, i, 1) }
         if (c == "\"" || c == q) {
             qc = c
             st = i
-            for (i++; i <= length(s) && substr(s, i, 1) != qc; i++) if (qc == "\"" && substr(s, i, 1) == "\\") i++
+            for (i++; i <= length(s) && substr(s, i, 1) != qc; i++) if ((qc == "\"" || esc) && substr(s, i, 1) == "\\") i++
             w = substr(s, st + 1, i - st - 1)
-            out = out (flagword(out, w, st > 1 ? substr(s, st - 1, 1) : "", substr(s, i + 1, 1)) ? w : " _ ")
+            p = out
+            sub(/[ \t]+$/, "", p)
+            sub(/.*[ \t]/, "", p)
+            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")
             continue
         }
+        out = out c
+    }
+    return out
+}
+# The words up to a ;, & or | that ends a command: the & of >&, <& or &> and the | of >| are redirections.
+function cutcmd(s,    i, c, out) {
+    out = ""
+    for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
         if (c == ";" || (c == "&" && out !~ /[<>]$/ && substr(s, i + 1, 1) != ">") || (c == "|" && out !~ />$/)) break
         out = out c
     }
     return out
+}
+# A short cluster carrying n after the word commit or merge (quoted or not, or ended by a redirection), up to a command end.
+# r may start inside a quoted string, so a backslash is read both ways.
+function shortn(r) {
+    while (match(r, VERB)) {
+        r = substr(r, RSTART + RLENGTH)
+        if (cutcmd(shellwords(r, 0)) ~ SHORT || cutcmd(shellwords(r, 1)) ~ SHORT) return 1
+    }
+    return 0
 }
 # One argv element per line, in a code file: element lines read as one run, fresh after an unclosed ( or [.
 # A blank line, or a balanced one ending in a comma, is skipped; a ) or ] outside quotes ends the run.
@@ -97,50 +116,54 @@ function elements(file, t,    u, m, b, fresh, opens, closes, closed, w, hit) {
     if (closed) { incommit = 0; inrun = 0 }
     return hit
 }
-function judge(file, n, s, argvn,    t, h, r, cut, found, short, e, rest) {
-    t = tolower(s)
-    found = ""
-    if (index(t, "--no-ver") || t ~ /--no-ve?([^a-z-]|$)/) found = found " --no-verify (or a prefix of it)"
-    if (index(t, "husky=0")) found = found " HUSKY=0"
+function hit(label) { if (!(label in seen)) { seen[label] = 1; found = found " " label } }
+# Every rule but -n, over t lowercased and s as written.
+function rules(t, s,    h, e, rest) {
+    if (index(t, "--no-ver") || t ~ /--no-ve?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")
+    if (index(t, "husky=0")) hit("HUSKY=0")
     # Only a --get read of the key with nothing after it but a command end passes, --get its own word (--no-get unsets).
     h = t
     gsub(HOOKSREAD, " ", h)
-    if (index(h, "core.hookspath")) found = found " core.hooksPath"
-    if (t ~ /git_config_[a-z0-9_]+/) found = found " a GIT_CONFIG_ shim"
-    if (index(t, "commit-tree")) found = found " commit-tree"
-    if (index(t, "fast-import")) found = found " fast-import"
-    if (t ~ /hash-object[^;|&]*[ \t]-[a-z]*w/) found = found " hash-object -w"
-    # Env names keep their case. A -e HOME= in a docker run, before its command ends, hands a container its env.
+    if (index(h, "core.hookspath")) hit("core.hooksPath")
+    if (t ~ /git_config_[a-z0-9_]+/) hit("a GIT_CONFIG_ shim")
+    if (index(t, "commit-tree")) hit("commit-tree")
+    if (index(t, "fast-import")) hit("fast-import")
+    if (t ~ /hash-object[^;|&]*[ \t]-[a-z]*w/) hit("hash-object -w")
+    # Env names keep their case. A -e HOME= in a docker run, before a command end, $( or backtick, hands a container its env.
     h = s
     if (match(h, DOCKER_RUN)) {
         e = substr(h, RSTART)
         h = substr(h, 1, RSTART - 1)
-        rest = match(e, /[;&|]/) ? substr(e, RSTART) : ""
+        rest = match(e, /[;&|`]|\$\(/) ? substr(e, RSTART) : ""
         if (rest != "") e = substr(e, 1, RSTART - 1)
         gsub(CONTAINER_ENV, " ", e)
         h = h e rest
     }
     # One pass: env -i, assignments, HOME=/root, assignments, then a command word, all one command: root keeps its own home.
     if (match(h, ROOTHOME)) { e = substr(h, RSTART, RLENGTH); sub("[ \t]" ROOT "[ \t]", " ", e); h = substr(h, 1, RSTART - 1) e substr(h, RSTART + RLENGTH) }
-    if (h ~ /(^|[^A-Za-z0-9_])HOME=/) found = found " HOME= (another home drops a hook set in ~/.gitconfig)"
-    if (index(h, "XDG_CONFIG_HOME=")) found = found " XDG_CONFIG_HOME="
-    # A short cluster carrying n after the word commit or merge (quoted or not), up to a command end; or in an argv array.
-    short = t ~ ARGV_N || argvn
-    r = t
-    while (!short && match(r, VERB)) {
-        r = substr(r, RSTART + RLENGTH)
-        cut = unquoted(r)
-        short = cut ~ /(^|[ \t)`])-[a-z]*n[a-z]*([ \t)`]|$)/
-    }
-    if (short) found = found " commit or merge -n (a short --no-verify)"
+    if (h ~ /(^|[^A-Za-z0-9_])HOME\+?=/) hit("HOME= (another home drops a hook set in ~/.gitconfig)")
+    if (h ~ /XDG_CONFIG_HOME\+?=/) hit("XDG_CONFIG_HOME=")
+}
+function judge(file, n, s, argvn,    d) {
+    found = ""
+    split("", seen)
+    rules(tolower(s), s)
+    # Bash drops a quote or backslash inside a word, so a de-quoted copy is judged too: --no-"verify" is the long flag.
+    d = s
+    gsub("\\$[\"" q "]", "", d)
+    gsub("[\"" q "\\\\]", "", d)
+    rules(tolower(d), d)
+    # The -n rule reads quotes as bash does, so a -m message is no flag: as written, and with the quotes in each word joined.
+    if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")
     sub(/^\.\//, "", file)
     if (found != "") printf "%s:%d:%s\n", file, n, found
 }
 BEGIN {
     Q = "[\"" q "]"
     HOOKSREAD = "(^|[ \t])--get[ \t]+" Q "?core\\.hookspath" Q "?[ \t]*([;&|)`,]|$)"
-    VERB = "(^|[^a-z0-9_-])(commit|merge)" Q "?[ \t]"
-    DOCKER_RUN = "docker[ \t]+(compose[ \t]+)?run[ \t]"
+    VERB = "(^|[^a-z0-9_-])(commit|merge)([ \t<>]|&>)"
+    SHORT = "(^|[ \t)`])-[a-z]*n[a-z]*([ \t)`]|$)"
+    DOCKER_RUN = "(^|[^A-Za-z0-9_.-])docker[ \t]+(compose[ \t]+)?run[ \t]"
     ARGV_N = Q "(commit|merge)" Q "[ \t]*,([ \t]*" Q "[^\"" q "]*" Q "[ \t]*,)*[ \t]*" Q "-[a-z]*n[a-z]*" Q
     ASSIGN = "[A-Za-z_][A-Za-z0-9_]*=(\"[^\"]*\"|[^ \t\"" q ";&|]*)[ \t]+"
     ROOT = "HOME=/root"
@@ -154,7 +177,6 @@ BEGIN {
     ELEMS = "^[ \t]*(" ELEM "[ \t]*,[ \t]*)*" ELEM "[ \t]*,?[ \t]*(" CLOSER ")?$"
     QUOTED = Q "[^\"" q "]*" Q
     EMPTY = q q "|\"\""
-    AFTER = "^([ \t;&|)`\"" q "]|)$"
     CODE = "(^|/)[^./]+$|\\.(php|js|mjs|cjs|ts|tsx|jsx|vue|sh|bash|zsh|py|rb|pl|json|ya?ml|mts|cts)$"
     OPEN = "^[^\"" q "]*[[(]"
     if ((q "x" q ",") !~ ELEMS || "x" !~ ELEMS) { print "hook-bypass-scan: this awk misreads the argv-element pattern." > "/dev/stderr"; exit 2 }

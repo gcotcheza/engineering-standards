@@ -238,4 +238,5 @@ dialog on this pane?" check: `dialog_on <screen>` returns 0 (a dialog, its lines
 vendors it byte-identical, so a change here is re-vendored there. The T5 tables for queue-start's
 guards, the dialog check's locale pin and the owners lint's sessions are
 `scripts/queue-start-mutants.txt`, `scripts/dialog-lib-mutants.txt` and
-`scripts/backlog-owners-lint-mutants.txt`, run by hand with `scripts/guard-mutants.sh`.
+`scripts/backlog-owners-lint-mutants.txt`, run by hand with `scripts/guard-mutants.sh`, as is
+`scripts/hook-bypass-scan-mutants.txt`, the hook-bypass scan's.

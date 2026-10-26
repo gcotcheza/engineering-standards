@@ -1,0 +1,50 @@
+# T5 guard-deletion mutants for scripts/hook-bypass-scan.sh (card 746): each rule, pass and anchor, and the de-quoted copy.
+#   HBS_TEST=$PWD/scripts/hook-bypass-scan-test.sh scripts/guard-mutants.sh scripts/hook-bypass-scan.sh scripts/hook-bypass-scan-mutants.txt
+hb-long-flag@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(t, "--no-ver") || t ~ /--no-ve?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")@@
+hb-long-prefix@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(t, "--no-ver") || t ~ /--no-ve?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")@@    if (index(t, "--no-ver")) hit("--no-verify (or a prefix of it)")
+hb-husky@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(t, "husky=0")) hit("HUSKY=0")@@
+hb-hookspath@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(h, "core.hookspath")) hit("core.hooksPath")@@
+hb-git-config@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (t ~ /git_config_[a-z0-9_]+/) hit("a GIT_CONFIG_ shim")@@
+hb-commit-tree@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(t, "commit-tree")) hit("commit-tree")@@
+hb-fast-import@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(t, "fast-import")) hit("fast-import")@@
+hb-hash-object@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (t ~ /hash-object[^;|&]*[ \t]-[a-z]*w/) hit("hash-object -w")@@
+hb-home@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (h ~ /(^|[^A-Za-z0-9_])HOME\+?=/) hit("HOME= (another home drops a hook set in ~/.gitconfig)")@@
+hb-home-append@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (h ~ /(^|[^A-Za-z0-9_])HOME\+?=/) hit("HOME= (another home drops a hook set in ~/.gitconfig)")@@    if (h ~ /(^|[^A-Za-z0-9_])HOME=/) hit("HOME= (another home drops a hook set in ~/.gitconfig)")
+hb-xdg@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (h ~ /XDG_CONFIG_HOME\+?=/) hit("XDG_CONFIG_HOME=")@@
+hb-short-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")@@
+hb-argv-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")@@    if (argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")
+hb-argv-lines@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (w == "commit" || w == "merge") incommit = inrun@@
+hb-comments@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (comment(FILENAME, tolower(line))) { judge(FILENAME, FNR, line, 0); next }@@        if (comment(FILENAME, tolower(line))) next
+hb-empty-pair@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(EMPTY, "", line)@@
+hb-joined-lines@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (s ~ /\\$/) { held = substr(s, 1, length(s) - 1); next }@@    if (s ~ /\\$/) { held = substr(s, 1, length(s) - 1) " "; next }
+hb-read-pass@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(HOOKSREAD, " ", h)@@
+hb-read-word@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    HOOKSREAD = "(^|[ \t])--get[ \t]+" Q "?core\\.hookspath" Q "?[ \t]*([;&|)`,]|$)"@@    HOOKSREAD = "get[ \t]+" Q "?core\\.hookspath" Q "?[ \t]*([;&|)`,]|$)"
+hb-read-end@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    HOOKSREAD = "(^|[ \t])--get[ \t]+" Q "?core\\.hookspath" Q "?[ \t]*([;&|)`,]|$)"@@    HOOKSREAD = "(^|[ \t])--get[ \t]+" Q "?core\\.hookspath" Q"
+hb-docker-pass@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        gsub(CONTAINER_ENV, " ", e)@@
+hb-docker-anchor@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (match(h, DOCKER_RUN)) {@@    if (match(h, /^/)) {
+hb-docker-word@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    DOCKER_RUN = "(^|[^A-Za-z0-9_.-])docker[ \t]+(compose[ \t]+)?run[ \t]"@@    DOCKER_RUN = "docker[ \t]+(compose[ \t]+)?run[ \t]"
+hb-docker-end@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        rest = match(e, /[;&|`]|\$\(/) ? substr(e, RSTART) : ""@@        rest = match(e, /[;&|`]|\$\(/) && 0 ? substr(e, RSTART) : ""
+hb-docker-subst@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        rest = match(e, /[;&|`]|\$\(/) ? substr(e, RSTART) : ""@@        rest = match(e, /[;&|]/) ? substr(e, RSTART) : ""
+hb-root-pass@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (match(h, ROOTHOME)) { e = substr(h, RSTART, RLENGTH); sub("[ \t]" ROOT "[ \t]", " ", e); h = substr(h, 1, RSTART - 1) e substr(h, RSTART + RLENGTH) }@@
+hb-root-envi@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    ROOTHOME = "(^|[ \t;&|({`])env[ \t]+-i[ \t]+(" ASSIGN ")*" ROOT "[ \t]+(" ASSIGN ")*" COMMAND@@    ROOTHOME = "(^|[ \t;&|({`])env[ \t]+(" ASSIGN ")*" ROOT "[ \t]+(" ASSIGN ")*" COMMAND
+hb-root-value@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    ROOT = "HOME=/root"@@    ROOT = "HOME=[^ \t]*"
+hb-root-command@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    COMMAND = "[^ \t;&|=]+([ \t;&|)`]|$)"@@    COMMAND = "[^ \t;&|=]+"
+hb-verb-redirect@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    VERB = "(^|[^a-z0-9_-])(commit|merge)([ \t<>]|&>)"@@    VERB = "(^|[^a-z0-9_-])(commit|merge)[ \t]"
+hb-joined-pass@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")@@    if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s))) hit("commit or merge -n (a short --no-verify)")
+hb-backslash@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (bs && c == "\\") { c = substr(s, ++i, 1); out = out (c ~ /[ \t;&|<>()`$]/ ? "_" : c); continue }@@
+hb-dollar-quote@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == "$" && (substr(s, i + 1, 1) == "\"" || substr(s, i + 1, 1) == q)) { i++; esc = substr(s, i, 1) == q; c = substr(s, i, 1) }@@
+hb-quoted-joins@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")@@            out = out (0 ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")
+hb-value-blanked@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")@@            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ ? w : " _ ")
+hb-command-end@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == ";" || (c == "&" && out !~ /[<>]$/ && substr(s, i + 1, 1) != ">") || (c == "|" && out !~ />$/)) break@@        if ((c == "&" && out !~ /[<>]$/ && substr(s, i + 1, 1) != ">") || (c == "|" && out !~ />$/)) break
+hb-redirect-amp@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == ";" || (c == "&" && out !~ /[<>]$/ && substr(s, i + 1, 1) != ">") || (c == "|" && out !~ />$/)) break@@        if (c == ";" || c == "&" || (c == "|" && out !~ />$/)) break
+hb-dequote@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub("[\"" q "\\\\]", "", d)@@
+hb-dequote-dollar@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub("\\$[\"" q "]", "", d)@@
+hb-dequote-judged@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    rules(tolower(d), d)@@
+hb-docs@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    case "${f}" in docs/*) continue ;; esac@@
+hb-self@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    [ "${HERE}/${f}" != "${SELF}" ] || continue@@
+hb-skip@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    [ -z "${skip["${f}"]:-}" ] || continue@@
+hb-empty-skip@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    [ -n "${p}" ] || { printf 'hook-bypass-scan: an empty skipped path, so nothing was judged.\n' >&2; exit 2; }@@
+hb-other-tree@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    [ -e "${f}" ] || [ -L "${f}" ] || { printf 'hook-bypass-scan: git listed %s, which is not under %s, so nothing was judged.\n' "${f}" "${HERE}" >&2; exit 2; }@@
+hb-no-file@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@[ "${#files[@]}" -gt 0 ] || { printf 'hook-bypass-scan: git listed no file, so nothing was judged.\n' >&2; exit 2; }@@
+hb-awk-fails@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@' "${files[@]}") || { printf 'hook-bypass-scan: awk could not read the tree, so nothing was judged.\n' >&2; exit 2; }@@' "${files[@]}") ; true || { printf 'hook-bypass-scan: awk could not read the tree, so nothing was judged.\n' >&2; exit 2; }
+hb-awk-elems@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if ((q "x" q ",") !~ ELEMS || "x" !~ ELEMS) { print "hook-bypass-scan: this awk misreads the argv-element pattern." > "/dev/stderr"; exit 2 }@@

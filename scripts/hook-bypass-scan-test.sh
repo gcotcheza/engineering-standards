@@ -154,8 +154,40 @@ expect 'commit split by an empty single-quote pair' 1 scripts/a.sh "git c''ommit
 expect 'commit split by an empty double-quote pair' 1 scripts/a.sh 'git c""ommit -@n'
 expect 'the hooks key split by an empty quote pair' 1 scripts/a.sh "git config core.hooks''@Path x"
 expect 'the long flag split by an empty quote pair' 1 scripts/a.sh 'git commit --no-""@verify -m x'
+expect 'commit split by an empty single-quote pair in a Python argv' 1 scripts/a.py "subprocess.run(['git', 'com''mit', '-@n'])"
+expect 'commit split by an empty double-quote pair in a Python argv' 1 scripts/a.py 'subprocess.run(["git", "com""mit", "-@n"])'
 expect 'an unset with the read negated' 1 scripts/a.sh 'git config --unset --no-get core.hooks@Path'
 expect 'a global unset with the read negated' 1 scripts/a.sh 'git config --global --unset --no-get "core.hooks@Path"'
+
+# --- bash drops a quote or backslash inside a word, so the scan judges each word as bash reads it --
+expect 'r2: the long flag with its tail quoted' 1 scripts/a.sh 'git commit --no-"@verify" -m x'
+expect 'r2: the long flag with a backslash in it' 1 scripts/a.sh 'git commit --no-\@verify -m x'
+expect 'r2: the long flag with its tail ANSI-C quoted' 1 scripts/a.sh "git commit --no-\$'@verify' -m x"
+expect 'r2: the short flag with a backslash in it' 1 scripts/a.sh 'git commit -\@n -m x'
+expect 'r2: a short cluster with a quoted letter' 1 scripts/a.sh 'git commit -"q"@n -m x'
+expect 'r2: the short flag ANSI-C quoted' 1 scripts/a.sh "git commit \$'-@n' -m x"
+expect 'r2: the short flag after a redirection glued to commit' 1 scripts/a.sh 'git commit>/dev/null -@n'
+expect 'r2: commit with a quoted tail' 1 scripts/a.sh 'git c"ommit" -@n'
+expect 'r2: the hooks key with a quoted tail' 1 scripts/a.sh 'git -c core.hooks"@Path"=/dev/null commit -m x'
+expect 'r2: the hooks key with a quoted head' 1 scripts/a.sh 'git config "core".hooks@Path x'
+expect 'r2: a GIT_CONFIG_ name with a quoted tail' 1 scripts/a.sh 'export GIT_CONFIG_"@GLOBAL"=x'
+expect "r2: husky's off switch with the value quoted" 1 scripts/a.sh 'HUSKY="@0" git commit -m x'
+expect 'r2: another home with its = quoted' 1 scripts/a.sh 'HOM@E"=/tmp" git commit -m x'
+expect 'r2: another home with its = escaped' 1 scripts/a.sh 'HOM@E\=/tmp git commit -m x'
+expect 'r2: another home appended to' 1 scripts/a.sh 'HOM@E+=/x git commit -m x'
+expect 'r2: another config home with its = quoted' 1 scripts/a.sh 'XDG_CONFIG_HOM@E"="/tmp git commit -m x'
+expect 'r2: a commit made below the hooks, half quoted' 1 scripts/a.sh 'tree=$(git commit"-@tree" HEAD^{tree} -m x)'
+expect 'r2: a commit from an import stream, half quoted' 1 scripts/a.sh 'git fast"-@import" <stream'
+expect 'r2: an object written to the store, its flag quoted' 1 scripts/a.sh 'git hash-@object "-w" --stdin <f'
+expect 'r2: a HOME inside a $( after a docker run' 1 scripts/a.sh 'docker run --rm img true $(firejail --env=HOM@E=/tmp git commit -m x)'
+expect 'r2: a HOME inside backticks after a docker run' 1 scripts/a.sh 'docker run --rm img true `firejail --env=HOM@E=/tmp git commit -m x`'
+expect 'r2: a word that only ends in docker' 1 scripts/a.sh 'mydocker run -e HOM@E=/tmp git commit -m x'
+expect 'r2: the short flag inside a quoted command' 1 scripts/a.sh 'bash -c "git commit -@n -m x"'
+expect "r2 near miss: an ANSI-C quoted n that is -m's value" 0 scripts/a.sh "git commit -m \$'-@n'"
+expect "r2 near miss: a quoted n glued into -m's value" 0 scripts/a.sh 'git commit -m x"-@n"'
+expect "r2 near miss: a message holding a quoted n" 0 scripts/a.sh "git commit -m \"run 'lint -@n' first\""
+expect 'r2 near miss: a quoted pathspec holding a spaced n' 0 scripts/a.sh 'git commit -q -- "my -@n notes.txt"'
+expect 'r2 near miss: a container home before a $(' 0 scripts/e2e.sh 'docker run --rm -e HOM@E=/tmp node npm ci $(x)'
 
 # --- one root-home pass: env -i, the root home among its assignments, then any git, in one command --
 expect 'root home: env -i with only the root home, then git' 0 scripts/a.sh 'env -i HOM@E=/root git -C / status'
@@ -257,6 +289,11 @@ if [[ "${rc}" -eq 2 ]]; then ok 'an empty listing exits 2'; else bad "an empty l
 repo="$(fixture scripts/a.sh 'true')"
 rc=0; HOOK_BYPASS_GIT=false bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 2 ]]; then ok 'a failing git exits 2'; else bad "a failing git exited ${rc}, wanted 2"; fi
+
+# A git that lists another tree: its paths are not here, so nothing here was judged.
+other="$(fixture scripts/b.sh 'true')"
+rc=0; HOOK_BYPASS_GIT="git -C ${other}" bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+if [[ "${rc}" -eq 2 ]]; then ok 'r2: a git that lists another tree exits 2'; else bad "a git that lists another tree exited ${rc}, wanted 2"; fi
 
 rc=0; bash "${SCAN}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 2 ]]; then ok 'no root exits 2'; else bad "no root exited ${rc}, wanted 2"; fi

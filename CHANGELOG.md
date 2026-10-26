@@ -5,8 +5,11 @@
 at 466b957 and run, like `decisions-check.sh`, from this checkout against an app root; extra arguments
 are paths skipped whole, exact. Two new rules: an empty `''` or `""` pair is dropped before judging, so a
 word split by one is still the route; and the hooks-key read pass needs `--get` as its own word, so
-`--unset --no-get` is found by rule. One new pass: `env -i`, assignments, exactly `HOME=/root`, then any command in the same command. The cases hide their routes with a dropped `@`. Gate step 2 runs the
-scan over this tree (five named skips: three prose files, two mutant tables) and its cases. No app calls it yet.
+`--unset --no-get` is found by rule. One new pass: `env -i`, assignments, exactly `HOME=/root`, then any command in the same command. Each line is judged a second time de-quoted, as bash drops a quote or
+backslash inside a word; a docker run's span stops at `$(` or a backtick; a git that lists another tree exits 2.
+The cases hide their routes with a dropped `@`; `scripts/hook-bypass-scan-mutants.txt` is its T5 table, run by hand
+with `scripts/guard-mutants.sh`. Gate step 2 runs the scan over this tree (six named skips: three prose files, three
+mutant tables) and its cases. No app calls it yet.
 Why: `docs/decisions/` the-hook-bypass-scan-has-one-copy.
 
 ## 2026-10-25 — gate-run.sh runs a root gate from a hash-verified export of one sha (the standard and the deploy lib are unchanged; VERSION is not bumped)
