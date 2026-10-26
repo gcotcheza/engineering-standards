@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-26 — the hook-bypass scan has one copy, here (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 746.** New `scripts/hook-bypass-scan.sh` and `scripts/hook-bypass-scan-test.sh`, lifted from Memento
+at 466b957 and run, like `decisions-check.sh`, from this checkout against an app root; extra arguments
+are paths skipped whole, exact. Two new rules: an empty `''` or `""` pair is dropped before judging, so a
+word split by one is still the route; and the hooks-key read pass needs `--get` as its own word, so
+`--unset --no-get` is found by rule. One new pass: `env -i`, assignments, exactly `HOME=/root`, then any command in the same command. Each line is judged a second time de-quoted, as bash drops a quote or
+backslash inside a word; a docker run's span stops at `$(` or a backtick; a git that lists another tree exits 2.
+The cases hide their routes with a dropped `@`; `scripts/hook-bypass-scan-mutants.txt` is its T5 table, run by hand
+with `scripts/guard-mutants.sh`. Gate step 2 runs the scan over this tree (seven named skips: three prose files, three
+mutant tables, and the deploy lib's `test.sh`, whose git shim drops HOME on purpose) and its cases. No app calls it yet.
+Round 3: `unset HOME`, `env -u HOME`, `env -i` with git next, and HOME (or `XDG_CONFIG_HOME`) set by `read`,
+`printf -v`, `declare`/`local`, `getopts`, `wait -p`, `for`, `coproc`, `let`, `(( ))`, a nameref or an index are findings; so are `include.path` and
+`includeIf.<cond>.path`, which load a file that can set the hooks key.
+Why: `docs/decisions/` the-hook-bypass-scan-has-one-copy.
+
 ## 2026-10-26 — T9's check follows the shared deploy lib (the standard is unchanged and VERSION is not bumped)
 **Card 749.** `gate-image-tags.sh` now follows a gate's `. "${DEPLOY_LIB}/…"` into `scripts/lib/deploy`
 of the clone it runs from, so a bare compose call below the ledger arm is judged instead of
