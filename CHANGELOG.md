@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-26 — T9's check no longer reads a here-string as a heredoc (the standard is unchanged and VERSION is not bumped)
+**Backlog 760.** `gate-image-tags.sh` skipped the `<<<` at one offset, then matched `<<y` one
+character later, so `read -r x <<<y` opened a heredoc that never closed and every compose call below
+it, a production-tag build included, passed unjudged. A `<<<` is now consumed whole before the
+heredoc match. New cases 66 (four here-string spellings above a production build, rc 1) and 67 (a
+`<<-'EOF'` body stays hidden); reverting the fix turns case 66 red.
+
 ## 2026-10-25 — grep -q reads a here-string, never a pipe, in the test helpers and three scripts (the standard is unchanged and VERSION is not bumped)
 **Cards 704 and 730.** Under `set -o pipefail`, `<writer> | grep -q` lets grep quit at the first
 match; if the writer writes again it dies of SIGPIPE and the pipeline reads as a miss, so
