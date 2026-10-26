@@ -700,9 +700,11 @@ done
 
 # A gate script may set COMPOSE_FILE in a file it sources, which may source
 # another. The idioms naming the sourcing script's own directory are resolved
-# against it; otherwise the leading variable of the path is dropped and the rest
-# resolved under this root. A path that resolves to nothing readable makes that
-# script's bare calls unjudged rather than falling through to compose's default.
+# against it, `$DEPLOY_LIB/` against this clone's deploy lib and nothing else
+# outside this root (decision: t9-follows-the-deploy-lib); otherwise the leading
+# variable is dropped and the rest resolved under this root. A path that resolves
+# to nothing readable leaves that script's bare calls unjudged, never defaulted.
+ES_LIB="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/lib/deploy" 2>/dev/null && pwd)" || ES_LIB=''
 resolve_sourced() {
     local v="$1" dir="$2" rest c pre
     # shellcheck disable=SC2016  # these are the sourcing script's own text, not ours
@@ -710,6 +712,8 @@ resolve_sourced() {
                '${BASH_SOURCE%/*}' '${BASH_SOURCE[0]%/*}' '${0%/*}'; do
         case "${v}" in "${pre}/"*) v="${dir}/${v#"${pre}/"}"; break ;; esac
     done
+    # shellcheck disable=SC2016  # the sourcing script's own text, not ours
+    case "${v}" in '$DEPLOY_LIB/'*|'${DEPLOY_LIB}/'*) [ -z "${ES_LIB}" ] || v="${ES_LIB}/${v#*/}" ;; esac
     rest="${v}"
     case "${v}" in *'$'*) rest="${v#*/}" ;; esac
     case "${rest}" in *'$'*|'') return 1 ;; esac
@@ -717,6 +721,8 @@ resolve_sourced() {
         [ -f "${c}" ] || continue
         c="$(cd -- "$(dirname -- "${c}")" && pwd)/$(basename -- "${c}")"
         case "${c}" in "${ROOT}"/*) printf '%s' "${c}"; return 0 ;; esac
+        [ -n "${ES_LIB}" ] || continue
+        case "${c}" in "${ES_LIB}"/*) printf '%s' "${c}"; return 0 ;; esac
     done
     return 1
 }

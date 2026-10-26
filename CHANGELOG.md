@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-26 — T9's check follows the shared deploy lib (the standard is unchanged and VERSION is not bumped)
+**Card 749.** `gate-image-tags.sh` now follows a gate's `. "${DEPLOY_LIB}/…"` into `scripts/lib/deploy`
+of the clone it runs from, so a bare compose call below the ledger arm is judged instead of
+unjudged, and apps can arm first again (card 717). Nothing else outside the app tree is followed: a
+`..` out of the lib, a literal outside path and a clone with no lib stay unjudged. New cases 65–67;
+deleting each new line turns its case red. Why: `docs/decisions/2026-10-26-0444-t9-follows-the-deploy-lib.md`.
+
 ## 2026-10-25 — gate-run.sh runs a root gate from a hash-verified export of one sha (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 719.** New `scripts/gate-run.sh` and `scripts/lib/gate/` (`run.sh`, `compose.sh`, and
 `export.sh`, the export-tree block fleet-deploy and fleet-deploy-on-merge carry, extracted). An app's

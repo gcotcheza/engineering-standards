@@ -802,6 +802,58 @@ matches 'case 64: the set is judged at the line that uses the wrapper' "${OUT}" 
 lacks   'case 64: and the line that only defines it is not a run of its own' "${OUT}" 'scripts/check\.sh:1'
 equals  'case 64: exit code' "${RC}" 0
 
+# A standards clone in the fixture: the check under test, with a deploy lib beside it.
+mkdir -p "${WORK}/es/scripts/lib/deploy" "${WORK}/esbare/scripts" "${WORK}/elsewhere"
+cp -- "${CHECK}" "${WORK}/es/scripts/gate-image-tags.sh"
+cp -- "${CHECK}" "${WORK}/esbare/scripts/gate-image-tags.sh"
+printf 'gate_ledger_arm() { :; }\n' >"${WORK}/es/scripts/lib/deploy/ledger.sh"
+printf 'export COMPOSE_FILE="docker-compose.yml:docker-compose.ci.yml"\n' >"${WORK}/es/scripts/lib/deploy/files.sh"
+printf 'export COMPOSE_FILE="docker-compose.yml"\n' | tee "${WORK}/es/scripts/lib/outside.sh" >"${WORK}/elsewhere/lib.sh"
+run_es() { OUT="$(bash "${WORK}/$2/scripts/gate-image-tags.sh" "${WORK}/$1" 2>&1)"; RC=$?; }
+
+# --- 65. the deploy lib sourced above a bare call -> followed, the call judged --
+service eslib docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eslib e2e.sh '. "${DEPLOY_LIB}/ledger.sh"
+gate_ledger_arm
+DOWN=(docker compose -p acme)
+"${DOWN[@]}" down -v'
+run_es eslib es
+lacks   'case 65: the deploy lib is followed, not an unread source' "${OUT}" 'sourced at line'
+matches 'case 65: and the bare call below the arm is judged' "${OUT}" '^ok '
+equals  'case 65: exit code' "${RC}" 0
+
+# --- 65b. what the deploy lib assigns is read, braces or none -----------------
+service eslibset docker-compose.yml 'x/app:latest' build
+overlay eslibset docker-compose.ci.yml app 'x/app:ci'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eslibset check.sh '. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es eslibset es
+matches 'case 65b: a COMPOSE_FILE the deploy lib sets decides the file set' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:2, COMPOSE_FILE\) builds x/app:ci$'
+equals  'case 65b: exit code' "${RC}" 0
+
+# --- 66. $DEPLOY_LIB/.. leaves the deploy lib -> not followed, unjudged ----------
+service esescape docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esescape check.sh '. "${DEPLOY_LIB}/../outside.sh"
+docker compose up -d'
+run_es esescape es
+# shellcheck disable=SC2016  # the expected text quotes the fixture's own ${DEPLOY_LIB}
+matches 'case 66: a path climbing out of the deploy lib is not followed' "${OUT}" \
+    'COMPOSE_FILE, which \$\{DEPLOY_LIB\}/\.\./outside\.sh \(sourced at line 1\) may set in scripts/check\.sh:2$'
+equals  'case 66: exit code' "${RC}" 1
+
+# --- 67. a clone with no deploy lib -> nothing outside this root is followed ----
+service esnone docker-compose.yml 'x/app:latest' build
+gate_script esnone check.sh ". \"${WORK}/elsewhere/lib.sh\"
+docker compose up -d"
+run_es esnone esbare
+matches 'case 67: with no deploy lib beside the check, an outside path is unread' "${OUT}" \
+    'COMPOSE_FILE, which .*/elsewhere/lib\.sh \(sourced at line 1\) may set in scripts/check\.sh:2$'
+equals  'case 67: exit code' "${RC}" 1
+
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
     exit 0
