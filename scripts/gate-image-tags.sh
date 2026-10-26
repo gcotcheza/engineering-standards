@@ -358,7 +358,8 @@ read_gate_sets() {
                     if (c == "#" && (j == 1 || substr(line, j - 1, 1) ~ /[ \t;&|(]/)) {
                         m = m pad("N", n - j + 1); j = n + 1; continue
                     }
-                    if (substr(line, j, 2) == "<<" && substr(line, j, 3) != "<<<" && match(substr(line, j), hre)) {
+                    if (substr(line, j, 3) == "<<<") { m = m "CCC"; j += 3; continue }
+                    if (substr(line, j, 2) == "<<" && match(substr(line, j), hre)) {
                         tok = substr(line, j + RSTART - 1, RLENGTH)
                         sub(/^<<[-~]?[ \t]*/, "", tok)
                         gsub("[\"" q "\\\\]", "", tok)
