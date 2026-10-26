@@ -19,6 +19,21 @@ named in `ROOT`'s or the gate tree's own config still runs in those trees' `stat
 the new argv. Every header is re-stamped for 2026-10-25.3. Why:
 decision: a-worktree-whose-git-config-names-a-filter-is-kept.
 
+## 2026-10-25 — grep -q reads a here-string, never a pipe, in the test helpers and three scripts (the standard is unchanged and VERSION is not bumped)
+**Cards 704 and 730.** Under `set -o pipefail`, `<writer> | grep -q` lets grep quit at the first
+match; if the writer writes again it dies of SIGPIPE and the pipeline reads as a miss, so
+`matches`/`contains` fail a real match and `lacks`/`unmatches` or `! ... | grep -q` pass one. The
+helpers in nine fixture suites now take a here-string. `queue-start.sh`'s heavy-work check (could
+miss a held slot), `decisions-check.sh`'s DECISIONS.md header check (could call a present header
+missing) and `gate-run-test.sh` A2 and A9 (could pass on a long log) capture first. New large-output
+cases make the long form deterministic, and each goes red with its old line back. Card 730
+(gate-image-tags-test case 30, red once in #71's gate) is very likely the short form of the same
+race: on the VPS's bash 5.2.21, printf writes case 30's 577 bytes in 7 calls with the match in the
+6th, and the old pipe missed 1 run in 3000 there, the here-string 0. The large cases do not cover
+that timing form; this change fixes it all the same. `scripts/lib/deploy/test.sh` (#70's file) and
+`scripts/lib/dialog-lib.sh` keep the old form for now. Why:
+`docs/decisions/2026-10-25-2215-grep-q-reads-a-here-string-not-a-pipe.md`.
+
 ## 2026-10-25 — gate-run.sh runs a root gate from a hash-verified export of one sha (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 719.** New `scripts/gate-run.sh` and `scripts/lib/gate/` (`run.sh`, `compose.sh`, and
 `export.sh`, the export-tree block fleet-deploy and fleet-deploy-on-merge carry, extracted). An app's

@@ -82,7 +82,8 @@ if [ -f "${LOG}" ]; then
     done < <(grep -nE "^### ${SLUG}\$" -- "${LOG}")
 fi
 
-[ "${rollup}" = no ] || [ "${#files[@]}" -eq 0 ] || head -n 10 -- "${LOG}" 2>/dev/null | grep -qxF -- "${HEADER}" || finding "${LOG}: ${DIR}/ holds decisions, so its first 10 lines must carry: ${HEADER}"
+# decision: grep-q-reads-a-here-string-not-a-pipe
+[ "${rollup}" = no ] || [ "${#files[@]}" -eq 0 ] || grep -qxF -- "${HEADER}" <<<"$(head -n 10 -- "${LOG}" 2>/dev/null)" || finding "${LOG}: ${DIR}/ holds decisions, so its first 10 lines must carry: ${HEADER}"
 
 if [ "${#rolled[@]}" -gt 0 ]; then
     if ! base=$("${GIT[@]}" merge-base HEAD "${BASE_REF}" 2>/dev/null); then

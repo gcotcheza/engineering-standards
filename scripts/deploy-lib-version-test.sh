@@ -15,7 +15,8 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+# decision: grep-q-reads-a-here-string-not-a-pipe
+matches() { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
 no_ok() { equals "$1: no ok line is printed" "$(printf '%s' "${OUT}" | grep -c 'deploy-lib-version: ok')" 0; }
 
 WORK="$(mktemp -d)"
@@ -239,6 +240,12 @@ OUT="$(cd -- "${REPO}" && "${CHECK}" "${WORK}/no-such-root" 2>&1)"
 RC=$?
 matches 'case 7b: a root that cannot be entered is named, never judged from the caller'"'"'s directory' "${OUT}" '^deploy-lib-version: .*/no-such-root could not be entered, so nothing was judged\.$'
 equals  'case 7b: exit code' "${RC}" 2
+
+# --- 8. the helpers read a big output whose first line matches (card 704) ---
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE
+# the writer. Each helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 8: matches sees the match' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\ndeploy-lib-version-test: all checks passed\n'
