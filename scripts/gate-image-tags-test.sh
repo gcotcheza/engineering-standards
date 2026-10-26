@@ -811,10 +811,36 @@ printf 'export COMPOSE_FILE="docker-compose.yml:docker-compose.ci.yml"\n' >"${WO
 printf 'export COMPOSE_FILE="docker-compose.yml"\n' | tee "${WORK}/es/scripts/lib/outside.sh" >"${WORK}/elsewhere/lib.sh"
 run_es() { OUT="$(bash "${WORK}/$2/scripts/gate-image-tags.sh" "${WORK}/$1" 2>&1)"; RC=$?; }
 
-# --- 65. the deploy lib sourced above a bare call -> followed, the call judged --
+# The app's pinning helper, in the exact shape the check accepts.
+PIN_HELPER="$(cat <<'HELPER'
+# shellcheck shell=bash
+# Pinned, never read from the caller.
+DEPLOY_LIB_CLONE=/srv/engineering-standards
+DEPLOY_LIB=/srv/engineering-standards/scripts/lib/deploy
+DEPLOY_LIB_SEAM_REFUSED=''
+if [[ -n "${DEPLOY_LIB_TEST_CLONE+x}" ]]; then
+    if [[ "${DEPLOY_LIB_HARNESS:-}" != deploy-lib-test ]] || (( EUID == 0 )); then
+        DEPLOY_LIB_SEAM_REFUSED='DEPLOY_LIB_TEST_CLONE is set, and it is honoured only for deploy-lib-test.sh run unprivileged'
+    else
+        DEPLOY_LIB_CLONE=$DEPLOY_LIB_TEST_CLONE
+        DEPLOY_LIB=$DEPLOY_LIB_CLONE/scripts/lib/gate/../deploy
+    fi
+fi
+
+deploy_lib_ready() { [[ -s "$DEPLOY_LIB/ledger.sh" ]] || printf '%s missing\n' "${DEPLOY_LIB}" >&2; }
+HELPER
+)"
+PIN_HELPER="${PIN_HELPER/gate\/..\/deploy/deploy}"
+pin_helper() { mkdir -p "${WORK}/$1/scripts/lib/gate"; printf '%s\n' "${2:-${PIN_HELPER}}" >"${WORK}/$1/scripts/lib/gate/deploy-lib.sh"; }
+# shellcheck disable=SC2016  # the fixture's own text
+PIN_SRC='. "$(dirname "$0")/lib/gate/deploy-lib.sh"'
+
+# --- 65. the deploy lib sourced below the helper, above a bare call -> followed, judged
 service eslib docker-compose.yml 'x/app:latest' build
+pin_helper eslib
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script eslib e2e.sh '. "${DEPLOY_LIB}/ledger.sh"
+gate_script eslib e2e.sh "${PIN_SRC}"'
+. "${DEPLOY_LIB}/ledger.sh"
 gate_ledger_arm
 DOWN=(docker compose -p acme)
 "${DOWN[@]}" down -v'
@@ -826,23 +852,27 @@ equals  'case 65: exit code' "${RC}" 0
 # --- 65b. what the deploy lib assigns is read, braces or none -----------------
 service eslibset docker-compose.yml 'x/app:latest' build
 overlay eslibset docker-compose.ci.yml app 'x/app:ci'
+pin_helper eslibset
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script eslibset check.sh '. "$DEPLOY_LIB/files.sh"
+gate_script eslibset check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
 docker compose up -d'
 run_es eslibset es
 matches 'case 65b: a COMPOSE_FILE the deploy lib sets decides the file set' "${OUT}" \
-    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:2, COMPOSE_FILE\) builds x/app:ci$'
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:3, COMPOSE_FILE\) builds x/app:ci$'
 equals  'case 65b: exit code' "${RC}" 0
 
 # --- 66. $DEPLOY_LIB/.. leaves the deploy lib -> not followed, unjudged ----------
 service esescape docker-compose.yml 'x/app:latest' build
+pin_helper esescape
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script esescape check.sh '. "${DEPLOY_LIB}/../outside.sh"
+gate_script esescape check.sh "${PIN_SRC}"'
+. "${DEPLOY_LIB}/../outside.sh"
 docker compose up -d'
 run_es esescape es
 # shellcheck disable=SC2016  # the expected text quotes the fixture's own ${DEPLOY_LIB}
 matches 'case 66: a path climbing out of the deploy lib is not followed' "${OUT}" \
-    'COMPOSE_FILE, which \$\{DEPLOY_LIB\}/\.\./outside\.sh \(sourced at line 1\) may set in scripts/check\.sh:2$'
+    'COMPOSE_FILE, which \$\{DEPLOY_LIB\}/\.\./outside\.sh \(sourced at line 2\) may set in scripts/check\.sh:3$'
 equals  'case 66: exit code' "${RC}" 1
 
 # --- 67. a clone with no deploy lib -> nothing outside this root is followed ----
@@ -858,48 +888,55 @@ unread() { # $1 case, $2 why: the source line is not followed, so the bare call 
     matches "case $1: $2" "${OUT}" '\(sourced at line [0-9]+\) may set in scripts/check\.sh:[0-9]+$'
     equals  "case $1: exit code" "${RC}" 1
 }
+followed() { # $1 case, $2 why, $3 the compose call's line: the lib's COMPOSE_FILE decides the set
+    matches "case $1: $2" "${OUT}" \
+        "gate runs: +docker-compose\\.yml \\+ docker-compose\\.ci\\.yml \\(scripts/check\\.sh:$3, COMPOSE_FILE\\) builds x/app:ci\$"
+    equals  "case $1: exit code" "${RC}" 0
+}
 # The same root each time: what the deploy lib sets would pass it, its own vendor copy would not.
 lib_root() {
     service "$1" docker-compose.yml 'x/app:latest' build
     overlay "$1" docker-compose.ci.yml app 'x/app:ci'
     mkdir -p "${WORK}/$1/scripts/vendor"
     printf 'export COMPOSE_FILE="docker-compose.yml"\n' | tee "${WORK}/$1/scripts/vendor/files.sh" >"${WORK}/$1/ledger.sh"
+    printf 'scripts/vendor\n' >"${WORK}/$1/lib.conf"
 }
 
-# --- 68. the gate points DEPLOY_LIB at its own copy -> not the clone's lib ------
+# --- 68. the helper pins, then the gate points DEPLOY_LIB at its own copy -> unjudged
 lib_root esvendor
+pin_helper esvendor
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script esvendor check.sh 'DEPLOY_LIB="$(dirname "$0")/vendor"
+gate_script esvendor check.sh "${PIN_SRC}"'
+DEPLOY_LIB="$(dirname "$0")/vendor"
 . "$DEPLOY_LIB/files.sh"
 docker compose up -d'
 run_es esvendor es
-unread 68 'a DEPLOY_LIB the gate sets elsewhere is not read as the clone lib'
+unread 68 'a DEPLOY_LIB the gate sets after the helper is not read as the clone lib'
 
-# --- 68b. the gate pins DEPLOY_LIB to the standards clone -> followed -----------
+# --- 68b. the gate pins DEPLOY_LIB itself, with no helper -> unjudged ------------
 lib_root espinned
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script espinned check.sh '# set it here, then DEPLOY_LIB=/elsewhere would vendor it
-if true; then
-    readonly DEPLOY_LIB="/srv/engineering-standards/scripts/lib/deploy"
-fi
+gate_script espinned check.sh 'DEPLOY_LIB=/srv/engineering-standards/scripts/lib/deploy
 . "$DEPLOY_LIB/files.sh"
 docker compose up -d'
 run_es espinned es
-matches 'case 68b: a DEPLOY_LIB pinned to the standards clone is followed' "${OUT}" \
-    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:6, COMPOSE_FILE\) builds x/app:ci$'
-equals  'case 68b: exit code' "${RC}" 0
+unread 68b 'a pin written anywhere but the helper is not proof'
 
-# --- 68c/68d. DEPLOY_LIB set by expansion or read -> not the clone's lib --------
+# --- 68c/68d. DEPLOY_LIB set by expansion or read after the helper -> unjudged ---
 lib_root esdefault
+pin_helper esdefault
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script esdefault check.sh ': "${DEPLOY_LIB:=scripts/vendor}"
+gate_script esdefault check.sh "${PIN_SRC}"'
+: "${DEPLOY_LIB:=scripts/vendor}"
 . "$DEPLOY_LIB/files.sh"
 docker compose up -d'
 run_es esdefault es
-unread 68c 'a DEPLOY_LIB a := expansion sets is not read as the clone lib'
+unread 68c 'a := default expansion is not a plain read'
 lib_root esread
+pin_helper esread
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script esread check.sh 'read -r DEPLOY_LIB <lib.conf
+gate_script esread check.sh "${PIN_SRC}"'
+read -r DEPLOY_LIB <lib.conf
 . "$DEPLOY_LIB/files.sh"
 docker compose up -d'
 run_es esread es
@@ -921,16 +958,20 @@ unread 70 'another variable landing in the clone lib from its cwd is not followe
 # --- 71. a symlink in the lib pointing outside it -> not followed ---------------
 ln -s "${WORK}/elsewhere/lib.sh" "${WORK}/es/scripts/lib/deploy/away.sh"
 lib_root essymlink
+pin_helper essymlink
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script essymlink check.sh '. "$DEPLOY_LIB/away.sh"
+gate_script essymlink check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/away.sh"
 docker compose up -d'
 run_es essymlink es
 unread 71 'a lib file that links outside the lib is not followed'
 
 # --- 72. no deploy lib beside the check -> $DEPLOY_LIB/ is not read from the app root
 lib_root esnolib
+pin_helper esnolib
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script esnolib check.sh '. "$DEPLOY_LIB/ledger.sh"
+gate_script esnolib check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/ledger.sh"
 docker compose up -d'
 run_es esnolib esbare
 unread 72 'with no deploy lib, a same-named file in the app is not read as it'
@@ -938,13 +979,221 @@ unread 72 'with no deploy lib, a same-named file in the app is not read as it'
 # --- 73. the check run through a symlinked clone path -> still followed ---------
 ln -s "${WORK}/es" "${WORK}/eslink"
 lib_root eslinked
+pin_helper eslinked
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
-gate_script eslinked check.sh '. "$DEPLOY_LIB/files.sh"
+gate_script eslinked check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
 docker compose up -d'
 run_es eslinked eslink
-matches 'case 73: a clone reached through a symlink still follows its lib' "${OUT}" \
-    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:2, COMPOSE_FILE\) builds x/app:ci$'
-equals  'case 73: exit code' "${RC}" 0
+followed 73 'a clone reached through a symlink still follows its lib' 3
+
+# --- 74. every way round the pin the review found -> unjudged, helper or none ---
+# shellcheck disable=SC2016  # the fixtures are scripts, not this one's expansion
+forms=('eval "DEPLOY_LIB=$(dirname "$0")/vendor"'
+    'IFS= read -r DEPLOY_LIB <lib.conf'
+    'if DEPLOY_LIB=scripts/vendor; then :; fi'
+    'export A=1 DEPLOY_LIB=scripts/vendor'
+    'declare -n r=DEPLOY_LIB
+r=scripts/vendor'
+    'while read -r DEPLOY_LIB; do break; done <lib.conf'
+    'unset DEPLOY_LIB'
+    'exec {DEPLOY_LIB}</dev/null'
+    ': "${DEPLOY_LIB%/*}"')
+i=0
+for form in "${forms[@]}"; do
+    i=$((i + 1))
+    lib_root "esform${i}"
+    # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+    gate_script "esform${i}" check.sh "${form}"'
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+    run_es "esform${i}" es
+    unread "74.${i}" "with no helper: ${form%%$'\n'*}"
+    pin_helper "esform${i}"
+    # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+    gate_script "esform${i}" check.sh "${PIN_SRC}
+${form}"'
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+    run_es "esform${i}" es
+    unread "74.${i}h" "below the helper: ${form%%$'\n'*}"
+done
+
+# --- 74b. DEPLOY_LIB set in another sourced file, or only inherited -> unjudged --
+lib_root esother1
+pin_helper esother1
+mkdir -p "${WORK}/esother1/scripts/lib"
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+printf 'DEPLOY_LIB="$(dirname "${BASH_SOURCE[0]}")/../vendor"\n' >"${WORK}/esother1/scripts/lib/set.sh"
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esother1 check.sh "${PIN_SRC}"'
+. "$(dirname "$0")/lib/set.sh"
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es esother1 es
+unread 74b 'a DEPLOY_LIB another sourced file sets is not read as the clone lib'
+lib_root esinherit
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esinherit check.sh '. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es esinherit es
+unread 74c 'a DEPLOY_LIB only inherited from the caller is not read as the clone lib'
+
+# --- 74d. review probe p1: the helper path holds a vendor assignment, not the pin
+lib_root esprobe1
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+pin_helper esprobe1 'DEPLOY_LIB="$(dirname "${BASH_SOURCE[0]}")/../../vendor"'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esprobe1 check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es esprobe1 es
+unread 74d 'a helper that sets DEPLOY_LIB to a vendor copy is not the pin'
+
+# --- 74e. review probe p2: the gate sets DEPLOY_LIB, a sourced file holds the line
+lib_root esprobe2
+pin_helper esprobe2
+mkdir -p "${WORK}/esprobe2/scripts/lib"
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+printf '. "$DEPLOY_LIB/files.sh"\n' >"${WORK}/esprobe2/scripts/lib/use.sh"
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esprobe2 check.sh "${PIN_SRC}"'
+DEPLOY_LIB="$(dirname "$0")/vendor"
+. "$(dirname "$0")/lib/use.sh"
+docker compose up -d'
+run_es esprobe2 es
+unread 74e 'a line in a sourced file is unjudged when the gate rewrites DEPLOY_LIB'
+
+# --- 75. the helper reached through another sourced file, plain reads elsewhere -> followed
+lib_root esnested
+pin_helper esnested
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+printf '. "$(dirname "${BASH_SOURCE[0]}")/gate/deploy-lib.sh"\nGATE_DEPLOY_LIB_SUITE=x MY_DEPLOY_LIB=y DEPLOY_LIB_DIR=z\n' >"${WORK}/esnested/scripts/lib/boot.sh"
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esnested check.sh '. "$(dirname "$0")/lib/boot.sh"
+. "$DEPLOY_LIB/files.sh"
+docker run -v "$DEPLOY_LIB:${DEPLOY_LIB}:ro" busybox true
+docker compose up -d'
+run_es esnested es
+followed 75 'a helper sourced through another file pins the line below it' 4
+
+# --- 76. a helper not in the exact shape -> unjudged ---------------------------
+helper_case() { # $1 case, $2 why, $3 the helper's text
+    lib_root "eshelp$1"
+    pin_helper "eshelp$1" "$3"
+    # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+    gate_script "eshelp$1" check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+    run_es "eshelp$1" es
+    unread "76$1" "$2"
+}
+helper_case a 'a helper with an extra DEPLOY_LIB line' "${PIN_HELPER}
+DEPLOY_LIB=scripts/vendor"
+helper_case b 'a helper pinning another path' "${PIN_HELPER/scripts\/lib\/deploy$'\n'/scripts\/vendor$'\n'}"
+helper_case c 'a helper running code before its pin' "if false; then
+${PIN_HELPER}
+fi"
+helper_case d 'a helper whose seam is not inside the root guard' "${PIN_HELPER/ || (( EUID == 0 ))/}"
+helper_case e 'a helper cut off inside its pin block' "${PIN_HELPER%%$'\n'if \[\[*}"
+helper_case f 'a helper with its seam line moved' "${PIN_HELPER/        DEPLOY_LIB_CLONE=\$DEPLOY_LIB_TEST_CLONE$'\n'/}"
+lib_root eshelpg
+mkdir -p "${WORK}/eshelpg/scripts/lib"
+printf '%s\n' "${PIN_HELPER}" >"${WORK}/eshelpg/scripts/lib/deploy-lib.sh"
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eshelpg check.sh '. "$(dirname "$0")/lib/deploy-lib.sh"
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es eshelpg es
+unread 76g 'the helper text at any other path is not the helper'
+helper_case h 'whitespace is normalised, nothing else' "${PIN_HELPER/DEPLOY_LIB_CLONE=\/srv/DEPLOY_LIB_CLONE=\"\/srv}"
+helper_case i 'a blank line inside the pin block' "${PIN_HELPER/$'\n'if \[\[ -n/$'\n\n'if [[ -n}"
+
+# --- 76j. the same helper, reindented with tabs and trailing blanks -> followed --
+lib_root eshelpj
+pin_helper eshelpj "$(printf '%s\n' "${PIN_HELPER}" | sed -e 's/^    /\t/' -e 's/$/  /')"
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eshelpj check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es eshelpj es
+followed 76j 'only whitespace differs, so the helper still pins' 3
+
+# --- 77. the helper sourced below the line -> unjudged ------------------------
+lib_root esbelow
+pin_helper esbelow
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esbelow check.sh '. "$DEPLOY_LIB/files.sh"
+'"${PIN_SRC}"'
+docker compose up -d'
+run_es esbelow es
+unread 77 'a helper sourced below the line does not pin it'
+
+# --- 78. the token in a comment of another file -> unjudged (comments are not parsed)
+lib_root escomment
+pin_helper escomment
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script escomment check.sh "${PIN_SRC}"'
+# DEPLOY_LIB=scripts/vendor would vendor it
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es escomment es
+unread 78 'a DEPLOY_LIB write in a comment still makes the line unjudged'
+
+# --- 79. a write in a file sourced after the line -> unjudged ------------------
+lib_root eslater
+pin_helper eslater
+printf 'DEPLOY_LIB=scripts/vendor\n' >"${WORK}/eslater/scripts/vendor/later.sh"
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eslater check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
+. "$(dirname "$0")/vendor/later.sh"
+docker compose up -d'
+run_es eslater es
+matches 'case 79: a write anywhere in the chain unjudges the lib line' "${OUT}" \
+    'files\.sh \(sourced at line 2\) may set in scripts/check\.sh:4$'
+equals  'case 79: exit code' "${RC}" 1
+lib_root eslater2
+pin_helper eslater2
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eslater2 check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d
+. "$NOPE/unread.sh"
+. "$(dirname "$0")/vendor/later.sh"'
+printf 'DEPLOY_LIB=scripts/vendor\n' >"${WORK}/eslater2/scripts/vendor/later.sh"
+run_es eslater2 es
+matches 'case 79b: the lib line, not a later unread one, unjudges the call' "${OUT}" \
+    'files\.sh \(sourced at line 2\) may set in scripts/check\.sh:3$'
+equals  'case 79b: exit code' "${RC}" 1
+
+# --- 80. each gate script proves its own pin -> nothing carries over between them
+service eseach docker-compose.yml 'x/app:latest' build
+overlay eseach docker-compose.ci.yml app 'x/app:ci'
+pin_helper eseach
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eseach check.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eseach e2e.sh '. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es eseach es
+matches 'case 80: a helper one gate script sources does not pin another' "${OUT}" \
+    'files\.sh \(sourced at line 1\) may set in scripts/e2e\.sh:2$'
+equals  'case 80: exit code' "${RC}" 1
+service esclean docker-compose.yml 'x/app:latest' build
+overlay esclean docker-compose.ci.yml app 'x/app:ci'
+pin_helper esclean
+gate_script esclean check.sh 'DEPLOY_LIB=scripts/vendor'
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esclean e2e.sh "${PIN_SRC}"'
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es esclean es
+matches 'case 80b: a write in one gate script does not unjudge another' "${OUT}" \
+    'docker-compose\.ci\.yml \(scripts/e2e\.sh:3, COMPOSE_FILE\) builds x/app:ci$'
+equals  'case 80b: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
