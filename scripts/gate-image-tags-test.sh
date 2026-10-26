@@ -817,7 +817,7 @@ cp -- "${CHECK}" "${WORK}/esbare/scripts/gate-image-tags.sh"
 printf 'gate_ledger_arm() { :; }\n' >"${WORK}/es/scripts/lib/deploy/ledger.sh"
 printf 'export COMPOSE_FILE="docker-compose.yml:docker-compose.ci.yml"\n' >"${WORK}/es/scripts/lib/deploy/files.sh"
 printf 'export COMPOSE_FILE="docker-compose.yml"\n' | tee "${WORK}/es/scripts/lib/outside.sh" >"${WORK}/elsewhere/lib.sh"
-run_es() { OUT="$(bash "${WORK}/$2/scripts/gate-image-tags.sh" "${WORK}/$1" 2>&1)"; RC=$?; }
+run_es() { OUT="$(timeout 60 bash "${WORK}/$2/scripts/gate-image-tags.sh" "${WORK}/$1" 2>&1)"; RC=$?; }
 
 # The app's pinning helper, in the exact shape the check accepts.
 PIN_HELPER="$(cat <<'HELPER'
@@ -1202,6 +1202,32 @@ run_es esclean es
 matches 'case 80b: a write in one gate script does not unjudge another' "${OUT}" \
     'docker-compose\.ci\.yml \(scripts/e2e\.sh:3, COMPOSE_FILE\) builds x/app:ci$'
 equals  'case 80b: exit code' "${RC}" 0
+
+# --- 81. a write to a seam name outside the pin block -> unjudged; DEPLOY_LIB_CLONE never moves the lib
+seam_case() { # $1 case, $2 the gate's text above the helper, $3 the line that sources the helper
+    lib_root "es81$1"
+    pin_helper "es81$1"
+    # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+    gate_script "es81$1" check.sh "$2
+$3"'
+. "$DEPLOY_LIB/files.sh"
+docker compose build'
+    run_es "es81$1" es
+}
+seam_case a 'export DEPLOY_LIB_HARNESS=deploy-lib-test DEPLOY_LIB_TEST_CLONE=/x' "${PIN_SRC}"
+unread 81a 'an exported DEPLOY_LIB_HARNESS and DEPLOY_LIB_TEST_CLONE unjudge the lib line'
+seam_case b 'DEPLOY_LIB_HARNESS=deploy-lib-test' "${PIN_SRC}"
+unread 81b 'a plain DEPLOY_LIB_HARNESS assignment unjudges the lib line'
+seam_case c 'true' "${PIN_SRC}
+DEPLOY_LIB_TEST_CLONE=/x env"
+unread 81c 'a DEPLOY_LIB_TEST_CLONE env prefix on a command unjudges the lib line'
+seam_case d 'true' "${PIN_SRC}
+DEPLOY_LIB_CLONE=/x"
+followed 81d 'a DEPLOY_LIB_CLONE write leaves DEPLOY_LIB pinned, so the lib is followed' 5
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+seam_case e 'true' "${PIN_SRC}"'
+echo "${DEPLOY_LIB_HARNESS}"'
+followed 81e 'a plain read of a seam name is not a write' 5
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'

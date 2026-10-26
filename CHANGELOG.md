@@ -5,9 +5,10 @@
 of the clone it runs from, so a bare compose call below the ledger arm is judged instead of
 unjudged, and apps can arm first again (card 717). It does so only when the gate sourced the app's
 `scripts/lib/gate/deploy-lib.sh` above that line, that helper opens with the exact pin block, and no
-file in the chain mentions `DEPLOY_LIB` except as a plain `$DEPLOY_LIB`/`${DEPLOY_LIB}` read; a
+file in the chain mentions `DEPLOY_LIB`, `DEPLOY_LIB_TEST_CLONE` or `DEPLOY_LIB_HARNESS` except as a
+plain `$NAME`/`${NAME}` read; a
 followed file must resolve (`readlink -f`) inside the lib's physical path (`pwd -P`). Everything
-else stays unjudged. New cases 65–80; each guard line or clause, deleted, turns at least one red.
+else stays unjudged. New cases 65–81; each guard line or clause, deleted, turns at least one red.
 Why: `docs/decisions/2026-10-26-0444-t9-follows-the-deploy-lib.md`.
 
 ## 2026-10-25 — grep -q reads a here-string, never a pipe, in the test helpers and three scripts (the standard is unchanged and VERSION is not bumped)

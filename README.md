@@ -88,7 +88,8 @@ A compose file on its own is not what a gate runs, so the check also reads `scri
 `ci.sh`, `e2e.sh` and `gate.sh` for the files each `docker compose` call passes — `-f`, an
 exported `COMPOSE_FILE` (including one set in a file the gate sources, in its tree or as
 `$DEPLOY_LIB/` from this clone's `scripts/lib/deploy` once the app's pinning helper
-`scripts/lib/gate/deploy-lib.sh` has run above it and nothing else in the chain touches `DEPLOY_LIB`), or compose's own default
+`scripts/lib/gate/deploy-lib.sh` has run above it and nothing else in the chain writes `DEPLOY_LIB`
+or its test seam's names), or compose's own default
 base-and-override pair — and judges each merged set the way compose merges it: a later `image:`
 wins, a `build:` anywhere in the set builds. A variable is read from the assignments above the
 call, never from the file's last one. It prints what each gate run builds, and names every call it

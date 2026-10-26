@@ -719,7 +719,10 @@ BLOCK
 
 deploy_lib_reads_only() { # $1 file, $2 1 when it is the helper: its first code is the pin block
     BLOCK="${DEPLOY_LIB_PIN_BLOCK}" awk -v helper="$2" '
-        BEGIN { n = split(ENVIRON["BLOCK"], want, "\n"); k = helper ? 1 : n + 1 }
+        BEGIN {
+            n = split(ENVIRON["BLOCK"], want, "\n"); k = helper ? 1 : n + 1
+            seam["DEPLOY_LIB"]; seam["DEPLOY_LIB_TEST_CLONE"]; seam["DEPLOY_LIB_HARNESS"]
+        }
         k <= n {
             v = $0
             gsub(/[ \t]+/, " ", v)
@@ -734,8 +737,9 @@ deploy_lib_reads_only() { # $1 file, $2 1 when it is the helper: its first code 
             t = "  " $0; p = 0
             while ((i = index(substr(t, p + 1), "DEPLOY_LIB")) > 0) {
                 i += p; p = i + 9
-                b = substr(t, i - 1, 1); b2 = substr(t, i - 2, 2); a = substr(t, i + 10, 1)
-                if (b ~ /[A-Za-z0-9_]/ || a ~ /[A-Za-z0-9_]/ || b == "$" || (b2 == "${" && a == "}")) continue
+                match(substr(t, i), /^[A-Za-z0-9_]+/); w = substr(t, i, RLENGTH)
+                b = substr(t, i - 1, 1); b2 = substr(t, i - 2, 2); a = substr(t, i + RLENGTH, 1)
+                if (!(w in seam) || b ~ /[A-Za-z0-9_]/ || b == "$" || (b2 == "${" && a == "}")) continue
                 bad = 1
             }
         }
