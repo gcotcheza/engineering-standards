@@ -241,7 +241,7 @@ contains 'build up: up (after a --profile) checks the context too' "${OUT}" "REF
 # Card 363: a build or an up re-reads the tracked files as the app user inside compose.sh run, so
 # every route to it does: deploy_compose, and $DEPLOY_COMPOSE in a job's own bash -c.
 cfx tracked-clean
-STATUS="-C ${CROOT} --no-optional-locks status --porcelain --untracked-files=no"
+STATUS="-C ${CROOT} --no-optional-locks -c core.fsmonitor=false status --porcelain --untracked-files=no"
 crun "${INIT}; deploy_compose build app; deploy_compose up -d; deploy_compose create; deploy_compose ps; deploy_compose exec -T app true"
 equals 'tracked: build, up and create each re-read the tracked files as the app user, ps and exec do not' \
     "$(grep -cxF -- "git-as demo ${STATUS}" <<<"${ARGV}")" 3
@@ -283,7 +283,7 @@ equals 'tracked: a plain run over a tracked file edited after the merge is refus
 absent 'tracked: and compose never runs a plain run' "${ARGV}" ' run --rm app true'
 cfx tracked-run-clean
 crun "${INIT}; deploy_compose run --rm app true"
-equals 'tracked: a clean plain run passes after one re-read' "$(grep -cxF -- "git-as demo -C ${CROOT} --no-optional-locks status --porcelain --untracked-files=no" <<<"${ARGV}")" 1
+equals 'tracked: a clean plain run passes after one re-read' "$(grep -cxF -- "git-as demo -C ${CROOT} --no-optional-locks -c core.fsmonitor=false status --porcelain --untracked-files=no" <<<"${ARGV}")" 1
 contains 'tracked: and it runs' "${ARGV}" ' run --rm app true'
 equals 'tracked: and exits 0' "${RC}" 0
 
@@ -304,7 +304,7 @@ plain_case worktree_fifo 'mkdir -p worktrees/w; mkfifo worktrees/w/HEAD'
 plain_case gitdir_link 'cd .. && mv .git real.git && ln -s real.git .git'
 cfx plain-regular
 crun "${INIT}; deploy_compose up -d"
-contains 'plain: a regular HEAD still reaches git-as and up' "${ARGV}" "git-as demo -C ${CROOT} --no-optional-locks status"
+contains 'plain: a regular HEAD still reaches git-as and up' "${ARGV}" "git-as demo -C ${CROOT} --no-optional-locks -c core.fsmonitor=false status"
 
 # B4: a value from the app's .env is read as the app user, never through root's eyes.
 if root_only_case 'env value: read as the app user (sudo)'; then

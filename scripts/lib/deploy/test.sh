@@ -57,6 +57,9 @@ GHE_WSUM="$(printf '%s\n' "${GHE_WORKFLOW}" | sha256sum | cut -d' ' -f1)"
 DEVNULL_BEFORE="$(stat -c '%a %u %g %F' /dev/null)"
 
 git_at() { git -C "$ROOT" -c user.name=t -c user.email=t@example.invalid "$@"; }
+# plant_program <path> <ran-file> <last line>: a program that records each run, for the git-config cases.
+plant_program() { printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>%q\n%s\n' "$2" "$3" >"$1"; chmod 0755 "$1"; }
+ran_or_not() { [ -e "$1" ] && printf ran || printf 'never ran'; }
 
 # S1: fixture commits go through the real fleet hook; bracketed letters keep these lines off their own list.
 # What is covered, and the loud false positives (merge's no-stat flag, a dash-n in a message): docs/DECISIONS.md.
@@ -1592,6 +1595,17 @@ fixture ledger-tree-clean
 run_lib "GATE_LEDGER_GIT='git -C ${ROOT}'; printf 'TREE=%s\\n' \"\$(gate_ledger_tree ${LIVE_SHA})\" >&3"
 contains 'and a clean one names its commit'"'"'s tree' "${OUT}" "TREE=$(git_at rev-parse "${LIVE_SHA}^{tree}")"
 
+# Card 714: the gate's tree is the developer's, so its config can name core.fsmonitor; both statuses force it off.
+fixture ledger-fsmonitor
+plant_program "${CASE}/fsmonitor" "${CASE}/fsmonitor-ran" 'exit 1'
+git_at config core.fsmonitor "${CASE}/fsmonitor"
+run_lib "GATE_LEDGER_GIT='git -C ${ROOT}'; printf 'SHA=%s\\n' \"\$(gate_ledger_sha)\" >&3"
+contains 'a gate tree whose config sets core.fsmonitor still names its commit' "${OUT}" "SHA=$(git_at rev-parse HEAD)"
+equals 'and gate_ledger_sha did not run the fsmonitor program' "$(ran_or_not "${CASE}/fsmonitor-ran")" 'never ran'
+run_lib "GATE_LEDGER_GIT='git -C ${ROOT}'; printf 'TREE=%s\\n' \"\$(gate_ledger_tree ${LIVE_SHA})\" >&3"
+contains 'and still names its tree' "${OUT}" "TREE=$(git_at rev-parse "${LIVE_SHA}^{tree}")"
+equals 'and gate_ledger_tree did not run it either' "$(ran_or_not "${CASE}/fsmonitor-ran")" 'never ran'
+
 fixture ledger-writer-late-dirty
 WRITTEN="${CASE}/written"
 tree_shim late
@@ -1745,6 +1759,19 @@ run_lib 'GIT=false; refuse_if_dirty; printf "PAST THE DIRTY CHECK\n" >&3'
 contains 'a git status that fails is refused, never read as a clean checkout' "${OUT}" \
     "REFUSED: git status exited 1 in ${ROOT}, so the checkout is not known to be clean; a deploy never fast-forwards over it."
 absent 'and nothing after it runs (git failed)' "${OUT}" 'PAST THE DIRTY CHECK'
+
+# Card 714: ROOT is the app's checkout, so its config can name core.fsmonitor; both status checks force it off.
+fixture preflight-fsmonitor
+plant_program "${CASE}/fsmonitor" "${CASE}/fsmonitor-ran" 'exit 1'
+git_at config core.fsmonitor "${CASE}/fsmonitor"
+run_lib 'refuse_if_dirty; printf "PAST THE DIRTY CHECK\n" >&3'
+contains 'a checkout whose config sets core.fsmonitor passes the dirty check' "${OUT}" 'PAST THE DIRTY CHECK'
+equals 'and refuse_if_dirty did not run the fsmonitor program' "$(ran_or_not "${CASE}/fsmonitor-ran")" 'never ran'
+run_lib 'deploy_refuse_if_tracked_dirty; printf "PAST THE TRACKED CHECK\n" >&3'
+contains 'and passes the tracked-files check' "${OUT}" 'PAST THE TRACKED CHECK'
+equals 'and deploy_refuse_if_tracked_dirty did not run it either' "$(ran_or_not "${CASE}/fsmonitor-ran")" 'never ran'
+git -C "${ROOT}" --no-optional-locks status --porcelain --untracked-files=no >/dev/null 2>&1
+equals 'and a plain tracked-only status does run it, so the fixture is live' "$(ran_or_not "${CASE}/fsmonitor-ran")" 'ran'
 
 # --- 6. the summary ----------------------------------------------------------------
 fixture summary
@@ -2040,7 +2067,7 @@ LIB_TIMEOUT=60 run_lib "GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=2;
 took=$((SECONDS - started))
 equals 'bounded: a git that never answers is refused' "RC=${RC}" 'RC=1'
 contains 'bounded: and the refusal says git did not answer' "${OUT}" \
-    "REFUSED: git did not answer in 2s: ${CASE}/shim/git -C ${ROOT} --no-optional-locks status --porcelain"
+    "REFUSED: git did not answer in 2s: ${CASE}/shim/git -C ${ROOT} --no-optional-locks -c core.fsmonitor=false status --porcelain"
 absent 'bounded: and nothing after it runs' "${OUT}" 'PAST THE DIRTY CHECK'
 if [ "${took}" -lt 15 ]; then pass "bounded: and it took ${took}s, not the git's setsid grandchild's 20"; else fail "bounded: a hanging git held the deploy ${took}s"; fi
 
@@ -2066,7 +2093,7 @@ started=${SECONDS}
 LIB_TIMEOUT=60 run_lib "GIT='${CASE}/shim/git -C ${ROOT}'; DEPLOY_GIT_TIMEOUT=1; refuse_if_dirty; printf 'PAST THE DIRTY CHECK\n' >&3"
 took=$((SECONDS - started))
 contains 'bounded: a git that ignores TERM is killed and refused as not answering' "${OUT}" \
-    "REFUSED: git did not answer in 1s: ${CASE}/shim/git -C ${ROOT} --no-optional-locks status --porcelain"
+    "REFUSED: git did not answer in 1s: ${CASE}/shim/git -C ${ROOT} --no-optional-locks -c core.fsmonitor=false status --porcelain"
 absent 'bounded: and nothing after it runs (KILL)' "${OUT}" 'PAST THE DIRTY CHECK'
 if [ "${took}" -ge 5 ] && [ "${took}" -lt 20 ]; then pass "bounded: and it took ${took}s, so the KILL ended it"; else fail "bounded: the TERM-ignoring git took ${took}s, not the 1s timeout plus the 5s KILL"; fi
 
@@ -2083,7 +2110,7 @@ for which in out err; do
     OUT=$(ROOT="${ROOT}" GIT="${CASE}/shim/git-${which}" "${readback_drop[@]}" \
         bash -c '. "$1"; . "$2"; exec 3>&1; refuse_if_dirty; echo "PAST THE DIRTY CHECK"' _ "${CASE}/lib/summary.sh" "${CASE}/lib/preflight.sh" 2>&1)
     contains "bounded: a std${which} that cannot be read back is refused" "${OUT}" \
-        "REFUSED: git output could not be read back: ${CASE}/shim/git-${which} --no-optional-locks status --porcelain"
+        "REFUSED: git output could not be read back: ${CASE}/shim/git-${which} --no-optional-locks -c core.fsmonitor=false status --porcelain"
     absent "bounded: and the tree is not read as clean (std${which})" "${OUT}" 'PAST THE DIRTY CHECK'
 done
 
@@ -2877,6 +2904,81 @@ contains 'a worktree whose config sets core.fsmonitor reaches the .env probe and
 equals 'and neither of its git calls ran the fsmonitor program' "$([ -e "${CASE}/fsmonitor-ran" ] && printf ran || printf 'never ran')" 'never ran'
 git -C "${WT}" --no-optional-locks status --porcelain >/dev/null 2>&1
 equals 'and a plain status in that tree does run it, so the fixture is live' "$([ -e "${CASE}/fsmonitor-ran" ] && printf ran || printf 'never ran')" 'ran'
+
+# Card 714: worktree remove runs a status of its own in the tree, so it forces fsmonitor off too.
+cleanup_fixture cleanup-fsmonitor-remove
+plant_program "${CASE}/fsmonitor" "${CASE}/fsmonitor-ran" 'exit 1'
+git_at config extensions.worktreeConfig true
+git -C "${WT}" config --worktree core.fsmonitor "${CASE}/fsmonitor"
+run_lib "${CLEAN_CALL}"
+contains 'a clean worktree whose config sets core.fsmonitor is removed' "${OUT}" 'worktrees removed 1 kept 0 (none)'
+equals 'and worktree remove did not run the fsmonitor program' "$(ran_or_not "${CASE}/fsmonitor-ran")" 'never ran'
+
+# Card 714: a clean filter is a program status runs even with fsmonitor off, so its tree is kept unread.
+cleanup_fixture cleanup-filter-kept
+plant_program "${CASE}/filter" "${CASE}/filter-ran" cat
+git_at config extensions.worktreeConfig true
+git -C "${WT}" config --worktree filter.x.clean "${CASE}/filter"
+mkdir -p "${ROOT}/.git/info"
+printf '* filter=x\n' >>"${ROOT}/.git/info/attributes"
+touch -d '2001-01-01' "${WT}/app/base.txt"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree whose config names a clean filter is kept before status' "${OUT}" 'worktrees removed 0 kept 1 (filter)'
+equals 'and the filter program never ran' "$(ran_or_not "${CASE}/filter-ran")" 'never ran'
+git -C "${WT}" --no-optional-locks -c core.fsmonitor=false status --porcelain >/dev/null 2>&1
+equals 'and a status with fsmonitor off does run it, so the fixture is live' "$(ran_or_not "${CASE}/filter-ran")" 'ran'
+
+# The find seam names the filter after status has run, so only the read just before remove sees it.
+cleanup_fixture cleanup-filter-late
+plant_program "${CASE}/filter" "${CASE}/filter-ran" cat
+git_at config extensions.worktreeConfig true
+mkdir -p "${ROOT}/.git/info"
+printf '* filter=x\n' >>"${ROOT}/.git/info/attributes"
+touch -d '2001-01-01' "${WT}/app/base.txt"
+printf '#!/bin/sh\ngit -C %q config --worktree filter.x.clean %q\nexec /usr/bin/find "$@"\n' "${WT}" "${CASE}/filter" >"${CASE}/find-late"
+chmod 0755 "${CASE}/find-late"
+run_lib "CLEANUP_FIND=${CASE}/find-late; ${CLEAN_CALL}"
+contains 'a filter named after status but before remove still keeps the tree' "${OUT}" 'worktrees removed 0 kept 1 (filter)'
+equals 'and worktree remove never ran it' "$(ran_or_not "${CASE}/filter-ran")" 'never ran'
+
+# A filter may have an empty name, which `* filter=` selects: the read matches it too (ES #70 review).
+cleanup_fixture cleanup-filter-empty-name
+plant_program "${CASE}/filter" "${CASE}/filter-ran" cat
+git_at config extensions.worktreeConfig true
+git -C "${WT}" config --worktree 'filter..clean' "${CASE}/filter"
+mkdir -p "${ROOT}/.git/info"
+printf '* filter=\n' >>"${ROOT}/.git/info/attributes"
+touch -d '2001-01-01' "${WT}/app/base.txt"
+run_lib "${CLEAN_CALL}"
+contains 'a worktree whose config names an empty-named clean filter is kept' "${OUT}" 'worktrees removed 0 kept 1 (filter)'
+equals 'and the empty-named filter never ran' "$(ran_or_not "${CASE}/filter-ran")" 'never ran'
+git -C "${WT}" --no-optional-locks -c core.fsmonitor=false status --porcelain >/dev/null 2>&1
+equals 'and a status does run it, so the empty-name fixture is live' "$(ran_or_not "${CASE}/filter-ran")" 'ran'
+
+# worktree remove's own status would write the index and fire post-index-change as root: it takes no locks.
+# The tree's config.worktree names the hook folder by file, as a local one outranks the fleet's global.
+cleanup_fixture cleanup-remove-no-index-hook
+mkdir -p "${CASE}/hooks"
+plant_program "${CASE}/hooks/post-index-change" "${CASE}/hook-ran" 'exit 0'
+git_at config extensions.worktreeConfig true
+printf '[core]\n\thooksPath = %s\n' "${CASE}/hooks" >>"$(git -C "${WT}" rev-parse --path-format=absolute --git-path config.worktree)"
+touch -d '2001-01-01' "${WT}/app/base.txt"
+git -C "${WT}" status --porcelain >/dev/null 2>&1
+equals 'a status that takes locks in that tree fires the hook, so the fixture is live' "$(ran_or_not "${CASE}/hook-ran")" 'ran'
+rm -f -- "${CASE}/hook-ran"
+touch -d '2002-01-01' "${WT}/app/base.txt"
+run_lib "${CLEAN_CALL}"
+contains 'a clean worktree whose hooks name post-index-change is removed' "${OUT}" 'worktrees removed 1 kept 0 (none)'
+equals 'and worktree remove never fired the hook' "$(ran_or_not "${CASE}/hook-ran")" 'never ran'
+
+# A filter in the system config only root could have written is root's own and keeps nothing.
+cleanup_fixture cleanup-filter-system
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ncase " $* " in *" --show-scope "*) printf "system\\tfilter.lfs.clean git-lfs clean -- %%%%f\\n"; exit 0 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+WT_GIT_SEAM="${CASE}/shim/git"
+run_lib "${CLEAN_CALL}"
+contains 'a filter named only in the system config does not keep the tree' "${OUT}" 'worktrees removed 1 kept 0 (none)'
 
 # The shims exit 3 and print nothing: an error on stdout would be read as a found file,
 # which is the wrong reason reached by luck rather than the could-not-tell branch.

@@ -11,6 +11,40 @@ sweep (exit 1). Its suite, `scripts/mutant-sane-test.sh` (case groups 0–8), jo
 `scripts/mutant-sane-mutants.txt` deletes or rewrites each guard line and every one turns the suite red.
 Why: `docs/decisions/2026-10-26-1915-mutant-sane-before-red.md`.
 
+## 2026-10-25 — the cleanup keeps a worktree whose git config names a filter, and every status forces `core.fsmonitor` off (deploy-lib VERSION 2026-10-25.3; the standard is unchanged and VERSION is not bumped)
+**Card 714.** Card 694's leftovers. `cleanup.sh`'s `${GIT} worktree remove` is now `${GIT}
+--no-optional-locks -c core.fsmonitor=false worktree remove`: its own inner `status` started the
+tree's fsmonitor program, and wrote the index, which fired a `post-index-change` hook as root. The
+`status` calls in `preflight.sh` (two, in `ROOT`), `compose.sh` (one, as the app user) and
+`ledger.sh` (two, in the gate's tree) force fsmonitor off too; a non-root user can write each
+tree's config, and all five already take no locks. A `filter.<name>.clean` or `.process` program
+still runs under `status` with fsmonitor off, and no single `-c` turns every filter off, so a new
+`cleanup_filters` reads `git config --show-scope --get-regexp '^filter\..*\.(clean|process)$'`
+through `WT_GIT` before `status` and again before `worktree remove` (`.*`, so an empty filter
+name is matched); a filter in any scope but `system` keeps the tree as `filter`. Limits: the read
+is not atomic with the call after it (as the app's own uid for `status`, no escalation; root's
+`worktree remove` keeps a shorter window), a submodule's config is not read, an app-user global
+filter such as git-lfs keeps every worktree, the hook probe covers git 2.39.5 only, and a filter
+named in `ROOT`'s or the gate tree's own config still runs in those trees' `status` calls. Eight new
+`test.sh` cases, each red when its one option or guard line is removed; `compose-test.sh` expects
+the new argv. Every header is re-stamped for 2026-10-25.3. Why:
+decision: a-worktree-whose-git-config-names-a-filter-is-kept.
+
+## 2026-10-26 — the hook-bypass scan has one copy, here (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 746.** New `scripts/hook-bypass-scan.sh` and `scripts/hook-bypass-scan-test.sh`, lifted from Memento
+at 466b957 and run, like `decisions-check.sh`, from this checkout against an app root; extra arguments
+are paths skipped whole, exact. Two new rules: an empty `''` or `""` pair is dropped before judging, so a
+word split by one is still the route; and the hooks-key read pass needs `--get` as its own word, so
+`--unset --no-get` is found by rule. One new pass: `env -i`, assignments, exactly `HOME=/root`, then any command in the same command. Each line is judged a second time de-quoted, as bash drops a quote or
+backslash inside a word; a docker run's span stops at `$(` or a backtick; a git that lists another tree exits 2.
+The cases hide their routes with a dropped `@`; `scripts/hook-bypass-scan-mutants.txt` is its T5 table, run by hand
+with `scripts/guard-mutants.sh`. Gate step 2 runs the scan over this tree (seven named skips: three prose files, three
+mutant tables, and the deploy lib's `test.sh`, whose git shim drops HOME on purpose) and its cases. No app calls it yet.
+Round 3: `unset HOME`, `env -u HOME`, `env -i` with git next, and HOME (or `XDG_CONFIG_HOME`) set by `read`,
+`printf -v`, `declare`/`local`, `getopts`, `wait -p`, `for`, `coproc`, `let`, `(( ))`, a nameref or an index are findings; so are `include.path` and
+`includeIf.<cond>.path`, which load a file that can set the hooks key.
+Why: `docs/decisions/` the-hook-bypass-scan-has-one-copy.
+
 ## 2026-10-26 — T9's check follows the shared deploy lib (the standard is unchanged and VERSION is not bumped)
 **Card 749.** `gate-image-tags.sh` now follows a gate's `. "${DEPLOY_LIB}/…"` into `scripts/lib/deploy`
 of the clone it runs from, so a bare compose call below the ledger arm is judged instead of

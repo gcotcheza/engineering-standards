@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.2 sha256:b0a3343349c47db934492a40b869ab2fb7e0c7e30d239a45d2e61b7ff3d76078
+# fleet-deploy-lib 2026-10-25.3 sha256:8d4a69bba0c413d6a4471963702cde5fbbc8d00179011a995cbff26bb28ef2d4
 # shellcheck shell=bash
 # One line per gate run: <sha> <ci|e2e> <utc> <rc> <log> <tree|->. ci.sh and e2e.sh write it,
 # gated reads it, and the commit GATE_SHA names is refused unless it holds the rows its test
@@ -31,7 +31,7 @@ gate_ledger_sha() {
     # shellcheck disable=SC2086
     sha=$($git rev-parse HEAD 2>/dev/null) || return 1
     # shellcheck disable=SC2086
-    if [ -n "$($git --no-optional-locks status --porcelain 2>/dev/null)" ]; then
+    if [ -n "$($git --no-optional-locks -c core.fsmonitor=false status --porcelain 2>/dev/null)" ]; then
         printf 'gate-ledger: dirty tree: no ledger row — commit, then gate the tip\n' >&2
         return 2
     fi
@@ -42,7 +42,7 @@ gate_ledger_sha() {
 gate_ledger_tree() {
     local git=${GATE_LEDGER_GIT:-git} status=''
     # shellcheck disable=SC2086
-    status=$($git --no-optional-locks status --porcelain 2>/dev/null) || { printf -- '-'; return 0; }
+    status=$($git --no-optional-locks -c core.fsmonitor=false status --porcelain 2>/dev/null) || { printf -- '-'; return 0; }
     [ -z "$status" ] || { printf -- '-'; return 0; }
     # shellcheck disable=SC2086
     $git rev-parse --verify -q "$1^{tree}" 2>/dev/null || printf -- '-'

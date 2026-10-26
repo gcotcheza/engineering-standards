@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-10-25.2 sha256:caa763fe0ce0d5d80bc8c2726cd1df5db1ba149598087883a2e0b3d4cf56b0a0
+# fleet-deploy-lib 2026-10-25.3 sha256:7cd6004542c3a37dffa3cb24d9db63e5f18f8958a62690e345f1328d61aaa24e
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -198,7 +198,7 @@ deploy_compose_exec() {
 deploy_compose_tracked() {
     local out rc=0
     deploy_compose_git_plain "$1/.git" || { DEPLOY_COMPOSE_ERR="$1/.git is not a plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it"; return 1; }
-    deploy_compose_git_bounded "${DEPLOY_GIT_AS:-git-as}" "$(deploy_compose_user "$1")" -C "$1" --no-optional-locks status --porcelain --untracked-files=no || rc=$?
+    deploy_compose_git_bounded "${DEPLOY_GIT_AS:-git-as}" "$(deploy_compose_user "$1")" -C "$1" --no-optional-locks -c core.fsmonitor=false status --porcelain --untracked-files=no || rc=$?
     out=$DEPLOY_GIT_OUT
     [ "$rc" = 0 ] || { DEPLOY_COMPOSE_ERR="${DEPLOY_GIT_ERR:-git status exited $rc} in $1, so the tracked files are not known to be the merge and nothing is built over them"; return 1; }
     [ -z "$out" ] || { DEPLOY_COMPOSE_ERR="tracked files in $1 are modified since the fast-forward, so nothing is built over them: ${out//$'\n'/; }"; return 1; }
