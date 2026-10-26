@@ -1,11 +1,23 @@
 # Changelog
 
+## 2026-10-26 — T9's check follows the shared deploy lib (the standard is unchanged and VERSION is not bumped)
+**Card 749.** `gate-image-tags.sh` now follows a gate's `. "${DEPLOY_LIB}/…"` into `scripts/lib/deploy`
+of the clone it runs from, so a bare compose call below the ledger arm is judged instead of
+unjudged, and apps can arm first again (card 717). It does so only when the gate sourced the app's
+`scripts/lib/gate/deploy-lib.sh` above that line, that helper opens with the exact pin block, and no
+file in the chain mentions `DEPLOY_LIB`, `DEPLOY_LIB_TEST_CLONE` or `DEPLOY_LIB_HARNESS` except as a
+plain `$NAME`/`${NAME}` read; a
+followed file must resolve (`readlink -f`) inside the lib's physical path (`pwd -P`). Everything
+else stays unjudged. New cases 65–81; each guard line or clause, deleted, turns at least one red.
+Why: `docs/decisions/2026-10-26-0444-t9-follows-the-deploy-lib.md`.
+
 ## 2026-10-26 — T9's check no longer reads a here-string as a heredoc (the standard is unchanged and VERSION is not bumped)
 **Backlog 760.** `gate-image-tags.sh` skipped the `<<<` at one offset, then matched `<<y` one
 character later, so `read -r x <<<y` opened a heredoc that never closed and every compose call below
 it, a production-tag build included, passed unjudged. A `<<<` is now consumed whole before the
-heredoc match. New cases 66 (four here-string spellings above a production build, rc 1) and 67 (a
-`<<-'EOF'` body stays hidden); reverting the fix turns case 66 red.
+heredoc match. New cases 82 (four here-string spellings above a production build, rc 1) and 83 (a
+`<<-'EOF'` body stays hidden; 66 and 67 until card 749 took those numbers); reverting the fix
+turns case 82 red.
 
 ## 2026-10-25 — grep -q reads a here-string, never a pipe, in the test helpers and three scripts (the standard is unchanged and VERSION is not bumped)
 **Cards 704 and 730.** Under `set -o pipefail`, `<writer> | grep -q` lets grep quit at the first

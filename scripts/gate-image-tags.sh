@@ -699,25 +699,80 @@ for o in compose.override.yaml compose.override.yml \
     [ ! -f "${ROOT}/${o}" ] || { DEFSET="${DEFSET},${o}"; break; }
 done
 
-# A gate script may set COMPOSE_FILE in a file it sources, which may source
-# another. The idioms naming the sourcing script's own directory are resolved
-# against it; otherwise the leading variable of the path is dropped and the rest
-# resolved under this root. A path that resolves to nothing readable makes that
-# script's bare calls unjudged rather than falling through to compose's default.
+# A sourced path resolves under this root, or as `$DEPLOY_LIB/` into this clone's lib once the app's
+# pinning helper has run above it; anything else stays unjudged. decision: t9-follows-the-deploy-lib
+ES_LIB="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/lib/deploy" 2>/dev/null && pwd -P)"
+DEPLOY_LIB_HELPER=scripts/lib/gate/deploy-lib.sh
+DEPLOY_LIB_PIN_BLOCK="$(cat <<'BLOCK'
+DEPLOY_LIB_CLONE=/srv/engineering-standards
+DEPLOY_LIB=/srv/engineering-standards/scripts/lib/deploy
+DEPLOY_LIB_SEAM_REFUSED=''
+if [[ -n "${DEPLOY_LIB_TEST_CLONE+x}" ]]; then
+if [[ "${DEPLOY_LIB_HARNESS:-}" != deploy-lib-test ]] || (( EUID == 0 )); then
+DEPLOY_LIB_SEAM_REFUSED='DEPLOY_LIB_TEST_CLONE is set, and it is honoured only for deploy-lib-test.sh run unprivileged'
+else
+DEPLOY_LIB_CLONE=$DEPLOY_LIB_TEST_CLONE
+DEPLOY_LIB=$DEPLOY_LIB_CLONE/scripts/lib/deploy
+fi
+fi
+BLOCK
+)"
+
+deploy_lib_reads_only() { # $1 file, $2 1 when it is the helper: its first code is the pin block
+    BLOCK="${DEPLOY_LIB_PIN_BLOCK}" awk -v helper="$2" '
+        BEGIN {
+            n = split(ENVIRON["BLOCK"], want, "\n"); k = helper ? 1 : n + 1
+            seam["DEPLOY_LIB"]; seam["DEPLOY_LIB_TEST_CLONE"]; seam["DEPLOY_LIB_HARNESS"]
+        }
+        k <= n {
+            v = $0
+            gsub(/[ \t]+/, " ", v)
+            sub(/^ /, "", v)
+            sub(/ $/, "", v)
+            if (v ~ /^#/) next
+            if (v != want[k]) { bad = 1; exit }
+            k++
+            next
+        }
+        {
+            t = "  " $0; p = 0
+            while ((i = index(substr(t, p + 1), "DEPLOY_LIB")) > 0) {
+                i += p; p = i + 9
+                match(substr(t, i), /^[A-Za-z0-9_]+/); w = substr(t, i, RLENGTH)
+                b = substr(t, i - 1, 1); b2 = substr(t, i - 2, 2); a = substr(t, i + RLENGTH, 1)
+                if (!(w in seam) || b ~ /[A-Za-z0-9_]/ || b == "$" || (b2 == "${" && a == "}")) continue
+                bad = 1
+            }
+        }
+        END { exit bad || k <= n }' "$1"
+}
+
 resolve_sourced() {
-    local v="$1" dir="$2" rest c pre
+    local v="$1" dir="$2" helper="$3" rest c pre lib='' base
     # shellcheck disable=SC2016  # these are the sourcing script's own text, not ours
     for pre in '$(dirname $0)' '$(dirname $BASH_SOURCE)' '$(dirname ${BASH_SOURCE[0]})' \
                '${BASH_SOURCE%/*}' '${BASH_SOURCE[0]%/*}' '${0%/*}'; do
         case "${v}" in "${pre}/"*) v="${dir}/${v#"${pre}/"}"; break ;; esac
     done
+    # shellcheck disable=SC2016  # the sourcing script's own text, not ours
+    case "${v}" in '$DEPLOY_LIB/'*|'${DEPLOY_LIB}/'*)
+        [ -n "${ES_LIB}" ] && [ -n "${helper}" ] || return 1
+        v="${ES_LIB}/${v#*/}"
+        lib=1 ;;
+    esac
     rest="${v}"
     case "${v}" in *'$'*) rest="${v#*/}" ;; esac
     case "${rest}" in *'$'*|'') return 1 ;; esac
     for c in "${rest}" "${ROOT}/${rest}" "${ROOT}/scripts/${rest}"; do
         [ -f "${c}" ] || continue
-        c="$(cd -- "$(dirname -- "${c}")" && pwd)/$(basename -- "${c}")"
-        case "${c}" in "${ROOT}"/*) printf '%s' "${c}"; return 0 ;; esac
+        if [ -n "${lib}" ]; then
+            c="$(readlink -f -- "${c}")"
+            base="${ES_LIB}"
+        else
+            c="$(cd -- "$(dirname -- "${c}")" && pwd)/$(basename -- "${c}")"
+            base="${ROOT}"
+        fi
+        case "${c}" in "${base}"/*) printf '%s' "${c}"; return 0 ;; esac
     done
     return 1
 }
@@ -731,8 +786,13 @@ trap 'rm -f "${RECORDS}" "${PRE}" "${ASG}"' EXIT
 # readable, leaves that script's bare calls unjudged.
 SRCDEPTH=4
 scan_sources() {
-    local g="$1" att="$2" depth="$3" dir ln raw sp use
+    local g="$1" att="$2" depth="$3" dir ln pin raw sp use
     dir="$(dirname -- "${g}")"
+    if [ "${g}" = "${ROOT}/${DEPLOY_LIB_HELPER}" ] && deploy_lib_reads_only "${g}" 1; then
+        DL_HELPER=1
+    elif ! deploy_lib_reads_only "${g}" 0; then
+        DL_TAINT=1
+    fi
     while IFS="${TAB}" read -r ln raw; do
         [ -n "${ln}" ] || continue
         use="${att:-${ln}}"
@@ -740,7 +800,9 @@ scan_sources() {
             [ -n "${SRCBAD}" ] || SRCBAD="${use}:${raw}"
             continue
         fi
-        if sp="$(resolve_sourced "${raw}" "${dir}")"; then
+        pin="${DL_HELPER}"
+        [ -z "${DL_TAINT}" ] || pin=''
+        if sp="$(resolve_sourced "${raw}" "${dir}" "${pin}")"; then
             read_gate_sets "${sp}" "${sp#"${ROOT}"/}" '' '' "${ROOT}" '' '' assign >"${ASG}"
             awk -F'\t' -v ln="${use}" 'BEGIN { OFS = "\t" }
                 $1 == "asg" { print ln, $2, $3, $4, $5 }' "${ASG}" >>"${PRE}"
@@ -767,8 +829,13 @@ for s in check ci e2e gate; do
     [ -f "${g}" ] || continue
     GATE_SCRIPTS+=("scripts/${s}.sh")
     : >"${PRE}"
-    SRCBAD=''
+    SRCBAD='' DL_HELPER='' DL_TAINT=''
     scan_sources "${g}" '' 0
+    if [ -n "${DL_TAINT}" ]; then
+        : >"${PRE}"
+        SRCBAD=''
+        scan_sources "${g}" '' 0
+    fi
     read_gate_sets "${g}" "scripts/${s}.sh" "${KNOWN}" "${DEFSET}" "${ROOT}" \
         "${PRE}" "${SRCBAD}" '' >>"${RECORDS}"
 done
