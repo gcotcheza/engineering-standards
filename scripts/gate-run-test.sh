@@ -139,6 +139,9 @@ no_run() { [ -z "$(ls -A "$RB/$APP-gate" 2>/dev/null)" ]; }
 ledger_last() { tail -1 "$P/ledger" 2>/dev/null; }
 ledger_n() { grep -c '' "$P/ledger" 2>/dev/null || true; }
 fake_etc_clean() { [ "$(ls -A "$P/fake-etc")" = probe ]; }
+# decision: grep-q-reads-a-here-string-not-a-pipe
+stray_compose_file() { local f; f=$(grep "^FILE -f" "$1") || return 1; grep -vq -e "/tree/docker-compose.yml " -e "/override.yml " <<<"$f"; }
+ran_bin_x() { local e; e=$(grep "^[0-9]* *execve(" "$1") || return 1; grep -q '/bin/x"' <<<"$e"; }
 
 if want A0; then
     gr "$APP" "$BASE" scripts/check.sh
@@ -162,8 +165,10 @@ if want A2; then
     (for _ in 1 2 3 4 5 6; do printf "services:\n  app:\n    image: busybox\n    volumes: ['/:/host']\n" >"$SRC/docker-compose.yml"; sleep 0.5; done) &
     touch "$P/hold"; gr "$APP" "$BASE" scripts/check.sh -- compose; rm -f "$P/hold"; wait
     blob=$(g -C "$SRC" cat-file blob "$BASE:docker-compose.yml" | sha256sum | cut -d' ' -f1)
-    ok A2 '[ "$RC" = 0 ] && grep -q "^FILE -f .*/tree/docker-compose.yml [0-9]* $blob$" "$P/docker.log" && ! grep "^FILE -f" "$P/docker.log" | grep -vq -e "/tree/docker-compose.yml " -e "/override.yml "'
+    ok A2 '[ "$RC" = 0 ] && grep -q "^FILE -f .*/tree/docker-compose.yml [0-9]* $blob$" "$P/docker.log" && ! stray_compose_file "$P/docker.log"'
     g -C "$SRC" checkout -q -f "$BASE"
+    { printf 'FILE -f /etc/evil.yml 1 x\n'; printf 'FILE -f /run/t/tree/docker-compose.yml %s x\n' {1..30000}; } >"$S/big-docker.log"
+    OUT="a stray -f file on line 1 of a 1.2 MB docker.log"; ok A2-big 'stray_compose_file "$S/big-docker.log"'
 fi
 if want A2; then
     gr "$APP" "$BASE" scripts/check.sh -- badf
@@ -208,7 +213,9 @@ if want A9; then
     touch "$P/plant-build"
     PRE=(strace -f -qq -e trace=execve -o "$P/strace"); gr "$APP" "$BASE" scripts/check.sh -- build; PRE=()
     rm -f "$P/plant-build"
-    ok A9 '[ ! -e "$P/pwn" ] && [ -s "$P/strace" ] && ! grep "^[0-9]* *execve(" "$P/strace" | grep -q "/bin/x\""'
+    ok A9 '[ ! -e "$P/pwn" ] && [ -s "$P/strace" ] && ! ran_bin_x "$P/strace"'
+    { printf '9 execve("/bin/x", ["/bin/x"], 0x0) = 0\n'; printf '%s execve("/usr/bin/true", ["true"], 0x0) = 0\n' {10000..40000}; } >"$S/big-strace"
+    OUT="a /bin/x execve on line 1 of a 1.4 MB strace"; ok A9-big 'ran_bin_x "$S/big-strace"'
     ok A9-user 'grep -q "^ARGV compose .* run --user $(id -u nobody):$(id -g nobody) app true$" "$P/docker.log"'
 fi
 if want A10 && [ "$ME" = 0 ]; then

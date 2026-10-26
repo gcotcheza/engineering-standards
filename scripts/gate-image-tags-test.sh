@@ -14,8 +14,9 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
-lacks()   { if printf '%s' "$2" | grep -qE "$3"; then fail "$1 — [$2] matches /$3/"; else pass "$1"; fi; }
+# decision: grep-q-reads-a-here-string-not-a-pipe
+matches() { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+lacks()   { if grep -qE "$3" <<<"$2"; then fail "$1 — [$2] matches /$3/"; else pass "$1"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -801,6 +802,13 @@ matches 'case 64: the set is judged at the line that uses the wrapper' "${OUT}" 
     'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:2, -f\) builds x/app:ci$'
 lacks   'case 64: and the line that only defines it is not a run of its own' "${OUT}" 'scripts/check\.sh:1'
 equals  'case 64: exit code' "${RC}" 0
+
+# --- 64b. the helpers read a big output whose first line matches (card 704) --
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE
+# the writer. Each helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 64b: matches sees the match' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
+equals 'case 64b: lacks reports the match' "$( (lacks x "${BIG}" 'needle') 2>&1 >/dev/null | grep -c '^FAIL x ')" 1
 
 # A standards clone in the fixture: the check under test, with a deploy lib beside it.
 mkdir -p "${WORK}/es/scripts/lib/deploy" "${WORK}/esbare/scripts" "${WORK}/elsewhere"

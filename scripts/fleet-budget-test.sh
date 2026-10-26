@@ -15,7 +15,8 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+# decision: grep-q-reads-a-here-string-not-a-pipe
+matches() { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -205,6 +206,12 @@ equals 'case 14: exit code' "${RC}" 1
 equals 'case 14: the stale cache is untouched' "$(cat "${WORK}/cache.json")" 'SENTINEL-not-json'
 equals 'case 14: the token is not in the output' "$(printf '%s' "${OUT}" | grep -cF "${DUMMY_TOKEN}")" 0
 kill "${SERVER_PID}" 2>/dev/null
+
+# --- 15. the helpers read a big output whose first line matches (card 704) ---
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE
+# the writer. Each helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 15: matches sees the match' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-budget-test: all checks passed\n'
