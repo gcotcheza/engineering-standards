@@ -11,7 +11,7 @@ The cases hide their routes with a dropped `@`; `scripts/hook-bypass-scan-mutant
 with `scripts/guard-mutants.sh`. Gate step 2 runs the scan over this tree (seven named skips: three prose files, three
 mutant tables, and the deploy lib's `test.sh`, whose git shim drops HOME on purpose) and its cases. No app calls it yet.
 Round 3: `unset HOME`, `env -u HOME`, `env -i` with git next, and HOME (or `XDG_CONFIG_HOME`) set by `read`,
-`printf -v`, `declare`/`local`, `getopts`, `wait -p`, `for`, `coproc`, `let`, `(( ))` or an index are findings; so are `include.path` and
+`printf -v`, `declare`/`local`, `getopts`, `wait -p`, `for`, `coproc`, `let`, `(( ))`, a nameref or an index are findings; so are `include.path` and
 `includeIf.<cond>.path`, which load a file that can set the hooks key.
 Why: `docs/decisions/` the-hook-bypass-scan-has-one-copy.
 
