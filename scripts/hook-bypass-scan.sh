@@ -147,7 +147,8 @@ function rules(t, s,    h, e, rest) {
     # A home taken away is another home: env -i past the pass above with git next, or env -u or unset of either home.
     if (h ~ ENV_CMD "(-[0iv]*i[^ \t;&|]*|--ignore-e[a-z]*|-)" ENV_OPTS "[ \t]+(" ASSIGN ")*" GITWORD) hit("env -i (git with no HOME at all)")
     if (h ~ ENV_CMD "(-[0iv]*u[ \t]*|--u[a-z]*([ \t]+|=))" HOMES WORDEND || h ~ WORD "unset" ARGS "[ \t]+" HOMES WORDEND) hit("env -u or unset of a home")
-    # A home set without the text HOME=: an index, read, printf -v, declare or local, a loop variable, or let or (( )).
+    # A home set without the text HOME=: an index, read, printf -v, declare or local, getopts, wait -p, a loop or coproc name,
+    # or let or (( )).
     if (h ~ "(^|[^A-Za-z0-9_])" HOMES "\\[[^]]*\\]\\+?=" || h ~ SETS HOMES WORDEND || h ~ ARITH) hit("a home set by read, declare, printf -v, for, let or an index")
 }
 function judge(file, n, s, argvn,    d) {
@@ -183,7 +184,7 @@ BEGIN {
     ENV_OPTS = "([ \t]+-[^ \t;&|]*([ \t]+[^- \t;&|][^ \t;&|]*)?)*"
     ENV_CMD = WORD "env" ENV_OPTS "[ \t]+"
     GITWORD = "[^ \t;&|=]*(git|GIT)[^ \t;&|=]*([ \t;&|)`]|$)"
-    SETS = WORD "((read|readarray|mapfile|local|declare|typeset)" ARGS "[ \t]+|export" ARGS "[ \t]+-[a-z]*n" ARGS "[ \t]+|printf" ARGS "[ \t]+-v[ \t]*|(for|select)[ \t]+)"
+    SETS = WORD "((read|readarray|mapfile|local|declare|typeset)" ARGS "[ \t]+|export" ARGS "[ \t]+-[a-z]*n" ARGS "[ \t]+|printf" ARGS "[ \t]+-v[ \t]*|getopts[ \t]+[^ \t;&|]+[ \t]+|wait" ARGS "[ \t]+-[a-z]*p[ \t]*|(for|select|coproc)[ \t]+)"
     ARITH = "(" WORD "let" ARGS "[ \t]+|\\(\\(([^)]*[^A-Za-z0-9_])?)" HOMES "[ \t]*(\\+\\+|--|([-+*/%&|^]|<<|>>)?=([^=]|$))"
     CONTAINER_ENV = "(^|[ \t])(-e|--env)[ \t=]+[\"" q "]?HOME="
     VALUEOPT = "^(-[a-z]*[mfct]|--(message|file|author|date|template|trailer|cleanup|fixup|squash|reuse-message|reedit-message))$"
