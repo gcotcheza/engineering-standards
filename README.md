@@ -64,10 +64,10 @@ the target copies, chmods or deletes.
 `scripts/mutant-sane.sh <original> <mutant> [<from>[-<to>]]` (a deletion) or
 `scripts/mutant-sane.sh <original> <mutant> <line> --replaced-with <text>` (a replacement) is what a
 sweep runs before it believes a red; `guard-mutants.sh` runs it on every mutant it writes. Silent and
-exit 0 when the mutant is a regular file on disk, differs from the original, keeps its mode, still
+exit 0 when the mutant is a regular file on disk (a symlink is refused, never followed), differs from the original, keeps its mode, still
 parses (`bash -n`, when the original has a bash or sh shebang) and is the original with exactly the
 given lines removed (exactly one line when no range is given), or with exactly that line swapped for
-exactly that text (its final newline, or lack of one, kept); otherwise
+exactly that text, matched literally and holding no newline (its final newline, or lack of one, kept); otherwise
 one `mutant-sane: REFUSED <why>` line and exit 1. It cannot see a deleted `exit` that still prints the
 grepped text, so suites assert the exit code too. Its T5 table is `scripts/mutant-sane-mutants.txt`;
 why: `docs/decisions/2026-10-26-1915-mutant-sane-before-red.md`.
