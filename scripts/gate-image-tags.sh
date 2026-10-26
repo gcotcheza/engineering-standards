@@ -698,31 +698,53 @@ for o in compose.override.yaml compose.override.yml \
     [ ! -f "${ROOT}/${o}" ] || { DEFSET="${DEFSET},${o}"; break; }
 done
 
-# A gate script may set COMPOSE_FILE in a file it sources, which may source
-# another. The idioms naming the sourcing script's own directory are resolved
-# against it, `$DEPLOY_LIB/` against this clone's deploy lib and nothing else
-# outside this root (decision: t9-follows-the-deploy-lib); otherwise the leading
-# variable is dropped and the rest resolved under this root. A path that resolves
-# to nothing readable leaves that script's bare calls unjudged, never defaulted.
-ES_LIB="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/lib/deploy" 2>/dev/null && pwd)" || ES_LIB=''
+# A sourced path resolves under this root, or as `$DEPLOY_LIB/` into this clone's
+# deploy lib; anything unreadable leaves the bare calls unjudged. decision: t9-follows-the-deploy-lib
+ES_LIB="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/lib/deploy" 2>/dev/null && pwd -P)"
+DEPLOY_LIB_PIN=/srv/engineering-standards/scripts/lib/deploy
+
+deploy_lib_pinned() {
+    awk -v pin="${DEPLOY_LIB_PIN}" '
+        /^[ \t]*#/ { next }
+        /(^|[;&|({]|(then|do|else)[ \t])[ \t]*((export|readonly|local|declare|typeset)([ \t]+-[A-Za-z]+)*[ \t]+)?DEPLOY_LIB\+?=/ ||
+        /\$\{DEPLOY_LIB:?=/ ||
+        /(^|[;&|({])[ \t]*(read|for|printf[ \t]+-v)([ \t]+[^;#]*)?[ \t]DEPLOY_LIB([ \t;]|$)/ {
+            v = $0
+            gsub(/^[ \t]+|[ \t]+$/, "", v)
+            sub(/^(export|readonly)[ \t]+/, "", v)
+            gsub(/["\047]/, "", v)
+            if (v != "DEPLOY_LIB=" pin) bad = 1
+        }
+        END { exit bad }' "$1"
+}
+
 resolve_sourced() {
-    local v="$1" dir="$2" rest c pre
+    local v="$1" dir="$2" gate="$3" rest c pre lib='' base
     # shellcheck disable=SC2016  # these are the sourcing script's own text, not ours
     for pre in '$(dirname $0)' '$(dirname $BASH_SOURCE)' '$(dirname ${BASH_SOURCE[0]})' \
                '${BASH_SOURCE%/*}' '${BASH_SOURCE[0]%/*}' '${0%/*}'; do
         case "${v}" in "${pre}/"*) v="${dir}/${v#"${pre}/"}"; break ;; esac
     done
     # shellcheck disable=SC2016  # the sourcing script's own text, not ours
-    case "${v}" in '$DEPLOY_LIB/'*|'${DEPLOY_LIB}/'*) [ -z "${ES_LIB}" ] || v="${ES_LIB}/${v#*/}" ;; esac
+    case "${v}" in '$DEPLOY_LIB/'*|'${DEPLOY_LIB}/'*)
+        [ -n "${ES_LIB}" ] || return 1
+        deploy_lib_pinned "${gate}" || return 1
+        v="${ES_LIB}/${v#*/}"
+        lib=1 ;;
+    esac
     rest="${v}"
     case "${v}" in *'$'*) rest="${v#*/}" ;; esac
     case "${rest}" in *'$'*|'') return 1 ;; esac
     for c in "${rest}" "${ROOT}/${rest}" "${ROOT}/scripts/${rest}"; do
         [ -f "${c}" ] || continue
-        c="$(cd -- "$(dirname -- "${c}")" && pwd)/$(basename -- "${c}")"
-        case "${c}" in "${ROOT}"/*) printf '%s' "${c}"; return 0 ;; esac
-        [ -n "${ES_LIB}" ] || continue
-        case "${c}" in "${ES_LIB}"/*) printf '%s' "${c}"; return 0 ;; esac
+        if [ -n "${lib}" ]; then
+            c="$(readlink -f -- "${c}")"
+            base="${ES_LIB}"
+        else
+            c="$(cd -- "$(dirname -- "${c}")" && pwd)/$(basename -- "${c}")"
+            base="${ROOT}"
+        fi
+        case "${c}" in "${base}"/*) printf '%s' "${c}"; return 0 ;; esac
     done
     return 1
 }
@@ -745,7 +767,7 @@ scan_sources() {
             [ -n "${SRCBAD}" ] || SRCBAD="${use}:${raw}"
             continue
         fi
-        if sp="$(resolve_sourced "${raw}" "${dir}")"; then
+        if sp="$(resolve_sourced "${raw}" "${dir}" "${g}")"; then
             read_gate_sets "${sp}" "${sp#"${ROOT}"/}" '' '' "${ROOT}" '' '' assign >"${ASG}"
             awk -F'\t' -v ln="${use}" 'BEGIN { OFS = "\t" }
                 $1 == "asg" { print ln, $2, $3, $4, $5 }' "${ASG}" >>"${PRE}"

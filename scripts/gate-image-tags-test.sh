@@ -854,6 +854,98 @@ matches 'case 67: with no deploy lib beside the check, an outside path is unread
     'COMPOSE_FILE, which .*/elsewhere/lib\.sh \(sourced at line 1\) may set in scripts/check\.sh:2$'
 equals  'case 67: exit code' "${RC}" 1
 
+unread() { # $1 case, $2 why: the source line is not followed, so the bare call is unjudged
+    matches "case $1: $2" "${OUT}" '\(sourced at line [0-9]+\) may set in scripts/check\.sh:[0-9]+$'
+    equals  "case $1: exit code" "${RC}" 1
+}
+# The same root each time: what the deploy lib sets would pass it, its own vendor copy would not.
+lib_root() {
+    service "$1" docker-compose.yml 'x/app:latest' build
+    overlay "$1" docker-compose.ci.yml app 'x/app:ci'
+    mkdir -p "${WORK}/$1/scripts/vendor"
+    printf 'export COMPOSE_FILE="docker-compose.yml"\n' | tee "${WORK}/$1/scripts/vendor/files.sh" >"${WORK}/$1/ledger.sh"
+}
+
+# --- 68. the gate points DEPLOY_LIB at its own copy -> not the clone's lib ------
+lib_root esvendor
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esvendor check.sh 'DEPLOY_LIB="$(dirname "$0")/vendor"
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es esvendor es
+unread 68 'a DEPLOY_LIB the gate sets elsewhere is not read as the clone lib'
+
+# --- 68b. the gate pins DEPLOY_LIB to the standards clone -> followed -----------
+lib_root espinned
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script espinned check.sh '# set it here, then DEPLOY_LIB=/elsewhere would vendor it
+if true; then
+    readonly DEPLOY_LIB="/srv/engineering-standards/scripts/lib/deploy"
+fi
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es espinned es
+matches 'case 68b: a DEPLOY_LIB pinned to the standards clone is followed' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:6, COMPOSE_FILE\) builds x/app:ci$'
+equals  'case 68b: exit code' "${RC}" 0
+
+# --- 68c/68d. DEPLOY_LIB set by expansion or read -> not the clone's lib --------
+lib_root esdefault
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esdefault check.sh ': "${DEPLOY_LIB:=scripts/vendor}"
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es esdefault es
+unread 68c 'a DEPLOY_LIB a := expansion sets is not read as the clone lib'
+lib_root esread
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esread check.sh 'read -r DEPLOY_LIB <lib.conf
+. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es esread es
+unread 68d 'a DEPLOY_LIB read from input is not read as the clone lib'
+
+# --- 69/70. the clone lib reached by any other path -> not followed -------------
+lib_root esliteral
+gate_script esliteral check.sh ". \"${WORK}/es/scripts/lib/deploy/files.sh\"
+docker compose up -d"
+run_es esliteral es
+unread 69 'a literal path into the clone lib is not followed'
+lib_root esother
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esother check.sh '. "$OTHER/scripts/lib/deploy/files.sh"
+docker compose up -d'
+OUT="$(cd "${WORK}/es" && bash scripts/gate-image-tags.sh "${WORK}/esother" 2>&1)"; RC=$?
+unread 70 'another variable landing in the clone lib from its cwd is not followed'
+
+# --- 71. a symlink in the lib pointing outside it -> not followed ---------------
+ln -s "${WORK}/elsewhere/lib.sh" "${WORK}/es/scripts/lib/deploy/away.sh"
+lib_root essymlink
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script essymlink check.sh '. "$DEPLOY_LIB/away.sh"
+docker compose up -d'
+run_es essymlink es
+unread 71 'a lib file that links outside the lib is not followed'
+
+# --- 72. no deploy lib beside the check -> $DEPLOY_LIB/ is not read from the app root
+lib_root esnolib
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script esnolib check.sh '. "$DEPLOY_LIB/ledger.sh"
+docker compose up -d'
+run_es esnolib esbare
+unread 72 'with no deploy lib, a same-named file in the app is not read as it'
+
+# --- 73. the check run through a symlinked clone path -> still followed ---------
+ln -s "${WORK}/es" "${WORK}/eslink"
+lib_root eslinked
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script eslinked check.sh '. "$DEPLOY_LIB/files.sh"
+docker compose up -d'
+run_es eslinked eslink
+matches 'case 73: a clone reached through a symlink still follows its lib' "${OUT}" \
+    'gate runs: +docker-compose\.yml \+ docker-compose\.ci\.yml \(scripts/check\.sh:2, COMPOSE_FILE\) builds x/app:ci$'
+equals  'case 73: exit code' "${RC}" 0
+
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
     exit 0
