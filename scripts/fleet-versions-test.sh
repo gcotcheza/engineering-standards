@@ -18,8 +18,9 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
-unmatches() { if printf '%s' "$2" | grep -qE "$3"; then fail "$1 — [$2] matches /$3/"; else pass "$1"; fi; }
+# decision: grep-q-reads-a-here-string-not-a-pipe
+matches() { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+unmatches() { if grep -qE "$3" <<<"$2"; then fail "$1 — [$2] matches /$3/"; else pass "$1"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -345,6 +346,13 @@ run_discovery "${NROOT}"
 matches   'case 25: the none row says the lib is there but not compared' "${OUT}" '^ +none +quire +\(scripts/lib/deploy/VERSION present but no scripts/deploy\.sh'
 unmatches 'case 25: and does not claim it was never adopted' "${OUT}" 'quire +\(no scripts/deploy\.sh — deploy-lib not adopted'
 equals    'case 25: exit code' "${RC}" 0
+
+# --- 26. the helpers read a big output whose first line matches (card 704) ----
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE
+# the writer. Each helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 26: matches sees the match' "$( (matches x "${BIG}" '^needle') 2>/dev/null | grep -c '^ok ')" 1
+equals 'case 26: unmatches reports the match' "$( (unmatches x "${BIG}" '^needle') 2>&1 >/dev/null | grep -c '^FAIL x ')" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'

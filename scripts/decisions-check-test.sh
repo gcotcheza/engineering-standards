@@ -19,7 +19,8 @@ fails=0
 pass()  { printf 'ok   %s\n' "$*"; }
 fail()  { printf 'FAIL %s\n' "$*" >&2; fails=$((fails + 1)); }
 equals() { if [ "$2" = "$3" ]; then pass "$1 is [$3]"; else fail "$1 is [$2], expected [$3]"; fi; }
-matches() { if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
+# decision: grep-q-reads-a-here-string-not-a-pipe
+matches() { if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -224,6 +225,21 @@ equals  'case 25c: exit code' "${RC}" 2
 fresh; ten_without_header; mkdir -p "${R}/.fleet"; printf 'no-rollup\000\n' >"${R}/.fleet/decisions-mode"; git -C "${R}" add -- .fleet; run
 matches 'case 25d: a NUL byte is refused' "${OUT}" "^decisions-check: \\.fleet/decisions-mode holds a NUL byte${NOTHING}"
 equals  'case 25d: exit code' "${RC}" 2
+
+# --- 26. the helpers read a big output whose first line matches (card 704) ---
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE
+# the writer. Each helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 26: matches sees the match' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
+
+# --- 27. the header on line 1 of a DECISIONS.md whose next 9 lines are long ------
+# 540 KB in lines 2-10: piped into grep -q, head would take SIGPIPE after the match.
+fresh
+{ printf '%s\n' "${HEADER}"; for _ in 1 2 3 4 5 6 7 8 9; do printf '%060000d\n' 0; done
+  printf '\n### rolled-one\n\n*2026-01-01 — Rolled one*\n\nBody.\n'; } >"${R}/docs/DECISIONS.md"
+commit 'Long lines under the header'; run
+matches 'case 27: a header followed by long lines is found' "${OUT}" '^decisions-check: ok \(2 unrolled, 1 rolled up\)$'
+equals  'case 27: exit code' "${RC}" 0
 
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'decisions-check-test: all cases passed\n'
