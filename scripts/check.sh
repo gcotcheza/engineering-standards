@@ -9,7 +9,7 @@
 #      scripts/deploy-lib-version.sh and its test (a lib change raises the lib's
 #      VERSION), W7's decisions-check.sh on this tree, the W4 closing-line test, and
 #      S1's scripts/hook-bypass-scan.sh on this tree and its own test
-#   3) scripts/guard-mutants-test.sh, the T5 guard-mutant runner's own test
+#   3) scripts/guard-mutants-test.sh and mutant-sane-test.sh, the T5 mutant tools' own tests
 #   4) scripts/fleet-versions-test.sh, the fleet check's own test
 #   5) scripts/fleet-budget-test.sh, the budget gate's own test
 #   6) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
@@ -52,7 +52,7 @@ step_name() {
     case "$1" in
         1) printf 'bash -n, guard-diff lint' ;;
         2) printf 'version-text-pair' ;;
-        3) printf 'guard-mutants-test.sh' ;;
+        3) printf 'T5 mutant tool tests' ;;
         4) printf 'fleet-versions-test.sh' ;;
         5) printf 'fleet-budget-test.sh' ;;
         6) printf 'queue-start-test.sh' ;;
@@ -136,6 +136,7 @@ step_2() {
 
 step_3() {
     bash "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 3
+    bash "${REPO_ROOT}/scripts/mutant-sane-test.sh" || fail_step 3
 }
 
 step_4() {

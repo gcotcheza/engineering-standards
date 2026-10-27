@@ -1,0 +1,23 @@
+# T5 mutants for scripts/mutant-sane.sh, for scripts/guard-mutants.sh: each guard line deleted (or its condition dropped or replaced).
+#   MUTANT_SANE_TEST=$PWD/scripts/mutant-sane-test.sh scripts/guard-mutants.sh scripts/mutant-sane.sh scripts/mutant-sane-mutants.txt
+not-on-disk@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@saved_on_disk "${MUTANT}" || refuse "the mutant is not a regular file saved on disk: ${MUTANT}"@@
+identical@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@! cmp -s -- "${ORIGINAL}" "${MUTANT}" || refuse "the mutant is byte-identical to the original"@@
+mode@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "${mutant_mode}" = "${original_mode}" ] || refuse "the mutant's mode ${mutant_mode} differs from the original's ${original_mode}"@@
+parse@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@! is_shell_script "${ORIGINAL}" || bash -n -- "${MUTANT}" 2>/dev/null || refuse "the mutant of a shell script does not parse (bash -n)"@@
+parse-any-file@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@! is_shell_script "${ORIGINAL}" || bash -n -- "${MUTANT}" 2>/dev/null || refuse "the mutant of a shell script does not parse (bash -n)"@@bash -n -- "${MUTANT}" 2>/dev/null || refuse "the mutant of a shell script does not parse (bash -n)"
+exact-range@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    sed -e "${from},${to}d" -- "${ORIGINAL}" | cmp -s - "${MUTANT}" || refuse "the mutant is not the original with exactly line(s) ${RANGE} removed"@@
+exact-one-line@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    [ "${changes}" = - ] || refuse "the mutant is not the original with exactly one line removed and nothing added or changed"@@
+range-bounds@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    ((from <= to && to <= total)) || refuse "the range ${RANGE} is not inside the original's ${total} lines"@@
+symlink@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@saved_on_disk() { [ -f "$1" ] && [ ! -L "$1" ]; }@@saved_on_disk() { [ -f "$1" ]; }
+regular-file@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@saved_on_disk() { [ -f "$1" ] && [ ! -L "$1" ]; }@@saved_on_disk() { [ ! -L "$1" ]; }
+usage-argc@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "$#" -eq 2 ] || [ "$#" -eq 3 ] || { [ "$#" -eq 5 ] && [ "$4" = --replaced-with ]; } || usage@@
+usage-range@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[[ -z ${RANGE} || ${RANGE} =~ ^[1-9][0-9]*(-[1-9][0-9]*)?$ ]] || usage@@
+usage-original@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@saved_on_disk "${ORIGINAL}" || usage@@
+usage-flag@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "$#" -eq 2 ] || [ "$#" -eq 3 ] || { [ "$#" -eq 5 ] && [ "$4" = --replaced-with ]; } || usage@@[ "$#" -eq 2 ] || [ "$#" -eq 3 ] || [ "$#" -eq 5 ] || usage
+usage-replacement@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "$#" -ne 5 ] || [[ ${RANGE} =~ ^[1-9][0-9]*$ && -n ${REPLACEMENT} && ${REPLACEMENT} != *$'\n'* ]] || usage@@
+replacement-newline@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@[ "$#" -ne 5 ] || [[ ${RANGE} =~ ^[1-9][0-9]*$ && -n ${REPLACEMENT} && ${REPLACEMENT} != *$'\n'* ]] || usage@@[ "$#" -ne 5 ] || [[ ${RANGE} =~ ^[1-9][0-9]*$ && -n ${REPLACEMENT} ]] || usage
+replace-branch@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@if [ -n "${REPLACEMENT}" ]; then@@if false; then
+replace-bounds@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    ((RANGE <= total)) || refuse "the line ${RANGE} is not inside the original's ${total} lines"@@
+replace-exact@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    with_line_replaced "${RANGE}" | cmp -s - "${MUTANT}" || refuse "the mutant is not the original with exactly line ${RANGE} replaced by the given text"@@
+replace-keeps-newline@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@    sed -n -e "$1{s/.*//;p}" -- "${ORIGINAL}"@@    printf '\n'
+line-count@@MUTANT_SANE_SH="$MUTANT_TARGET" bash "$MUTANT_SANE_TEST"@@total=$(awk 'END { print NR }' <"${ORIGINAL}")@@total=$(wc -l <"${ORIGINAL}")
