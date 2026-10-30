@@ -124,12 +124,34 @@ matches  'case 1: personal-vps pane is claude:0.0' "${OUT}" 'dry-run personal-vp
 equals   'case 1: exit code' "${RC}" 0
 equals   'case 1: no state written by a dry run' "$( [ -e "${WORK}/state" ] && echo yes || echo no)" no
 
-# --- 2. a busy session (non-empty registry) is skipped ------------------------
+# --- 2. a busy session (a builder row in its registry) is skipped -----------
 printf 'opus5-worker pid 1234\n' >"${WORK}/reg/advisor-workers.active"
 run --dry-run
 matches 'case 2: a non-empty registry skips the session' "${OUT}" 'skip advisor: a builder is listed'
 lacks   'case 2: and nothing is said to it' "${OUT}" "${SENT_A}"
 : >"${WORK}/reg/advisor-workers.active"
+
+# --- 2b-2f. card 742: blank and #-led lines are notes, any other line a builder -
+REG_A="${WORK}/reg/advisor-workers.active"
+printf '\n# parked: waiting on Ghie\n   \n    # indented note\n\t#tabbed note\n' >"${REG_A}"
+run --dry-run
+contains 'case 2b: a registry of notes and blanks only is idle' "${OUT}" "${SENT_A}"
+lacks    'case 2b: and is not called busy' "${OUT}" 'skip advisor: a builder is listed'
+for row in 'opus55-worker gw-e2e (started 21:06Z)' 'accc0f14 sonnet builder kq axios bump' \
+           'audio-packet opus55-worker builder (server packet)' \
+           'a9424632d2b936c71 /tmp/claude-0/-root/p/tasks/a9424632d2b936c71.output pv-742 /srv/worker-scratch/pv-742'; do
+  printf '# note\n%s\n' "${row}" >"${REG_A}"
+  run --dry-run
+  contains "case 2c: a free-text or typed row is a builder: ${row:0:24}" "${OUT}" "skip advisor: a builder is listed in ${REG_A}: ${row:0:40}"
+  lacks    "case 2c: and nothing is said to it: ${row:0:24}" "${OUT}" "${SENT_A}"
+done
+printf '# note\n\nlast-row opus55-worker no newline' >"${REG_A}"
+run --dry-run
+contains 'case 2d: a builder on a last line with no newline is busy' "${OUT}" 'a builder is listed in '"${REG_A}"': last-row opus55-worker no newline'
+printf 'x\033[31m%s\n' "$(printf 'y%.0s' {1..80})" >"${REG_A}"
+run --dry-run
+matches 'case 2e: the named row is cut to 60 and its control bytes replaced' "${OUT}" "builder is listed in ${REG_A}: x\\?\\[31my{54}\$"
+: >"${REG_A}"
 
 # --- 3. a session that keeps no registry file is not idle ---------------------
 printf '69 orbit\n' >>"${WORK}/owners"
