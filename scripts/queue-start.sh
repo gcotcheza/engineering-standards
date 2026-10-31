@@ -191,7 +191,7 @@ busy_reason(){
   while IFS= read -r line || [ -n "${line:-}" ]; do
     [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
     printf 'a builder is listed in %s: %.60s' "$reg" "${line//[^[:print:]]/?}"; return 0
-  done <"$reg"
+  done <"$reg" || { printf 'registry file %s could not be read' "$reg"; return 0; }
   pane="$(pane_for "$s")"
   if [ ! -r "$APP_OWNERS" ]; then printf 'app owners map %s is unreadable' "$APP_OWNERS"; return 0; fi
   while read -r app apane rest || [ -n "${app:-}" ]; do

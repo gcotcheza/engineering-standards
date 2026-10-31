@@ -131,7 +131,7 @@ matches 'case 2: a non-empty registry skips the session' "${OUT}" 'skip advisor:
 lacks   'case 2: and nothing is said to it' "${OUT}" "${SENT_A}"
 : >"${WORK}/reg/advisor-workers.active"
 
-# --- 2b-2f. card 742: blank and #-led lines are notes, any other line a builder -
+# --- 2b-2e. card 742: blank and #-led lines are notes, any other line a builder -
 REG_A="${WORK}/reg/advisor-workers.active"
 printf '\n# parked: waiting on Ghie\n   \n    # indented note\n\t#tabbed note\n' >"${REG_A}"
 run --dry-run
