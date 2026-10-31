@@ -14,7 +14,7 @@
 #       including a repository under ROOT that is not listed ·
 #       2 usage error, canonical clone or registry unreadable/invalid, or no projects to check.
 #
-# The projects are the first column of the app-owners registry. One with no
+# The projects are the first column of the app-owners registry. A checkout with no
 # STANDARDS.md copy and no link reads `retired`, not a failure; one that kept the
 # link reads HALFRETIRED. A deploy lib that is not vendored reads `shared` when the
 # app's gate pins the canonical clone's. decision: fleet-versions-reads-app-owners
@@ -119,10 +119,16 @@ for p in "${projects[@]}"; do
     lmark=$ROOT/$p/$LIB_MARKER
     content=ok; cwhy=""; linkst=ok; lwhy=""
 
-    if [ ! -d "$ROOT/$p" ]; then
+    if [ "$p" = . ] || [ "$p" = .. ] || [[ $p == */* ]]; then
+        content=MISSING; cwhy="'$p' is not an app name — a name is never . or .. and has no /"
+    elif [ ! -d "$ROOT/$p" ]; then
         content=MISSING; cwhy="no $ROOT/$p directory — listed but not checked out"
     elif [ ! -e "$f" ] && [ ! -e "$link" ] && [ ! -L "$link" ]; then
-        content=retired; cwhy="no docs/STANDARDS.md copy — retired (609); the standard loads from the canonical clone"
+        if [ -e "$ROOT/$p/.git" ]; then
+            content=retired; cwhy="no docs/STANDARDS.md copy — retired (609); the standard loads from the canonical clone"
+        else
+            content=MISSING; cwhy="$ROOT/$p is not a checkout — no .git, so nothing there could be checked"
+        fi
     elif [ ! -e "$f" ]; then
         content=HALFRETIRED; cwhy="no docs/STANDARDS.md copy but .claude/rules/standards.md is still there — remove the link or re-vendor"
     elif [ ! -r "$f" ]; then
@@ -186,8 +192,10 @@ for p in "${projects[@]}"; do
         pbad=1
     fi
 
+    if [ "$content" = MISSING ]; then bad=$((bad+pbad)); continue; fi   # no checkout: no deploy-lib row
+
     # --- deploy-library line ---------------------------------------------------
-    # dstatus prints lowercase (none/ok) or uppercase (MISSING/STALE/DRIFTED/
+    # dstatus prints lowercase (none/ok/shared) or uppercase (MISSING/STALE/DRIFTED/
     # DIVERGED/BADHEADER) on purpose: the watchdog's line parser only captures a leading
     # ALL-CAPS word (see check_standards() in vps-health-check.sh), so lowercase
     # is how "nothing to see here" stays invisible to it, exactly like the

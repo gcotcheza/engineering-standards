@@ -306,7 +306,7 @@ equals 'case 20: exit code' "${RC}" 0
 
 # --- 21. a project that retired its STANDARDS.md copy still has its vendored lib judged ---
 RROOT="${WORK}/retired"
-mkdir -p "${RROOT}/quill/scripts/lib/deploy"
+mkdir -p "${RROOT}/quill/scripts/lib/deploy" "${RROOT}/quill/.git"
 cp "${CANON}/scripts/lib/deploy/"* "${RROOT}/quill/scripts/lib/deploy/"
 printf '2020-01-01\n' >"${RROOT}/quill/scripts/lib/deploy/VERSION"
 : >"${RROOT}/quill/scripts/deploy.sh"
@@ -352,11 +352,12 @@ equals  'case 23: plain file exit code' "${RC}" 1
 run_discovery "${ROOT}" ghost
 matches   'case 24: a listed project with no checkout reads MISSING' "${OUT}" '^ +MISSING +ghost +\(no .*/ghost directory — listed but not checked out\)'
 unmatches 'case 24: and not retired' "${OUT}" '^ +retired +ghost'
+unmatches 'case 24: and no deploy-lib row for it' "${OUT}" '^ +none +ghost'
 equals    'case 24: exit code' "${RC}" 1
 
 # --- 25. a lib with no deploy.sh is not called "not adopted" ------------------
 NROOT="${WORK}/libnodeploy"
-mkdir -p "${NROOT}/quire/scripts/lib/deploy"
+mkdir -p "${NROOT}/quire/scripts/lib/deploy" "${NROOT}/quire/.git"
 cp "${CANON}/scripts/lib/deploy/"* "${NROOT}/quire/scripts/lib/deploy/"
 run_discovery "${NROOT}" quire
 matches   'case 25: the none row says the lib is there but not compared' "${OUT}" '^ +none +quire +\(scripts/lib/deploy/VERSION present but no scripts/deploy\.sh'
@@ -382,7 +383,7 @@ equals    'case 27: exit code' "${RC}" 0
 
 # --- 28. a lib that is not vendored is shared when the gate pins the canonical clone (card 623) ---
 SHROOT="${WORK}/sharedlib"
-mkdir -p "${SHROOT}/ledger/scripts/lib/gate"
+mkdir -p "${SHROOT}/ledger/scripts/lib/gate" "${SHROOT}/ledger/.git"
 : >"${SHROOT}/ledger/scripts/deploy.sh"
 printf '# shellcheck shell=bash\nDEPLOY_LIB_CLONE=%s\nDEPLOY_LIB=%s/scripts/lib/deploy\n' "${CANON}" "${CANON}" >"${SHROOT}/ledger/scripts/lib/gate/deploy-lib.sh"
 run_discovery "${SHROOT}" ledger
@@ -392,11 +393,50 @@ printf 'DEPLOY_LIB=/elsewhere/scripts/lib/deploy\n' >"${SHROOT}/ledger/scripts/l
 run_discovery "${SHROOT}" ledger
 matches 'case 28: a pin to another clone is MISSING' "${OUT}" '^ +MISSING +ledger +\(scripts/deploy\.sh present but no scripts/lib/deploy, and'
 equals  'case 28: other pin exit code' "${RC}" 1
+printf 'DEPLOY_LIB=%s/scripts/lib/deploy\n' "${CANON}" >"${SHROOT}/ledger/scripts/lib/gate/deploy-lib.sh"
+mkdir -p "${SHROOT}/ledger/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${SHROOT}/ledger/scripts/lib/deploy/"
+printf '2020-01-01\n' >"${SHROOT}/ledger/scripts/lib/deploy/VERSION"
+run_discovery "${SHROOT}" ledger
+matches   'case 28: a stale vendored lib beside the pin is still STALE' "${OUT}" "^ +STALE +ledger +\\(VERSION is '2020-01-01'"
+unmatches 'case 28: and not shared' "${OUT}" '^ +shared +ledger'
+equals    'case 28: stale vendored lib exit code' "${RC}" 1
 
 # --- 29. a registry whose last line has no newline still lists that app -------
 REG_NO_EOL=1 run_discovery "${TROOT}" '# app' abacus
 matches 'case 29: the unterminated last line is read' "${OUT}" '^ +retired +abacus'
 equals  'case 29: exit code' "${RC}" 0
+
+# --- 30. a listed directory that is not a checkout is MISSING, not retired ---
+HOROOT="${WORK}/hollowroot"
+mkdir -p "${HOROOT}/hollow"
+run_discovery "${HOROOT}" hollow
+matches   'case 30: an empty directory reads MISSING, not a checkout' "${OUT}" '^ +MISSING +hollow +\(.*/hollow is not a checkout — no \.git'
+unmatches 'case 30: and not retired' "${OUT}" '^ +retired +hollow'
+unmatches 'case 30: and no deploy-lib row for it' "${OUT}" '^ +none +hollow'
+equals    'case 30: exit code' "${RC}" 1
+
+# --- 31. a registry name that is . or .. or holds a / is never a path --------
+# Every one of these resolves to a checkout here, so only the name check stops it.
+DROOT="${WORK}/dots/root"
+mkdir -p "${WORK}/dots/.git" "${DROOT}/.git" "${DROOT}/nest/abacus/.git"
+run_discovery "${DROOT}" . .. nest/abacus
+matches 'case 31: . is not an app name' "${OUT}" "^ +MISSING +\. +\('\.' is not an app name"
+matches 'case 31: .. is not an app name' "${OUT}" "^ +MISSING +\.\. +\('\.\.' is not an app name"
+matches 'case 31: a name with a / is not an app name' "${OUT}" "^ +MISSING +nest/abacus +\('nest/abacus' is not an app name"
+matches 'case 31: all three need attention' "${OUT}" 'fleet: 3 of 3 project\(s\) need attention'
+equals  'case 31: exit code' "${RC}" 1
+
+# --- 32. a registry the caller cannot read is an error, never a clean fleet ---
+if [ "$(id -u)" -eq 0 ]; then
+    printf 'skip case 32: a mode-000 registry is readable by root — run the suite as a non-root user\n'
+else
+    printf 'abacus\n' >"${WORK}/app-owners-000"
+    chmod 000 "${WORK}/app-owners-000"
+    run_registry "${TROOT}" "${WORK}/app-owners-000"
+    matches 'case 32: a mode-000 registry refuses to report' "${OUT}" 'app-owners registry unreadable: .*app-owners-000'
+    equals  'case 32: exit code' "${RC}" 2
+fi
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'
