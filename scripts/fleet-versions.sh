@@ -4,33 +4,32 @@
 # Each project's drift test compares docs/STANDARDS.md against ITS OWN header, so
 # a project that never updates passes its own test forever. This compares every
 # project against the CANONICAL clone, which is the only comparison that can
-# notice staleness. A repository with no vendored copy is a FAILURE, not a skip —
-# otherwise "never adopted" is indistinguishable from "clean". For the same
-# reason, checking zero projects is an error, never a pass.
+# notice staleness. Checking zero projects is an error, never a pass, or "the
+# registry is gone" would be indistinguishable from "clean".
 #
 #   fleet-versions.sh              report; exit 1 if anything needs attention
 #   fleet-versions.sh --quiet|-q   exit code only (usage/canonical errors still go to stderr)
 #
 # Exit: 0 all projects on the canonical version · 1 one or more need attention,
-#       including a directory under ROOT that is a repository but not a project ·
-#       2 usage error, canonical clone unreadable/invalid, or no projects to check.
+#       including a repository under ROOT that is not listed ·
+#       2 usage error, canonical clone or registry unreadable/invalid, or no projects to check.
 #
-# The projects are the directories under ROOT that carry docs/STANDARDS.md or
-# scripts/lib/deploy/VERSION — except a `*-staging` or `*-worktrees` directory,
-# which mirrors a project's files rather than being one (docs/DECISIONS.md). A
-# project with the deploy lib but no STANDARDS.md copy or link reads `retired`, not
-# a failure; one that kept the link reads HALFRETIRED. The paths below describe
-# one host's layout and are overridable by environment variable.
+# The projects are the first column of the app-owners registry. One with no
+# STANDARDS.md copy and no link reads `retired`, not a failure; one that kept the
+# link reads HALFRETIRED. A deploy lib that is not vendored reads `shared` when the
+# app's gate pins the canonical clone's. decision: fleet-versions-reads-app-owners
 #
 # Env: STANDARDS_CANONICAL (default /srv/engineering-standards), STANDARDS_ROOT
-# (default /var/www), STANDARDS_PROJECTS (space-separated; default = discovery;
-# set but empty is an error, not the default).
+# (default /var/www), STANDARDS_APP_OWNERS (default /etc/fleet/app-owners),
+# STANDARDS_PROJECTS (space-separated; default = the registry; set but empty is an
+# error, not the default).
 
 set -uo pipefail
-set -f   # defence in depth: nothing here is pathname-expanded but the discovery glob
+set -f   # defence in depth: nothing here is pathname-expanded
 
 CANON=${STANDARDS_CANONICAL:-/srv/engineering-standards}
 ROOT=${STANDARDS_ROOT:-/var/www}
+APP_OWNERS=${STANDARDS_APP_OWNERS:-/etc/fleet/app-owners}
 LINK_TARGET='../../docs/STANDARDS.md'   # what every project commits, byte-for-byte (#56)
 LIB_FILES="ledger resolve preflight summary"   # scripts/lib/deploy/*.sh, the vendored deploy library
 LIB_MARKER=scripts/lib/deploy/VERSION
@@ -88,25 +87,25 @@ canon_lib_version=${canon_lib_version%"${canon_lib_version##*[![:space:]]}"}
 
 # --- projects ----------------------------------------------------------------
 # Row order is the C collation of the names, never the caller's locale's.
-discover_project_names_c_ordered() {
-    local s n
-    set +f
-    for s in "$ROOT"/*/docs/STANDARDS.md "$ROOT"/*/"$LIB_MARKER"; do
-        [ -e "$s" ] || continue
-        n=${s#"$ROOT"/}; n=${n%%/*}
-        is_fleet_project_name "$n" && printf '%s\n' "$n"
-    done | LC_ALL=C sort -u
-    set -f
+registry_names_c_ordered() {
+    local n _
+    while read -r n _ || [ -n "$n" ]; do
+        case "$n" in ''|'#'*) continue ;; esac
+        printf '%s\n' "$n"
+    done < "$APP_OWNERS" | LC_ALL=C sort -u
 }
 
 projects=()
+listed_in=STANDARDS_PROJECTS
 if [ "${STANDARDS_PROJECTS+x}" = x ]; then
     # `read -r -a` splits on whitespace and never pathname-expands: an entry is a name.
     read -r -a projects <<<"$STANDARDS_PROJECTS"
     [ "${#projects[@]}" -gt 0 ] || die "no projects to check (STANDARDS_PROJECTS is empty) — refusing to report a clean fleet"
 else
-    while IFS= read -r p; do projects+=("$p"); done < <(discover_project_names_c_ordered)
-    [ "${#projects[@]}" -gt 0 ] || die "no project under $ROOT has docs/STANDARDS.md or $LIB_MARKER — refusing to report a clean fleet"
+    listed_in=$APP_OWNERS
+    if [ ! -f "$APP_OWNERS" ] || [ ! -r "$APP_OWNERS" ]; then die "app-owners registry unreadable: $APP_OWNERS — refusing to report a clean fleet"; fi
+    while IFS= read -r p; do projects+=("$p"); done < <(registry_names_c_ordered)
+    [ "${#projects[@]}" -gt 0 ] || die "no app listed in $APP_OWNERS — refusing to report a clean fleet"
 fi
 
 # --- per project -------------------------------------------------------------
@@ -120,12 +119,12 @@ for p in "${projects[@]}"; do
     lmark=$ROOT/$p/$LIB_MARKER
     content=ok; cwhy=""; linkst=ok; lwhy=""
 
-    if [ ! -e "$f" ] && [ -e "$lmark" ] && [ ! -e "$link" ] && [ ! -L "$link" ]; then
-        content=retired; cwhy="no docs/STANDARDS.md copy — retired; the standard loads from the canonical clone"
-    elif [ ! -e "$f" ] && [ -e "$lmark" ]; then
-        content=HALFRETIRED; cwhy="no docs/STANDARDS.md copy but .claude/rules/standards.md is still there — remove the link or re-vendor"
+    if [ ! -d "$ROOT/$p" ]; then
+        content=MISSING; cwhy="no $ROOT/$p directory — listed but not checked out"
+    elif [ ! -e "$f" ] && [ ! -e "$link" ] && [ ! -L "$link" ]; then
+        content=retired; cwhy="no docs/STANDARDS.md copy — retired (609); the standard loads from the canonical clone"
     elif [ ! -e "$f" ]; then
-        content=MISSING; cwhy="no docs/STANDARDS.md — not adopted"
+        content=HALFRETIRED; cwhy="no docs/STANDARDS.md copy but .claude/rules/standards.md is still there — remove the link or re-vendor"
     elif [ ! -r "$f" ]; then
         content=UNREADABLE; cwhy="docs/STANDARDS.md exists but is not readable by $(id -un)"
     else
@@ -171,7 +170,10 @@ for p in "${projects[@]}"; do
         fi
     fi
 
-    if [ "$content" = retired ]; then
+    if [ "$content" = MISSING ]; then
+        say "  MISSING    $p  ($cwhy)"
+        pbad=1
+    elif [ "$content" = retired ]; then
         say "  retired    $p  ($cwhy)"
         retired=$((retired+1))
     elif [ "$content" = ok ] && [ "$linkst" = ok ]; then
@@ -196,8 +198,10 @@ for p in "${projects[@]}"; do
     dstatus=none; dwhy="no scripts/deploy.sh — deploy-lib not adopted yet"
     [ -e "$lmark" ] && dwhy="$LIB_MARKER present but no scripts/deploy.sh — the lib is not compared"
     if [ -e "$dsh" ]; then
-        if [ ! -d "$ldir" ]; then
-            dstatus=MISSING; dwhy="scripts/deploy.sh present but no scripts/lib/deploy"
+        if [ ! -d "$ldir" ] && grep -qxF -- "DEPLOY_LIB=$canon_lib" "$ROOT/$p/scripts/lib/gate/deploy-lib.sh" 2>/dev/null; then
+            dstatus=shared; dwhy="not vendored; the gate pins $canon_lib, deploy-lib $canon_lib_version"
+        elif [ ! -d "$ldir" ]; then
+            dstatus=MISSING; dwhy="scripts/deploy.sh present but no scripts/lib/deploy, and scripts/lib/gate/deploy-lib.sh does not pin $canon_lib"
         else
             dstatus=ok
             for lf in $LIB_FILES; do
@@ -241,7 +245,7 @@ for p in "${projects[@]}"; do
         fi
     fi
     case "$dstatus" in
-        none|ok) ;;
+        none|ok|shared) ;;
         *) pbad=1 ;;
     esac
     say "  $(printf '%-10s' "$dstatus") $p  ($dwhy)"
@@ -249,7 +253,7 @@ for p in "${projects[@]}"; do
 done
 
 # --- unlisted projects --------------------------------------------------------
-# A repository under ROOT that is not a project has joined the fleet without
+# A repository under ROOT that is not listed has joined the fleet without
 # joining the check. Row shape and the two exclusions: docs/DECISIONS.md.
 unlisted=()
 while IFS= read -r d; do
@@ -263,7 +267,7 @@ done < <(find "$ROOT" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/nu
 if [ "${#unlisted[@]}" -gt 0 ]; then
     say ""
     for n in "${unlisted[@]}"; do
-        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not a project: no docs/STANDARDS.md or $LIB_MARKER)"
+        say "  $(printf '%-10s' UNLISTED) $n  (has a .git under $ROOT but is not listed in $listed_in)"
     done
     bad=$((bad+${#unlisted[@]})); checked=$((checked+${#unlisted[@]}))
 fi

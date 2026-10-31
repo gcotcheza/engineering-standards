@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-31 — the fleet check reads its projects from app-owners (the standard is unchanged and VERSION is not bumped)
+**Card 729.** `scripts/fleet-versions.sh` still found projects by the vendored `docs/STANDARDS.md` and
+`scripts/lib/deploy/VERSION` that cards 609 and 623 retired, so it reported 11 of 11 projects needing
+attention. It now reads the first column of `/etc/fleet/app-owners` (`STANDARDS_APP_OWNERS` for tests);
+an empty or unreadable registry exits 2. No copy and no link reads `retired (609)`; a de-vendored deploy
+lib reads `shared` when the app's gate pins the canonical clone's; a listed app with no directory is
+MISSING. `fleet-versions-test.sh` cases 5, 15–18, 24 and 27–29 cover it, and `fleet-versions-mutants.txt`
+(11 rows) goes red row by row. Decision: `fleet-versions-reads-app-owners`.
+
 ## 2026-10-30 — queue-start reads registry notes as notes (the standard is unchanged and VERSION is not bumped)
 **Card 742.** `busy_reason` called a session busy whenever its `<session>-workers.active` file was
 non-empty, so notes left there stranded orbit for hours. Now blank and `#`-led lines are notes and any
