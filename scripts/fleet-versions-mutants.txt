@@ -1,0 +1,21 @@
+# T5 guard-deletion mutants for scripts/fleet-versions.sh (card 729), for scripts/guard-mutants.sh.
+#   FLEET_VERSIONS_TEST=$PWD/scripts/fleet-versions-test.sh scripts/guard-mutants.sh scripts/fleet-versions.sh scripts/fleet-versions-mutants.txt
+fv-registry-read@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    while IFS= read -r p; do projects+=("$p"); done < <(registry_names_c_ordered)@@
+fv-registry-source@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    done < "$APP_OWNERS" | LC_ALL=C sort -u@@    done < /dev/null | LC_ALL=C sort -u
+fv-registry-last-line@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    while read -r n _ || [ -n "$n" ]; do@@    while read -r n _; do
+fv-registry-notes@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@        case "$n" in ''|'#'*) continue ;; esac@@
+fv-registry-unreadable@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    if [ ! -f "$APP_OWNERS" ] || [ ! -r "$APP_OWNERS" ]; then die "app-owners registry unreadable: $APP_OWNERS — refusing to report a clean fleet"; fi@@
+fv-registry-empty@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    [ "${#projects[@]}" -gt 0 ] || die "no app listed in $APP_OWNERS — refusing to report a clean fleet"@@
+fv-missing-dir@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    elif [ ! -d "$ROOT/$p" ]; then@@    elif false; then
+fv-retired@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    elif [ ! -e "$f" ] && [ ! -e "$link" ] && [ ! -L "$link" ]; then@@    elif false; then
+fv-shared@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@        if [ ! -d "$ldir" ] && grep -qxF -- "DEPLOY_LIB=$canon_lib" "$ROOT/$p/scripts/lib/gate/deploy-lib.sh" 2>/dev/null; then@@        if false; then
+fv-shared-pin@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@        if [ ! -d "$ldir" ] && grep -qxF -- "DEPLOY_LIB=$canon_lib" "$ROOT/$p/scripts/lib/gate/deploy-lib.sh" 2>/dev/null; then@@        if [ ! -d "$ldir" ]; then
+fv-shared-not-attention@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@        none|ok|shared) ;;@@        none|ok) ;;
+fv-name-invalid@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    if [ "$p" = . ] || [ "$p" = .. ] || [[ $p == */* ]]; then@@    if false; then
+fv-name-dot@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    if [ "$p" = . ] || [ "$p" = .. ] || [[ $p == */* ]]; then@@    if [ "$p" = .. ] || [[ $p == */* ]]; then
+fv-name-dotdot@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    if [ "$p" = . ] || [ "$p" = .. ] || [[ $p == */* ]]; then@@    if [ "$p" = . ] || [[ $p == */* ]]; then
+fv-name-slash@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    if [ "$p" = . ] || [ "$p" = .. ] || [[ $p == */* ]]; then@@    if [ "$p" = . ] || [ "$p" = .. ]; then
+fv-retired-needs-git@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@        if [ -e "$ROOT/$p/.git" ]; then@@        if true; then
+fv-missing-no-lib-row@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    if [ "$content" = MISSING ]; then bad=$((bad+pbad)); continue; fi   # no checkout: no deploy-lib row@@
+fv-shared-not-vendored@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@        if [ ! -d "$ldir" ] && grep -qxF -- "DEPLOY_LIB=$canon_lib" "$ROOT/$p/scripts/lib/gate/deploy-lib.sh" 2>/dev/null; then@@        if grep -qxF -- "DEPLOY_LIB=$canon_lib" "$ROOT/$p/scripts/lib/gate/deploy-lib.sh" 2>/dev/null; then
+fv-registry-readable@@FLEET_VERSIONS_SH="$MUTANT_TARGET" bash "$FLEET_VERSIONS_TEST"@@    if [ ! -f "$APP_OWNERS" ] || [ ! -r "$APP_OWNERS" ]; then die "app-owners registry unreadable: $APP_OWNERS — refusing to report a clean fleet"; fi@@    if [ ! -f "$APP_OWNERS" ]; then die "app-owners registry unreadable: $APP_OWNERS — refusing to report a clean fleet"; fi

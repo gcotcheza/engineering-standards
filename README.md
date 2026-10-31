@@ -17,15 +17,17 @@ where two projects had already answered the same question differently and one ha
 vendored `docs/STANDARDS.md` per repo, a `.claude/rules/standards.md` symlink to it, a
 drift test in each project's gate, and a canonical clone on the host underneath as a
 floor. `scripts/fleet-versions.sh` compares every project against the canonical copy; the
-projects are the directories under the root that carry `docs/STANDARDS.md` or
-`scripts/lib/deploy/VERSION` — bar a `*-staging` or `*-worktrees` directory, which mirrors a
-project's files rather than being one; a project that retired its copy (and its
+projects are the first column of `/etc/fleet/app-owners`, and an empty or unreadable registry
+is an error, never a clean fleet. A checkout that retired its copy (and its
 `.claude/rules/standards.md` link) reads `retired`, and one that left the link reads
-`HALFRETIRED`. The canonical path, the projects root and the project list itself are all
-overridable by environment variable. It also compares each
-project's vendored `scripts/lib/deploy/` against canonical, one extra line per project
-(`none` / `MISSING` / `STALE` / `DRIFTED` / `BADHEADER` / `ok`) in the same shape the
-watchdog's line parser already reads.
+`HALFRETIRED`; a listed name that is not a checkout, or not a plain name, reads `MISSING`.
+The canonical path, the projects root, the registry and the project list itself are all
+overridable by environment variable. It also compares each project's vendored
+`scripts/lib/deploy/` against canonical, one extra line per project
+(`none` / `shared` / `MISSING` / `STALE` / `DRIFTED` / `BADHEADER` / `ok`) in the same shape the
+watchdog's line parser already reads; `shared` is an app whose gate pins the canonical clone's
+lib instead of vendoring it. Its T5 table is `scripts/fleet-versions-mutants.txt`, run by hand
+with `scripts/guard-mutants.sh`.
 
 ## The gate
 

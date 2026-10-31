@@ -1,0 +1,11 @@
+# The fleet check reads its projects from app-owners
+
+Card 609 retired the vendored `docs/STANDARDS.md` and card 623 the vendored `scripts/lib/deploy/`, and the fleet check still found projects by those two files. By 2026-10-31 it reported 11 of 11 projects needing attention: nine apps it could no longer find came out UNLISTED, and the standards health row had been red for 27 days with nobody reading it, because a row that is always red says nothing.
+
+The projects are now the first column of `/etc/fleet/app-owners` (blank and `#`-led lines are notes, an unterminated last line counts), the registry every fleet tool already uses to say which apps exist. Walking `/var/www` for markers was removed as a way to find projects: it found a project by what it vendored, and the fleet has stopped vendoring. The UNLISTED row still walks the root, now asking "is this repository in the registry?", so a new repo that skips the registry is still named. `STANDARDS_APP_OWNERS` overrides the path for the test; `STANDARDS_PROJECTS` still wins over both.
+
+A registry that is missing, not a regular file, or lists no app makes the check exit 2 with a message: zero projects is never a clean fleet (C9).
+
+A listed app with no `docs/STANDARDS.md` and no `.claude/rules/standards.md` reads `retired (609)` whether or not it vendors a deploy lib, and counts as fine, but only when the directory is a checkout (it has a `.git`): an empty directory would otherwise read retired and the fleet clean. A left-behind link is still HALFRETIRED. A listed name with no directory, a directory with no `.git`, or a name that is `.`, `..` or contains `/` (which would point the check at the root, its parent or a nested path) is MISSING, since nothing there could be checked, and gets no deploy-lib row.
+
+An app with `scripts/deploy.sh` and no `scripts/lib/deploy/` reads `shared` (lowercase, so the watchdog's ALL-CAPS parser ignores it) when its `scripts/lib/gate/deploy-lib.sh` has the exact line `DEPLOY_LIB=<canonical>/scripts/lib/deploy`, the pin every de-vendored app carries; the version shown is the canonical clone's, because that is the lib the gate reads. Without that line it is still MISSING. An app that still vendors the lib (health-tracker until its #154) keeps the byte and VERSION comparison even when it also carries the pin, so its STALE row stays.

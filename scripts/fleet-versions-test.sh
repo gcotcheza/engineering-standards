@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Fakes only: builds a temp canonical + temp project roots, drives the real
 # scripts/fleet-versions.sh through its own seams (STANDARDS_CANONICAL,
-# STANDARDS_ROOT, STANDARDS_PROJECTS). It never reads a real checkout, runs no
+# STANDARDS_ROOT, STANDARDS_APP_OWNERS, STANDARDS_PROJECTS). It never reads a real checkout or registry, runs no
 # docker, no gh. FLEET_VERSIONS_SH points it at a scratch copy for the red
 # proofs; FLEET_VERSIONS_CANON_LIB overrides the seed for the canonical fake
 # (default: this repo's own scripts/lib/deploy — read-only, never written).
 #
 #   scripts/fleet-versions-test.sh
 #   FLEET_VERSIONS_SH=/tmp/mutant.sh scripts/fleet-versions-test.sh   the red proofs
+#   FLEET_VERSIONS_TEST=$PWD/scripts/fleet-versions-test.sh scripts/guard-mutants.sh scripts/fleet-versions.sh scripts/fleet-versions-mutants.txt
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,9 +53,16 @@ run() {
     RC=$?
 }
 
-# The discovery path: a root of its own and no STANDARDS_PROJECTS at all.
+# The registry path: a root and an app-owners file of its own, no STANDARDS_PROJECTS at all.
+# Every later argument is one registry line; the file ends in a newline unless REG_NO_EOL is set.
 run_discovery() {
-    OUT="$(STANDARDS_CANONICAL="${CANON}" STANDARDS_ROOT="$1" "${CHECK}" 2>&1)"
+    local root=$1; shift
+    printf '%s\n' "$@" >"${WORK}/app-owners"
+    [ -z "${REG_NO_EOL:-}" ] || printf '%s' "$(cat "${WORK}/app-owners")" >"${WORK}/app-owners"
+    run_registry "${root}" "${WORK}/app-owners"
+}
+run_registry() {
+    OUT="$(STANDARDS_CANONICAL="${CANON}" STANDARDS_ROOT="$1" STANDARDS_APP_OWNERS="$2" "${CHECK}" 2>&1)"
     RC=$?
 }
 
@@ -109,7 +117,7 @@ mkdir -p "${ROOT}/p5/scripts"
 : >"${ROOT}/p5/scripts/deploy.sh"
 add_docs_ok "${ROOT}/p5"
 run p5
-matches 'case 5: deploy.sh with no lib dir reports MISSING' "${OUT}" 'MISSING +p5 +\(scripts/deploy\.sh present but no scripts/lib/deploy\)'
+matches 'case 5: deploy.sh with no lib dir and no pin reports MISSING' "${OUT}" 'MISSING +p5 +\(scripts/deploy\.sh present but no scripts/lib/deploy, and scripts/lib/gate/deploy-lib\.sh does not pin '
 equals  'case 5: exit code' "${RC}" 1
 
 # --- 6. no deploy.sh -> none, exit unaffected ----------------------------------
@@ -230,35 +238,43 @@ run p14
 matches 'case 14: a copy ahead of canonical is not called stale' "${OUT}" "DIVERGED +p14 +\(ledger\.sh differs from canonical \(deploy-lib ${AHEAD_LIB_VERSION}, canonical ${LIB_VERSION}\)"
 equals  'case 14: exit code' "${RC}" 1
 
-# --- 15. the projects are discovered from the root, not carried in the script --
-# A project joins the check by vendoring docs/STANDARDS.md or the deploy lib (case 21);
-# a directory that vendored neither is not a project, whatever it is called.
+# --- 15. the projects are the registry's first column, not carried in the script --
+# A project joins the check by its app-owners line; a directory not listed is not one,
+# whatever it carries, and comment and blank lines name nothing.
 DROOT="${WORK}/discovered"
 mkdir -p "${DROOT}/sundial-e2e" "${DROOT}/sundial-worktrees"
 add_docs_ok "${DROOT}/sundial"
-run_discovery "${DROOT}"
+add_docs_ok "${DROOT}/sundial-e2e"
+run_discovery "${DROOT}" '# app   owner-pane' '' '  sundial   claude:0.0'
 matches   'case 15: a project that was never named in the script is checked' "${OUT}" 'ok +sundial +\(2026-09-18\)'
-unmatches 'case 15: a directory with no docs/STANDARDS.md is not a project' "${OUT}" 'sundial-e2e'
+unmatches 'case 15: a directory not in the registry is not a project' "${OUT}" 'sundial-e2e'
+unmatches 'case 15: a comment line names no project' "${OUT}" '^ +[A-Za-z]+ +#'
 unmatches 'case 15: nor is a -worktrees directory' "${OUT}" 'sundial-worktrees'
 matches   'case 15: and only what was discovered is counted' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18'
 equals    'case 15: exit code' "${RC}" 0
 
 # --- 16. discovery does not silence the unlisted-repository row ---------------
 mkdir -p "${DROOT}/newcomer/.git"
-run_discovery "${DROOT}"
-matches 'case 16: a repository that vendored nothing is still named' "${OUT}" '^ +UNLISTED +newcomer +\(has a \.git under'
+run_discovery "${DROOT}" sundial
+matches 'case 16: a repository not in the registry is still named' "${OUT}" '^ +UNLISTED +newcomer +\(has a \.git under .* but is not listed in .*app-owners\)'
 matches 'case 16: and it counts on both sides of the summary' "${OUT}" 'fleet: 1 of 2 project\(s\) need attention'
 equals  'case 16: exit code' "${RC}" 1
 
-# --- 17. a root where nothing is vendored is an error, never a clean fleet ----
+# --- 17. an empty or unreadable registry is an error, never a clean fleet ----
 mkdir -p "${WORK}/emptyroot"
-run_discovery "${WORK}/emptyroot"
-matches 'case 17: a root with no projects refuses to report' "${OUT}" 'no project under .*emptyroot has docs/STANDARDS\.md'
+run_discovery "${WORK}/emptyroot" '# app   owner-pane' ''
+matches 'case 17: a registry that lists no app refuses to report' "${OUT}" 'no app listed in .*app-owners — refusing to report a clean fleet'
 equals  'case 17: exit code' "${RC}" 2
+run_registry "${WORK}/emptyroot" "${WORK}/no-such-app-owners"
+matches 'case 17: a missing registry refuses to report' "${OUT}" 'app-owners registry unreadable: .*no-such-app-owners'
+equals  'case 17: missing registry exit code' "${RC}" 2
+run_registry "${WORK}/emptyroot" "${WORK}/emptyroot"
+matches 'case 17: a directory is not a registry' "${OUT}" 'app-owners registry unreadable: .*emptyroot'
+equals  'case 17: directory registry exit code' "${RC}" 2
 
 # --- 18. the override still wins, is a list of names, and empty is an error ---
 run '*'
-matches 'case 18: an override entry is used as a name, never pathname-expanded' "${OUT}" 'MISSING +\* +\(no docs/STANDARDS\.md'
+matches 'case 18: an override entry is used as a name, never pathname-expanded' "${OUT}" 'MISSING +\* +\(no .*/\* directory'
 equals  'case 18: exit code' "${RC}" 1
 run ''
 matches 'case 18: an empty override is an error, not a fall-back to discovery' "${OUT}" 'STANDARDS_PROJECTS is empty'
@@ -272,7 +288,7 @@ mkdir -p "${SROOT}"
 add_docs_ok "${SROOT}/sundial"
 add_docs_ok "${SROOT}/sundial-staging"
 add_docs_ok "${SROOT}/sundial-worktrees"
-run_discovery "${SROOT}"
+run_discovery "${SROOT}" sundial
 unmatches 'case 19: a -staging checkout that vendored the file is not a project' "${OUT}" 'sundial-staging'
 unmatches 'case 19: nor is a -worktrees pool that vendored it' "${OUT}" 'sundial-worktrees'
 matches   'case 19: the project they mirror is still checked' "${OUT}" 'ok +sundial +\(2026-09-18\)'
@@ -283,25 +299,24 @@ equals    'case 19: exit code' "${RC}" 0
 OROOT="${WORK}/order"
 mkdir -p "${OROOT}"
 for n in Zulu alpha Mike; do add_docs_ok "${OROOT}/${n}"; done
-run_discovery "${OROOT}"
+run_discovery "${OROOT}" Zulu alpha Mike
 ORDER="$(printf '%s\n' "${OUT}" | grep -oE '^ +ok +[A-Za-z]+' | awk '{print $2}' | tr '\n' ' ')"
 equals 'case 20: rows come out in C collation order' "${ORDER}" 'Mike Zulu alpha '
 equals 'case 20: exit code' "${RC}" 0
 
-# --- 21. a project that retired its STANDARDS.md copy is still found by its deploy lib ---
-# Discovery by docs/STANDARDS.md alone dropped such a project, and its stale lib with it.
+# --- 21. a project that retired its STANDARDS.md copy still has its vendored lib judged ---
 RROOT="${WORK}/retired"
-mkdir -p "${RROOT}/quill/scripts/lib/deploy"
+mkdir -p "${RROOT}/quill/scripts/lib/deploy" "${RROOT}/quill/.git"
 cp "${CANON}/scripts/lib/deploy/"* "${RROOT}/quill/scripts/lib/deploy/"
 printf '2020-01-01\n' >"${RROOT}/quill/scripts/lib/deploy/VERSION"
 : >"${RROOT}/quill/scripts/deploy.sh"
-run_discovery "${RROOT}"
+run_discovery "${RROOT}" quill
 matches   'case 21: a deploy-lib-only project reads retired, not missing' "${OUT}" '^ +retired +quill +\(no docs/STANDARDS\.md copy'
 unmatches 'case 21: and no STALE/MISSING standards row' "${OUT}" '(STALE|MISSING) +quill +\((declared|no docs)'
 matches   'case 21: its stale deploy lib is still flagged' "${OUT}" "STALE +quill +\\(VERSION is '2020-01-01', canonical is '${LIB_VERSION}'\\)"
 equals    'case 21: exit code' "${RC}" 1
 cp "${CANON}/scripts/lib/deploy/VERSION" "${RROOT}/quill/scripts/lib/deploy/VERSION"
-run_discovery "${RROOT}"
+run_discovery "${RROOT}" quill
 matches   'case 21: with a current lib it is clean, and the summary counts it retired' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18 \(1 retired\)'
 equals    'case 21: retired is not a failure — exit code' "${RC}" 0
 
@@ -311,7 +326,7 @@ mkdir -p "${BROOT}/sundial/scripts/lib/deploy"
 cp "${CANON}/scripts/lib/deploy/"* "${BROOT}/sundial/scripts/lib/deploy/"
 : >"${BROOT}/sundial/scripts/deploy.sh"
 add_docs_ok "${BROOT}/sundial"
-run_discovery "${BROOT}"
+run_discovery "${BROOT}" sundial
 equals  'case 22: one standards row' "$(printf '%s\n' "${OUT}" | grep -cE '^ +ok +sundial +\(2026-09-18\)')" 1
 equals  'case 22: one deploy-lib row' "$(printf '%s\n' "${OUT}" | grep -cE '^ +ok +sundial +\(deploy-lib ')" 1
 matches 'case 22: counted once' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18'
@@ -323,26 +338,28 @@ mkdir -p "${HROOT}/inkpot/scripts/lib/deploy" "${HROOT}/inkpot/.claude/rules"
 cp "${CANON}/scripts/lib/deploy/"* "${HROOT}/inkpot/scripts/lib/deploy/"
 : >"${HROOT}/inkpot/scripts/deploy.sh"
 ln -s '../../docs/STANDARDS.md' "${HROOT}/inkpot/.claude/rules/standards.md"
-run_discovery "${HROOT}"
+run_discovery "${HROOT}" inkpot
 matches   'case 23: a left-behind link reads HALFRETIRED' "${OUT}" '^ +HALFRETIRED +inkpot +\(no docs/STANDARDS\.md copy but \.claude/rules/standards\.md is still there'
 unmatches 'case 23: and not retired' "${OUT}" '^ +retired +inkpot'
 equals    'case 23: exit code' "${RC}" 1
 rm "${HROOT}/inkpot/.claude/rules/standards.md"
 printf 'left behind\n' >"${HROOT}/inkpot/.claude/rules/standards.md"
-run_discovery "${HROOT}"
+run_discovery "${HROOT}" inkpot
 matches 'case 23: a left-behind plain file reads HALFRETIRED' "${OUT}" '^ +HALFRETIRED +inkpot'
 equals  'case 23: plain file exit code' "${RC}" 1
 
-# --- 24. an explicit project with neither marker is still MISSING -------------
-run ghost
-matches 'case 24: a named project with no copy and no lib reads MISSING' "${OUT}" '^ +MISSING +ghost +\(no docs/STANDARDS\.md — not adopted'
-equals  'case 24: exit code' "${RC}" 1
+# --- 24. a listed project with no directory is MISSING, not retired ----------
+run_discovery "${ROOT}" ghost
+matches   'case 24: a listed project with no checkout reads MISSING' "${OUT}" '^ +MISSING +ghost +\(no .*/ghost directory — listed but not checked out\)'
+unmatches 'case 24: and not retired' "${OUT}" '^ +retired +ghost'
+unmatches 'case 24: and no deploy-lib row for it' "${OUT}" '^ +none +ghost'
+equals    'case 24: exit code' "${RC}" 1
 
 # --- 25. a lib with no deploy.sh is not called "not adopted" ------------------
 NROOT="${WORK}/libnodeploy"
-mkdir -p "${NROOT}/quire/scripts/lib/deploy"
+mkdir -p "${NROOT}/quire/scripts/lib/deploy" "${NROOT}/quire/.git"
 cp "${CANON}/scripts/lib/deploy/"* "${NROOT}/quire/scripts/lib/deploy/"
-run_discovery "${NROOT}"
+run_discovery "${NROOT}" quire
 matches   'case 25: the none row says the lib is there but not compared' "${OUT}" '^ +none +quire +\(scripts/lib/deploy/VERSION present but no scripts/deploy\.sh'
 unmatches 'case 25: and does not claim it was never adopted' "${OUT}" 'quire +\(no scripts/deploy\.sh — deploy-lib not adopted'
 equals    'case 25: exit code' "${RC}" 0
@@ -353,6 +370,73 @@ equals    'case 25: exit code' "${RC}" 0
 BIG="needle$(printf '\nfiller%.0s' {1..200000})"
 equals 'case 26: matches sees the match' "$( (matches x "${BIG}" '^needle') 2>/dev/null | grep -c '^ok ')" 1
 equals 'case 26: unmatches reports the match' "$( (unmatches x "${BIG}" '^needle') 2>&1 >/dev/null | grep -c '^FAIL x ')" 1
+
+# --- 27. a retired app with no copy, no link and no lib reads retired (card 729) ---
+# Before the registry, such an app was UNLISTED, or MISSING "not adopted" when named.
+TROOT="${WORK}/retiredbare"
+mkdir -p "${TROOT}/abacus/.git"
+run_discovery "${TROOT}" abacus
+matches   'case 27: an app with no vendored copy reads retired (609)' "${OUT}" '^ +retired +abacus +\(no docs/STANDARDS\.md copy — retired \(609\)'
+unmatches 'case 27: and is neither MISSING nor UNLISTED' "${OUT}" '(MISSING|UNLISTED) +abacus'
+matches   'case 27: the fleet is clean, with it counted retired' "${OUT}" 'fleet: all 1 project\(s\) on 2026-09-18 \(1 retired\)'
+equals    'case 27: exit code' "${RC}" 0
+
+# --- 28. a lib that is not vendored is shared when the gate pins the canonical clone (card 623) ---
+SHROOT="${WORK}/sharedlib"
+mkdir -p "${SHROOT}/ledger/scripts/lib/gate" "${SHROOT}/ledger/.git"
+: >"${SHROOT}/ledger/scripts/deploy.sh"
+printf '# shellcheck shell=bash\nDEPLOY_LIB_CLONE=%s\nDEPLOY_LIB=%s/scripts/lib/deploy\n' "${CANON}" "${CANON}" >"${SHROOT}/ledger/scripts/lib/gate/deploy-lib.sh"
+run_discovery "${SHROOT}" ledger
+matches 'case 28: a pinned shared lib reads shared, with the canonical version' "${OUT}" "^ +shared +ledger +\\(not vendored; the gate pins .*/scripts/lib/deploy, deploy-lib ${LIB_VERSION}\\)"
+equals  'case 28: shared is not a failure — exit code' "${RC}" 0
+printf 'DEPLOY_LIB=/elsewhere/scripts/lib/deploy\n' >"${SHROOT}/ledger/scripts/lib/gate/deploy-lib.sh"
+run_discovery "${SHROOT}" ledger
+matches 'case 28: a pin to another clone is MISSING' "${OUT}" '^ +MISSING +ledger +\(scripts/deploy\.sh present but no scripts/lib/deploy, and'
+equals  'case 28: other pin exit code' "${RC}" 1
+printf 'DEPLOY_LIB=%s/scripts/lib/deploy\n' "${CANON}" >"${SHROOT}/ledger/scripts/lib/gate/deploy-lib.sh"
+mkdir -p "${SHROOT}/ledger/scripts/lib/deploy"
+cp "${CANON}/scripts/lib/deploy/"* "${SHROOT}/ledger/scripts/lib/deploy/"
+printf '2020-01-01\n' >"${SHROOT}/ledger/scripts/lib/deploy/VERSION"
+run_discovery "${SHROOT}" ledger
+matches   'case 28: a stale vendored lib beside the pin is still STALE' "${OUT}" "^ +STALE +ledger +\\(VERSION is '2020-01-01'"
+unmatches 'case 28: and not shared' "${OUT}" '^ +shared +ledger'
+equals    'case 28: stale vendored lib exit code' "${RC}" 1
+
+# --- 29. a registry whose last line has no newline still lists that app -------
+REG_NO_EOL=1 run_discovery "${TROOT}" '# app' abacus
+matches 'case 29: the unterminated last line is read' "${OUT}" '^ +retired +abacus'
+equals  'case 29: exit code' "${RC}" 0
+
+# --- 30. a listed directory that is not a checkout is MISSING, not retired ---
+HOROOT="${WORK}/hollowroot"
+mkdir -p "${HOROOT}/hollow"
+run_discovery "${HOROOT}" hollow
+matches   'case 30: an empty directory reads MISSING, not a checkout' "${OUT}" '^ +MISSING +hollow +\(.*/hollow is not a checkout — no \.git'
+unmatches 'case 30: and not retired' "${OUT}" '^ +retired +hollow'
+unmatches 'case 30: and no deploy-lib row for it' "${OUT}" '^ +none +hollow'
+equals    'case 30: exit code' "${RC}" 1
+
+# --- 31. a registry name that is . or .. or holds a / is never a path --------
+# Every one of these resolves to a checkout here, so only the name check stops it.
+DROOT="${WORK}/dots/root"
+mkdir -p "${WORK}/dots/.git" "${DROOT}/.git" "${DROOT}/nest/abacus/.git"
+run_discovery "${DROOT}" . .. nest/abacus
+matches 'case 31: . is not an app name' "${OUT}" "^ +MISSING +\. +\('\.' is not an app name"
+matches 'case 31: .. is not an app name' "${OUT}" "^ +MISSING +\.\. +\('\.\.' is not an app name"
+matches 'case 31: a name with a / is not an app name' "${OUT}" "^ +MISSING +nest/abacus +\('nest/abacus' is not an app name"
+matches 'case 31: all three need attention' "${OUT}" 'fleet: 3 of 3 project\(s\) need attention'
+equals  'case 31: exit code' "${RC}" 1
+
+# --- 32. a registry the caller cannot read is an error, never a clean fleet ---
+if [ "$(id -u)" -eq 0 ]; then
+    printf 'skip case 32: a mode-000 registry is readable by root — run the suite as a non-root user\n'
+else
+    printf 'abacus\n' >"${WORK}/app-owners-000"
+    chmod 000 "${WORK}/app-owners-000"
+    run_registry "${TROOT}" "${WORK}/app-owners-000"
+    matches 'case 32: a mode-000 registry refuses to report' "${OUT}" 'app-owners registry unreadable: .*app-owners-000'
+    equals  'case 32: exit code' "${RC}" 2
+fi
 
 if [ "${fails}" -eq 0 ]; then
     printf '\nfleet-versions-test: all checks passed\n'
