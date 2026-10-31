@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-30 — queue-start reads registry notes as notes (the standard is unchanged and VERSION is not bumped)
+**Card 742.** `busy_reason` called a session busy whenever its `<session>-workers.active` file was
+non-empty, so notes left there stranded orbit for hours. Now blank and `#`-led lines are notes and any
+other line is a builder, whatever its shape (kidsquest writes free-text rows, so a typed-row rule would
+have cleared over live workers). A missing file is still busy, and the busy reason names the row.
+`queue-start-test.sh` cases 2b–2e cover notes, free-text rows, a last row without a newline and the
+shown row; `queue-start-mutants.txt` deletes the note skip and replaces the last-line read, and both go red. A registry that vanishes between the check and the read is busy.
+
 ## 2026-10-26 — a sanity check for deletion and replacement mutants (the standard is unchanged and VERSION is not bumped)
 New `scripts/mutant-sane.sh <original> <mutant> [<from>[-<to>]]`, and `<original> <mutant> <line>
 --replaced-with <text>` for a replacement, run before a sweep trusts a red: it refuses a mutant that is

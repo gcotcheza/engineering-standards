@@ -8,8 +8,9 @@
 #   [queue-start automation] budget ok (<numbers>): next queued item for <s> is
 #   <N> — <title>. Start it by your rules, or mark it hold in /root/backlog-owners.
 #
-# Idle means: the session keeps a registry file AND it is empty, no deploy unit
-# is active for one of its apps, and heavy-work holds no slot for it. A missing
+# Idle means: the session keeps a registry file AND it holds only blank or
+# #-led note lines (any other line is a builder), no deploy unit is active for
+# one of its apps, and heavy-work holds no slot for it. A missing
 # registry is not idle — a session opts in by keeping one, and a tool that
 # cannot be asked (systemctl, heavy-work) counts as busy. No walk-down: only
 # the session's top queued item is ever announced; held or already announced
@@ -183,10 +184,14 @@ unit_is_up(){
 }
 
 busy_reason(){
-  local s="$1" reg pane app apane rest out rc kept
+  local s="$1" reg pane app apane rest out rc kept line
   reg="$REG_DIR/$s-workers.active"
   if [ ! -f "$reg" ] || [ ! -r "$reg" ]; then printf 'no readable registry file %s' "$reg"; return 0; fi
-  [ -s "$reg" ] && { printf 'a builder is listed in %s' "$reg"; return 0; }
+  # Blank and #-led lines are notes; any other line is a builder, whatever its shape.
+  while IFS= read -r line || [ -n "${line:-}" ]; do
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+    printf 'a builder is listed in %s: %.60s' "$reg" "${line//[^[:print:]]/?}"; return 0
+  done <"$reg" || { printf 'registry file %s could not be read' "$reg"; return 0; }
   pane="$(pane_for "$s")"
   if [ ! -r "$APP_OWNERS" ]; then printf 'app owners map %s is unreadable' "$APP_OWNERS"; return 0; fi
   while read -r app apane rest || [ -n "${app:-}" ]; do
