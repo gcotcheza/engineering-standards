@@ -261,3 +261,9 @@ branch's check against fresh clones of each app's GitHub main.
 |---|---|---|
 | a red `fleet-dep-audit` row older than a day with no open fix PR alerts by itself | S8 is checked by review of the nightly row; nothing yet joins the row to open PRs. | personal-vps |
 | composer dev packages are audited | The gate's `composer audit --no-dev` skips them; a full-severity audit with dev packages runs only by hand on a finding. | personal-vps |
+
+## W11 mechanised
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| a security finding or incident with no acknowledgement line is flagged by itself | W11 is checked by the daily review reading the fleet-docs `docs/journal/<date>-<session>.md` pages; nothing yet matches a finding or incident to its acknowledgement line. | personal-vps |

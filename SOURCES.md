@@ -65,6 +65,7 @@ shared memory (the owner's standing instructions to the AI sessions).
 | W8 One deploy runbook per project | The `.claude/commands/deploy.md` runbooks of seven projects; the fleet's shared memory ("follow it literally; it encodes hard-won ordering") |
 | W9 Exercise, don't read the config | The fleet's shared memory (two standing instructions: prove a mechanism by running it, and execute rather than narrate) |
 | W10 Clean up after merge | The box's own disk incident: the health check's disk row sat red for ten days at 89% with 117 lanes and ~80 unused images left behind |
+| W11 Ghie acknowledges what they must see | The owner's direct instruction, 2026-11-01: "you know that i can not always read all your messages. Good that you requires recognition from me about important things, this should be a fleet rule from now on"; a hooks bypass found on the dev box on 2026-10-25 that sat in a merge-order file for four days before it reached the owner |
 
 ---
 
