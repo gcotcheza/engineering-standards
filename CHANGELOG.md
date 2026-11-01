@@ -2,14 +2,18 @@
 
 ## 2026-11-01 — W11: a report Ghie must see counts as delivered only when Ghie acknowledges it (VERSION 2026-11-01)
 **New rule W11; the standard now has 41 rules** (Ghie, 2026-11-01). A security finding, an incident (a
-site down, data lost or wrong, a guard bypassed) or a step that cannot go ahead without Ghie counts as
-delivered only when Ghie acknowledges it in their own words. Until then the reporting session opens
-every reply to Ghie with the item in one plain sentence; then it records the date and Ghie's words in
-its journal, and review of the journal treats a finding or incident with no acknowledgement line as the
-finding. Ordinary questions and decisions are not covered, to keep Ghie's reading load down. Why: a
-hooks bypass of 2026-10-25 sat in a merge-order file for four days before it reached Ghie.
-`README.md` now says 41 rules and `SOURCES.md` has a W11 row. The standards text moved, so `VERSION`
-moves with it. Decision: `ghie-acknowledges-important-reports`.
+site down, data lost or wrong, a guard bypassed) or a blocked step whose wait does harm (a security fix
+waiting for a merge or an install, a site still down) counts as delivered only when Ghie acknowledges it
+in their own words. Until then the holding session opens every reply to Ghie with the item in one plain
+sentence; then it records the date and Ghie's words in its fleet-docs journal page, and the daily review
+treats a finding or incident with no acknowledgement line as the finding. A session that receives such an
+item from a worker or a peer owns its delivery; one Ghie is not talking to hands it to the advisor. An
+acknowledgement is not approval of the step (W3 still holds). Not covered: ordinary questions and
+decisions, a routine PR waiting for merge, a routine approval, and an S8 advisory already closed under W3
+by a dependabot-only merge, which goes in the journal only. Why: a hooks bypass of 2026-10-25 sat in a
+merge-order file for four days before it reached Ghie. `README.md` now says 41 rules, `SOURCES.md` has a
+W11 row and `ROLLOUT.md` a "W11 mechanised" row (by review until then). The standards text moved, so
+`VERSION` moves with it. Decision: `ghie-acknowledges-important-reports`.
 
 ## 2026-10-31 — the fleet check reads its projects from app-owners (the standard is unchanged and VERSION is not bumped)
 **Card 729.** `scripts/fleet-versions.sh` still found projects by the vendored `docs/STANDARDS.md` and
