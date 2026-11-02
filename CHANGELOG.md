@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
+**Card 863.** The `--base <sha>` vetting copied into Scribly, KidsQuest and Reflection gates is now
+`base_vet` in `scripts/lib/deploy/base.sh`, with `base_vet_armed` for the re-check after
+`gate_ledger_arm`. Two fixes come with it: every `merge-base --is-ancestor` exit other than 0 or 1
+refuses (the floor loop no longer reads a git error as "not an ancestor"), and a head that moved
+between vetting and arming is refused. The refusal sentences are the copies' own. No app calls it
+yet; each adopts it in its own pull request. `base-test.sh` holds every case; `test.sh` runs it, and
+every header is re-stamped for 2026-11-02. Why: decision: one-base-vet-for-every-gate.
+
 ## 2026-11-01 — W11: a report Ghie must see counts as delivered only when Ghie acknowledges it (VERSION 2026-11-01)
 **New rule W11; the standard now has 41 rules** (Ghie, 2026-11-01). A security finding, an incident (a
 site down, data lost or wrong, a guard bypassed) or a blocked step whose wait does harm (a security fix

@@ -432,7 +432,7 @@ equals 'the work directory under /srv/worker-scratch carries its lane label' "$(
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date, with an optional same-day serial' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$'
 EMPTY_SET="$(printf '' | sha256sum | cut -d' ' -f1)"
-for f in summary resolve ledger preflight cleanup compose literal ownership; do
+for f in summary resolve ledger preflight cleanup compose literal ownership base; do
     line1="$(head -1 "${LIB_DIR}/${f}.sh")"
     body="$(tail -n +2 "${LIB_DIR}/${f}.sh" | sha256sum | cut -d' ' -f1)"
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
@@ -3052,6 +3052,12 @@ OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash "${SCRIPT_DIR}/ownershi
 RC=$?
 contains 'ownership-test.sh passes as root' "${OUT}" 'ownership-test: all checks passed'
 equals 'ownership-test.sh exits' "${RC}" 0
+
+# --- 8c. a gate's --base vetting (card 863): its own suite, over fixture repos in WORK ---
+OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash "${SCRIPT_DIR}/base-test.sh" 2>&1)"
+RC=$?
+contains 'base-test.sh passes' "${OUT}" 'base-test: all checks passed'
+equals 'base-test.sh exits' "${RC}" 0
 
 # --- 9. a gate's literal: written once at column 0, read only as ${NAME} after (card 318) ----
 LIT_VALUE=/srv/engineering-standards/scripts/lib/deploy/test.sh
