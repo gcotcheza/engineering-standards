@@ -27,26 +27,29 @@ g switch -q main && g merge -q --no-ff -m M feat || exit 1
 MM=$(g rev-parse HEAD) M3=$(commit m3) || exit 1
 g switch -q -c side "$M0" && X1=$(commit x1) || exit 1
 g switch -q -c next "$M3" && G1=$(commit g1) || exit 1
+g switch -q -c feat3 "$F2" && F3=$(commit f3) || exit 1
 g update-ref refs/remotes/origin/main "$M3" || exit 1
-[ -n "$M0$M1$F1$F2$MM$M3$X1$G1" ] || exit 1
+[ -n "$M0$M1$F1$F2$F3$MM$M3$X1$G1" ] || exit 1
 
-# A git that exits 128 on merge-base --is-ancestor when its two arguments are FAIL_A and FAIL_B.
+# A git that exits 128 on merge-base --is-ancestor when its two arguments are FAIL_A and FAIL_B, and on
+# rev-list after its first line when FAIL_LIST is set.
 FAKE="${WORK}/fake-git"
 printf '%s\n' '#!/bin/bash' 'd=$2; shift 2' \
+    'if [ "$1" = rev-list ] && [ -n "${FAIL_LIST}" ]; then git -C "$d" "$@" | head -1; exit 128; fi' \
     'if [ "$1 $2" = "merge-base --is-ancestor" ] && [ "$3" = "${FAIL_A}" ] && [ "$4" = "${FAIL_B}" ]; then exit 128; fi' \
     'exec git -C "$d" "$@"' >"$FAKE"
 
 # vet <head> <base> <ancestor hint> [fail a] [fail b]: OUT is stdout, ERR stderr, RC the exit.
 vet() {
     g -c advice.detachedHead=false checkout -q "$1" || exit 1
-    OUT=$(cd "$R" && FAIL_A=${4:-} FAIL_B=${5:-} bash -c '. "$1"; base_vet "$2" "$3" "$4" bash "$5" -C "$6"' \
+    OUT=$(cd "$R" && FAIL_A=${4:-} FAIL_B=${5:-} FAIL_LIST=${FAIL_LIST:-} bash -c '. "$1"; base_vet "$2" "$3" "$4" bash "$5" -C "$6"' \
         _ "${LIB_DIR}/base.sh" "$2" "$FETCH" "$3" "$FAKE" "$R" 2>"${WORK}/err")
     RC=$?
     ERR=$(cat "${WORK}/err")
 }
 armed() {
-    OUT=$(FAIL_A=${4:-} FAIL_B=${5:-} bash -c '. "$1"; base_vet_armed "$2" "$3" "$4" bash "$5" -C "$6"' \
-        _ "${LIB_DIR}/base.sh" "$1" "$2" "$3" "$FAKE" "$R" 2>"${WORK}/err")
+    OUT=$(FAIL_A=${4:-} FAIL_B=${5:-} bash -c '. "$1"; base_vet_armed "$2" "$3" "$4" "$5" "" bash "$6" -C "$7"' \
+        _ "${LIB_DIR}/base.sh" "$1" "$2" "$3" "$FETCH" "$FAKE" "$R" 2>"${WORK}/err")
     RC=$?
     ERR=$(cat "${WORK}/err")
 }
@@ -90,6 +93,23 @@ vet "$M0" "$M0" ''
 equals 'merged head: a head that landed as the root commit has no floor, so its base is refused' "$RC:$OUT" '2:'
 equals 'merged head: the no-floor sentence asks for its first parent' "$ERR" "the base $M0 is inside what HEAD merged into origin/main (at ${M0:0:12}), so $M0..HEAD leaves some of it out: give its first parent."
 
+vet "$F3" "$F1" ''
+equals 'unmerged child of a merged head: a base inside that merge is accepted at the child' "$RC:$OUT" "0:$F1"
+FAIL_LIST=1 vet "$F2" "$F1" ''
+equals 'floor list: rev-list failing after a truncated list refuses with 2' "$RC:$OUT" '2:'
+equals 'floor list: the sentence names the exit' "$ERR" "git could not list origin/main's first parents (rev-list exited 128), so no floor is known for the base $F1."
+g -c advice.detachedHead=false checkout -q "$G1" || exit 1
+OUT=$(cd "$R" && bash -c '. "$1"; base_vet --head "$2" "$3" "" "" git' _ "${LIB_DIR}/base.sh" "$F2" "$F1" 2>&1)
+RC=$?
+equals 'head: --head judges the named commit, not the checked-out HEAD' "$RC:$OUT" "2:the base $F1 is inside what $F2 merged into origin/main (at ${MM:0:12}), so $F1..$F2 leaves some of it out: give $M1."
+OUT=$(bash -c '. "$1"; base_vet --head "" x "" "" git' _ "${LIB_DIR}/base.sh" 2>&1)
+RC=$?
+equals 'head usage: an empty --head is refused with 2' "$RC" 2
+contains 'head usage: and names the call' "$OUT" 'base_vet: usage:'
+OUT=$(cd "$R" && bash -ec '. "$1"; base_vet "$2" "" "" git; echo after' _ "${LIB_DIR}/base.sh" "$X1" 2>&1)
+RC=$?
+equals 'errexit: a bare base_vet under set -e exits 2 with its sentence' "$RC:$OUT" "2:the base $X1 is not an ancestor of HEAD, so $X1..HEAD is not what this head is made of."
+
 vet "$F2" "$F1" '' HEAD "$MM"
 equals 'floor loop: merge-base exiting 128 refuses (fail closed), not a break that floors too late' "$RC:$OUT" '2:'
 equals 'floor loop: the sentence names the commit and the exit' "$ERR" "git could not say whether HEAD is in $MM (merge-base exited 128), so no floor is known for the base $F1."
@@ -115,7 +135,13 @@ armed "$M3" "$M3" "$G1"
 equals 'armed: a recorded head that holds the base passes silently' "$RC:$OUT:$ERR" '0::'
 armed "$M3" "$M3" "$X1"
 equals 'armed: a recorded head without the base is refused with 2' "$RC" 2
-equals 'armed: the sentence' "$ERR" "the base $M3 is not an ancestor of $X1, the commit this run records: HEAD moved after the base was vetted."$'\n''Run the gate again on the head you mean to record.'
+equals 'armed: the sentence names the armed commit' "$ERR" "the base $M3 is not an ancestor of $X1, so $M3..$X1 is not what this head is made of."
+armed "$F1" "$F1" "$F2"
+equals 'armed: a base vetted under an unmerged head is vetted in full again at the merged armed head' "$RC" 2
+equals 'armed: the inside sentence names the armed commit' "$ERR" "the base $F1 is inside what $F2 merged into origin/main (at ${MM:0:12}), so $F1..$F2 leaves some of it out: give $M1."
+OUT=$(bash -ec '. "$1"; base_vet_armed "$2" "$2" "$3" "" "" git -C "$4"; echo after' _ "${LIB_DIR}/base.sh" "$M3" "$X1" "$R" 2>&1)
+RC=$?
+equals 'errexit: a bare base_vet_armed under set -e exits 2 with its sentence, not 1 in silence' "$RC:$OUT" "2:the base $M3 is not an ancestor of $X1, so $M3..$X1 is not what this head is made of."
 armed "$M3" "$M3" ''
 equals 'armed: no armed commit is refused with 2' "$RC" 2
 equals 'armed: the no-commit sentence' "$ERR" "the gate armed no commit, so nothing says the base $M3 is in the head this run records."
@@ -124,7 +150,7 @@ equals 'armed: merge-base exiting 128 refuses with 2' "$RC" 2
 contains 'armed: the sentence names the exit' "$ERR" "git could not say whether $M3 is in $G1 (merge-base exited 128)"
 armed "$M3" '' "$G1"
 equals 'armed usage: no vetted sha is refused with 2' "$RC" 2
-equals 'armed usage: and names the call' "$ERR" 'base_vet_armed: usage: base_vet_armed <base> <vetted sha> <armed sha> <git command>...'
+equals 'armed usage: and names the call' "$ERR" 'base_vet_armed: usage: base_vet_armed <base> <vetted sha> <armed sha> <fetch hint> <ancestor hint or empty> <git command>...'
 
 if [ "$fails" -eq 0 ]; then
     printf 'base-test: all checks passed\n'

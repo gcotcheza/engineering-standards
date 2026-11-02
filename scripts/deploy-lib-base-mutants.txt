@@ -1,22 +1,25 @@
 # T5 guard-deletion mutants for scripts/lib/deploy/base.sh (card 863), for scripts/guard-mutants.sh.
 #   BASE_TEST=$PWD/scripts/lib/deploy/base-test.sh TMPDIR=<dir under /srv/worker-scratch> scripts/guard-mutants.sh scripts/lib/deploy/base.sh scripts/deploy-lib-base-mutants.txt
-# A guard line deleted; bv-floor-loop-old-break restores the copies' "|| break" on any non-zero exit; bv-in-error reads every exit as an answer.
+# A guard line deleted; bv-floor-loop-old-break restores the copies' "|| break"; bva-full-vet restores the ancestry-only re-check.
 bv-in-error@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$rc" -gt 1 ] || return "$rc"@@    return "$rc"
 bv-in-error-sentence@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    _base_vet_refuse "git could not say whether $a is in $b (merge-base exited $rc), so the base $given cannot be vetted."@@
-bv-usage@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    if [ "$#" -lt 4 ] || [ -z "$given" ]; then@@    if false; then
+bv-in-errexit@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    _base_vet_in "$base" "$head" "$given" "$@" || in_head=$?@@    _base_vet_in "$base" "$head" "$given" "$@"; in_head=$?
+bv-usage@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    if [ "$#" -lt 4 ] || [ -z "${1:-}" ] || [ -z "$head" ]; then@@    if false; then
+bv-head-param@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@        head=${2:-}@@        head=HEAD
 bv-not-commit@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@        { _base_vet_refuse "the base $given is not a commit in this clone."; return; }@@
-bv-not-ancestor@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$in_head" -ne 1 ] || { _base_vet_refuse "the base $given is not an ancestor of HEAD, so $given..HEAD is not what this head is made of." ${ancestor_hint:+"$ancestor_hint"}; return; }@@
+bv-not-ancestor@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$in_head" -ne 1 ] || { _base_vet_refuse "the base $given is not an ancestor of $head, so $given..$head is not what this head is made of." ${ancestor_hint:+"$ancestor_hint"}; return; }@@
 bv-head-error@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$in_head" -eq 0 ] || return 2@@
 bv-no-origin@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@        { _base_vet_refuse 'origin/main is not in this clone, so nothing here can say the base is behind it.' ${fetch_hint:+"$fetch_hint"}; return; }@@
-bv-ahead@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$in_main" -ne 1 ] || { _base_vet_refuse "the base $given is ahead of origin/main, so $given..HEAD leaves out commits this branch added."; return; }@@
+bv-ahead@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$in_main" -ne 1 ] || { _base_vet_refuse "the base $given is ahead of origin/main, so $given..$head leaves out commits this branch added."; return; }@@
 bv-main-error@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$in_main" -eq 0 ] || return 2@@
 bv-merged-error@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$merged" -le 1 ] || return 2@@
-bv-floor-loop-fail-closed@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@            [ "$in_c" -eq 0 ] || { _base_vet_refuse "git could not say whether HEAD is in $c (merge-base exited $in_c), so no floor is known for the base $given."; return; }@@
+bv-mainline-error@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@            { listed=$?; _base_vet_refuse "git could not list origin/main's first parents (rev-list exited $listed), so no floor is known for the base $given."; return; }@@
+bv-floor-loop-fail-closed@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@            [ "$in_c" -eq 0 ] || { _base_vet_refuse "git could not say whether $head is in $c (merge-base exited $in_c), so no floor is known for the base $given."; return; }@@
 bv-floor-loop-old-break@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@            [ "$in_c" -ne 1 ] || break@@            [ "$in_c" -eq 0 ] || break
-bv-no-floor@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@        in_floor=1@@
-bv-inside@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@        [ "$in_floor" -ne 1 ] || { _base_vet_refuse "the base $given is inside what HEAD merged into origin/main (at ${landed:0:12}), so $given..HEAD leaves some of it out: give ${floor:-its first parent}."; return; }@@
+bv-no-floor@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    local in_head=0 in_main=0 merged=0 in_c in_floor=1@@    local in_head=0 in_main=0 merged=0 in_c in_floor=0
+bv-inside@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@        [ "$in_floor" -ne 1 ] || { _base_vet_refuse "the base $given is inside what $head merged into origin/main (at ${landed:0:12}), so $given..$head leaves some of it out: give ${floor:-its first parent}."; return; }@@
 bv-floor-error@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@        [ "$in_floor" -eq 0 ] || return 2@@
-bva-usage@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    if [ "$#" -lt 4 ] || [ -z "$given" ] || [ -z "$base" ]; then@@    if false; then
+bva-usage@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    if [ "$#" -lt 6 ] || [ -z "$given" ] || [ -z "$base" ]; then@@    if false; then
 bva-unarmed@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ -n "$armed" ] || { _base_vet_refuse "the gate armed no commit, so nothing says the base $given is in the head this run records."; return; }@@
-bva-moved@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$in_armed" -ne 1 ] || { _base_vet_refuse "the base $given is not an ancestor of $armed, the commit this run records: HEAD moved after the base was vetted." 'Run the gate again on the head you mean to record.'; return; }@@
-bva-error@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    [ "$in_armed" -eq 0 ] || return 2@@
+bva-full-vet@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    _base_vet "$armed" "$given" "$base" "$@" >/dev/null || return 2@@    ( shift 2; _base_vet_in "$base" "$armed" "$given" "$@" ) || return 2
+bva-vet-dropped@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$BASE_TEST"@@    _base_vet "$armed" "$given" "$base" "$@" >/dev/null || return 2@@
