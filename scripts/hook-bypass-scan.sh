@@ -160,23 +160,72 @@ function plain(x) {
     gsub("[\"" q "\\\\]", "", x)
     return x
 }
-function judge(file, n, s, argvn,    d, p, e, a) {
+function chr(v) { return v > 32 && v < 127 ? sprintf("%c", v) : "_" }
+# Each ANSI-C string (dollar, quote) as bash decodes it, into a single-quoted one: hex and octal escapes become their character; a quote, blank, control or \c with its char, one _.
+function ansic(x,    out, i, c, v, k, body) {
+    out = ""
+    while ((i = index(x, "$" q)) > 0) {
+        out = out substr(x, 1, i - 1)
+        x = substr(x, i + 2)
+        body = ""
+        for (i = 1; i <= length(x) && substr(x, i, 1) != q; i++) {
+            c = substr(x, i, 1)
+            if (c == "\\") {
+                c = substr(x, ++i, 1)
+                v = -1
+                if (c == "c") i++
+                if (c ~ /^[xuU]$/) for (v = k = 0; k < (c == "x" ? 2 : c == "u" ? 4 : 8) && substr(x, i + 1, 1) != "" && index(HEX, tolower(substr(x, i + 1, 1))); k++) v = v * 16 + index(HEX, tolower(substr(x, ++i, 1))) - 1
+                if (c ~ /[0-7]/) for (v = c + 0; length(c) < 3 && substr(x, i + 1, 1) ~ /[0-7]/; c = c "o") v = v * 8 + substr(x, ++i, 1)
+                c = v >= 0 ? chr(v) : c ~ /[a-z]/ ? "_" : c
+            }
+            body = body (c == q ? "_" : c)
+        }
+        x = substr(x, i + 1)
+        out = out q body q
+    }
+    return out x
+}
+# The allow-lists of the mirror span, once MIRROR has read its shape: each env name, then each argument for its subcommand.
+function mirrorok(e,    a, w, n, i, x, sc, opt) {
+    if (index(e, "\\")) return 0
+    if (e ~ /\$\{?[@*]/) return 0
+    a = e
+    sub(/^[ \t{(]?env[ \t]+-i[ \t]+/, "", a)
+    while (match(a, "^" ASSIGN)) {
+        if (substr(a, 1, index(a, "=") - 1) !~ ENVOK) return 0
+        a = substr(a, RLENGTH + 1)
+    }
+    sub(/[ \t]*(\)|;([ \t]*\})?)?[ \t]*$/, "", a)
+    n = split(a, w, /[ \t]+/)
+    i = w[4] == "-c" ? 6 : 4
+    sc = w[i]
+    if (sc == "cat-file") return n == i + 2 && plain(w[i + 1]) ~ CATTYPE && plain(w[i + 2]) !~ /^-/
+    opt = sc == "fetch" ? FETCHOPT : sc == "rev-parse" ? REVOPT : sc == "log" ? LOGOPT : BASEOPT
+    for (i++; i <= n; i++) {
+        x = plain(w[i])
+        if (sc == "log" && x == "-n" && plain(w[i + 1]) ~ /^[0-9]+$/) { i++; continue }
+        if (x ~ /^-/ && x !~ opt) return 0
+    }
+    return 1
+}
+function judge(file, n, s, argvn,    d, p, e, sa) {
     found = ""
     split("", seen)
-    # The mirror pass, read as written: env -i, a HOME from one variable, then git -C <dir> fetch or rev-parse, to the line end;
-    # never with --upload-pack (a --u prefix runs a command), "$@", or a git word in an assignment (GIT_SSH_COMMAND), even quoted.
+    # The mirror pass, read as written: env -i, a HOME from one variable, git -C <dir>, at most -c gpg.program="$X", then
+    # fetch, rev-parse, log, cat-file or merge-base to the line end, every env name and argument on the lists in mirrorok.
     p = s
     e = match(p, MIRROR) ? substr(p, RSTART, RLENGTH) : ""
-    a = match(e, "^" MPRE) ? plain(substr(e, 1, RLENGTH)) : ""
-    if (e != "" && a !~ GITIN && plain(e) !~ /[ \t]--u|\$\{?[@*]/ && match(p, MIRROR)) { e = substr(p, RSTART, RLENGTH); sub("[ \t]" VARHOME "[ \t]", " ", e); sub(/env[ \t]+-i/, "env", e); p = substr(p, 1, RSTART - 1) e substr(p, RSTART + RLENGTH) }
+    if (e != "" && mirrorok(e) && match(p, MIRROR)) { e = substr(p, RSTART, RLENGTH); sub("[ \t]" VARHOME "[ \t]", " ", e); sub(/env[ \t]+-i/, "env", e); p = substr(p, 1, RSTART - 1) e substr(p, RSTART + RLENGTH) }
+    p = ansic(p)
+    sa = ansic(s)
     rules(tolower(p), p)
     # Bash drops a quote or backslash inside a word, so a de-quoted copy is judged too: --no-"verify" is the long flag.
     d = p
     gsub("\\$[\"" q "]", "", d)
     gsub("[\"" q "\\\\]", "", d)
     rules(tolower(d), d)
-    # The -n rule reads quotes as bash does, so a -m message is no flag: as written, and with the quotes in each word joined.
-    if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")
+    # The -n rule reads quotes as bash does, so a -m message is no flag: as written (ANSI-C strings decoded), and with the quotes in each word joined.
+    if (tolower(sa) ~ ARGV_N || argvn || shortn(tolower(sa)) || shortn(shellwords(tolower(sa), 1))) hit("commit or merge -n (a short --no-verify)")
     sub(/^\.\//, "", file)
     if (found != "") printf "%s:%d:%s\n", file, n, found
 }
@@ -193,12 +242,21 @@ BEGIN {
     GITNAME = "([A-Za-z_][A-Za-z0-9_]*)?(GIT|git)[A-Za-z0-9_]*"
     COMMAND = "[^ \t;&|=]+([ \t;&|)`]|$)"
     VARHOME = "HOME=(\\$" NAME "|\\$\\{" NAME "\\}|\"\\$" NAME "\"|\"\\$\\{" NAME "\\}\")"
-    MWORD = "[^ \t;&|`()<>]+"
+    # A word with no blank, operator or $( outside single quotes; a single-quoted part holds no blank.
+    MWORD = "([^ \t;&|`()<>" q "]|" q "[^" q " \t]*" q ")+"
     # git, a path ending in /git, or one variable named for git, quoted or not.
     MGIT = "(git|[^ \t;&|`()<>=\"$]*/git|\\$" GITNAME "|\\$\\{" GITNAME "\\}|\"\\$" GITNAME "\"|\"\\$\\{" GITNAME "\\}\")"
-    GITIN = "(^|[^A-Za-z0-9_])git([^A-Za-z0-9_]|$)|\\$\\{?[A-Za-z0-9_]*(GIT|git)"
     MPRE = "(^|[ \t{(])env[ \t]+-i[ \t]+(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*"
-    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD "[ \t]+(fetch|rev-parse)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
+    # decision: the-mirror-pass-reads-its-own-arguments
+    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})\")?"
+    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
+    ENVOK = "^(PATH|GNUPGHOME|GIT_NO_REPLACE_OBJECTS|HOME)$"
+    FETCHOPT = "^--(quiet|no-tags|prune)$"
+    REVOPT = "^--(verify|quiet)$"
+    LOGOPT = "^(-[0-9]+|--(format|pretty)=.*)$"
+    BASEOPT = "^--is-ancestor$"
+    CATTYPE = "^(commit|tree|blob|tag|-t|-s|-e|-p)$"
+    HEX = "0123456789abcdef"
     ROOTHOME = "(^|[ \t;&|({`])env[ \t]+-i[ \t]+(" ASSIGN ")*" ROOT "[ \t]+(" ASSIGN ")*" COMMAND
     HOMES = "(XDG_CONFIG_)?HOME"
     WORDEND = "([^A-Za-z0-9_]|$)"

@@ -235,11 +235,11 @@ expect 'card 928: no-verify on a continuation line, after no-verbose' 1 scripts/
 expect 'mirror: home "$X", "$MIRROR_GIT" -C, fetch' 0 scripts/a.sh 'en@v -i PATH=/usr/bin:/bin HOM@E="$MIRROR_HOME" GIT_NO_REPLACE_OBJECTS=1 "$MIRROR_GIT" -C "$MIRROR" fetch --quiet origin'
 expect 'mirror: home $X, git -C, rev-parse' 0 scripts/a.sh 'en@v -i HOM@E=$MIRROR_HOME git -C "$MIRROR" rev-parse --verify HEAD'
 expect 'mirror: home ${X}, ${MIRROR_GIT}' 0 scripts/a.sh 'en@v -i HOM@E=${MIRROR_HOME} ${MIRROR_GIT} -C $MIRROR fetch'
-expect 'mirror: home "${X}", $MIRROR_GIT, a path git' 0 scripts/a.sh 'en@v -i HOM@E="${H}" X=1 /usr/bin/git -C /srv/m rev-parse HEAD'
+expect 'mirror: home "${X}", $MIRROR_GIT, a path git' 0 scripts/a.sh 'en@v -i HOM@E="${H}" GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C /srv/m rev-parse HEAD'
 expect 'mirror: $MIRROR_GIT unquoted' 0 scripts/a.sh 'en@v -i HOM@E="$H" $MIRROR_GIT -C "$M" fetch'
-expect "mirror: the advisor's function form, on continuation lines" 0 scripts/a.sh 'mirror_git_fetch() { en@v -i PATH=/usr/bin:/bin HOM@E="$MIRROR_HOME" GNUPGHOME="$GNUPG" \' '    GIT_SSH_COMMAND="ssh -i $SSH_KEY -o BatchMode=yes" "$MIRROR_GIT" -C "$MIRROR" fetch --quiet --no-tags "$MIRROR_URL" '"'+refs/heads/main:refs/heads/main'"'; }'
+expect "b2: the deploy fetch's GIT_SSH_COMMAND, even as ssh, on continuation lines" 1 scripts/a.sh 'mirror_git_fetch() { en@v -i PATH=/usr/bin:/bin HOM@E="$MIRROR_HOME" GNUPGHOME="$GNUPG" \' '    GIT_SSH_COMMAND="ssh -i $SSH_KEY -o BatchMode=yes" "$MIRROR_GIT" -C "$MIRROR" fetch --quiet --no-tags "$MIRROR_URL" '"'+refs/heads/main:refs/heads/main'"'; }'
 expect 'mirror: in a command substitution' 0 scripts/a.sh 'sha=$(en@v -i HOM@E="$H" "$MIRROR_GIT" -C "$M" rev-parse --verify --quiet main)'
-for sub in commit merge commit-@tree am cherry-pick rebase revert push status log cat-file; do
+for sub in commit merge commit-@tree am cherry-pick rebase revert push status show cat-file; do
     expect "mirror refused: ${sub}" 1 scripts/a.sh "en@v -i HOM@E=\"\$H\" \"\$MIRROR_GIT\" -C \"\$M\" ${sub} x"
 done
 expect 'mirror refused: verify, which git reads as an alias' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" verify'
@@ -285,6 +285,54 @@ expect 'mirror refused: a git variable in an assignment' 1 scripts/a.sh 'en@v -i
 expect 'mirror refused: a path git in an assignment, after the home' 1 scripts/a.sh 'en@v -i HOM@E="$H" GIT_ASKPASS=/usr/bin/git git -C "$M" fetch "$U"'
 expect 'mirror refused: a redirection after it' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch 2>/dev/null'
 expect 'mirror refused: words after the closing brace' 1 scripts/a.sh 'f() { en@v -i HOM@E="$H" git -C "$M" fetch; } ; git commit'
+
+# --- review r1 of the mirror pass: what bash decodes, and each allow-list (cards 928, 929) --
+# B1: ANSI-C quoting hides a dash or a letter from a reader that only drops quotes.
+expect 'b1: fetch whose upload option is ANSI-C hex' 1 scripts/a.sh 'en@v -i PATH=/usr/bin HOM@E="$H" git -C "$M" fetch $'\''\x2d\x2dupload-pack=sh\x20/tmp/c'\'' "$M"'
+expect 'b1: fetch whose upload option has one ANSI-C letter' 1 scripts/a.sh 'en@v -i PATH=/usr/bin HOM@E="$H" git -C "$M" fetch --$'\''\x75'\''pload-pack=sh "$M"'
+expect 'b1: fetch whose upload option is ANSI-C octal' 1 scripts/a.sh 'en@v -i PATH=/usr/bin HOM@E="$H" git -C "$M" fetch $'\''\055-upload-pack=sh'\'' "$M"'
+expect 'b1: the long flag behind an ANSI-C hex dash' 1 scripts/a.sh 'git commit $'\''\x2d@-no-verify'\'' -m x'
+expect 'b1: the long flag behind an ANSI-C octal dash' 1 scripts/a.sh 'git commit $'\''\055@-no-verify'\'' -m x'
+expect 'b1: the short flag behind an ANSI-C hex letter' 1 scripts/a.sh 'git com@mit $'\''-\x6e'\'' -m x'
+expect 'b1: the short flag behind an ANSI-C octal letter' 1 scripts/a.sh 'git com@mit $'\''-\156'\'' -m x'
+expect 'b1: the long flag behind an ANSI-C unicode dash' 1 scripts/a.sh 'git commit $'\''\u002d@-no-verify'\'' -m x'
+expect 'b1: the long flag behind a long ANSI-C unicode dash' 1 scripts/a.sh 'git commit $'\''\U0000002d@-no-verify'\'' -m x'
+expect 'b1: the short flag behind an ANSI-C unicode letter' 1 scripts/a.sh 'git com@mit $'\''-\u6e'\'' -m x'
+expect 'b1: an ANSI-C control character takes the dash after it' 0 scripts/a.sh 'git commit $'\''\c-@-no-verify'\'' -m x'
+expect 'b1: the short flag in a locale string' 1 scripts/a.sh 'git com@mit $"-@n" -m x'
+expect 'b1: a commit below the hooks behind a locale string' 1 scripts/a.sh 'git commit$"-@tree" HEAD'
+expect 'b1: an ANSI-C newline in a message is no flag' 0 scripts/a.sh 'git com@mit -m $'\''a\nb'\'''
+expect 'b1: an ANSI-C newline for IFS' 0 scripts/a.sh 'IFS=$'\''\n'\'' read -r a b'
+# B2: only PATH, GNUPGHOME, GIT_NO_REPLACE_OBJECTS and the one home are set; fetch runs other names' values.
+expect 'b2: GIT_SSH_COMMAND with a globbed git' 1 scripts/a.sh 'en@v -i HOM@E="$H" GIT_SSH_COMMAND="/usr/bin/g?t -C /r com@mit -qm x" git -C "$M" fetch "ssh://h/r"'
+expect 'b2: GIT_PROXY_COMMAND with a bracketed git' 1 scripts/a.sh 'en@v -i HOM@E="$H" GIT_PROXY_COMMAND="/usr/bin/gi[t] -C /r com@mit -qm x" git -C "$M" fetch "git://h/r"'
+expect 'b2: an ext remote, allowed by GIT_ALLOW_PROTOCOL' 1 scripts/a.sh 'en@v -i HOM@E="$H" GIT_ALLOW_PROTOCOL=ext git -C "$M" fetch "ext::sh -c git% -C% /r% com@mit% -qm% x"'
+expect 'b2: a preload' 1 scripts/a.sh 'en@v -i HOM@E="$H" LD_PRELOAD=/tmp/x.so git -C "$M" fetch "$U"'
+expect 'b2: an exec path' 1 scripts/a.sh 'en@v -i HOM@E="$H" GIT_EXEC_PATH=/tmp/x git -C "$M" rev-parse HEAD'
+expect 'b2: a backslash-escaped quote ends a value where bash does not' 1 scripts/a.sh 'en@v -i HOM@E="$H" GNUPGHOME="x\" PATH=" GIT_SSH_COMMAND=y PATH=" git -C "$M" fetch'
+# What the deploy scripts run, written out: each passes.
+MPFX='en@v -i PATH=/usr/bin:/bin HOM@E="$MIRROR_HOME" GNUPGHOME="$GNUPG" GIT_NO_REPLACE_OBJECTS=1 "$MIRROR_GIT" -C "$MIRROR" -c gpg.program="$GPG"'
+expect 'mirror: fetch, with the gpg program' 0 scripts/a.sh "${MPFX} fetch --quiet --no-tags --prune \"\$MIRROR_URL\" '+refs/heads/main:refs/heads/main'"
+expect 'mirror: rev-parse, the gpg program in braces' 0 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" -c gpg.program="${GPG}" rev-parse --verify --quiet '\''refs/heads/main^{commit}'\'''
+expect 'mirror: log with a count and a quoted format' 0 scripts/a.sh "x=\$(${MPFX} log -1 --format='%G?|%GF|%GK' \"\$MERGE_SHA\")"
+expect 'mirror: log with a spaced count and a pretty format' 0 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" log -@n 2 --pretty=%H main'
+expect 'mirror: cat-file of a commit' 0 scripts/a.sh "${MPFX} cat-file commit \"\$MERGE_SHA\""
+expect 'mirror: cat-file of a type' 0 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" cat-file -t "$S"'
+expect 'mirror: merge-base, is-ancestor' 0 scripts/a.sh "${MPFX} merge-base --is-ancestor \"\$RECORD\" \"\$MERGE_SHA\""
+expect 'mirror: merge-base of two words' 0 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" merge-base "$A" "$B"'
+# R1: one -c, exactly gpg.program from one double-quoted variable.
+for gpgc in 'gpg.program=$GPG' 'gpg.ssh.program="$GPG"' 'gpg.x509.program="$GPG"' 'core.sshCommand="$GPG"' 'gpg.program="$GPG" -c gpg.program="$GPG"' 'gpg.program="$GPG/x"'; do
+    expect "r1 refused: -c ${gpgc}" 1 scripts/a.sh "en@v -i HOM@E=\"\$H\" git -C \"\$M\" -c ${gpgc} fetch"
+done
+expect 'r1 refused: the gpg -c before -C' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -c gpg.program="$GPG" -C "$M" fetch'
+# Each subcommand's arguments: its own options, and words that open with no dash.
+for args in 'fetch --depth=1 "$U"' 'fetch "--upload-pack=x" "$U"' 'fetch $"--upload-pack=x" "$U"' 'fetch -q "$U"' 'fetch --QUIET "$U"' \
+    'rev-parse --git-path x' 'rev-parse --short HEAD' \
+    'log --ext-diff x' 'log --textconv x' 'log -p x' 'log --patch x' 'log -u x' 'log --output=/tmp/x x' 'log -@n x' 'log x -@n' 'log --format x' \
+    'cat-file --textconv "$S"' 'cat-file --filters "$S"' 'cat-file --batch' 'cat-file commit "$S" x' 'cat-file blob' 'cat-file commit --textconv' 'cat-file --path=x blob x' \
+    'merge-base --fork-point x' 'merge-base --octopus x y'; do
+    expect "args refused: ${args}" 1 scripts/a.sh "en@v -i HOM@E=\"\$H\" git -C \"\$M\" ${args}"
+done
 
 # --- r3: a home taken away is another home; so is one a builtin sets, with no assignment --
 expect 'r3: env with -i and no home' 1 scripts/a.sh 'en@v -i PATH=/usr/bin git commit -m x'
