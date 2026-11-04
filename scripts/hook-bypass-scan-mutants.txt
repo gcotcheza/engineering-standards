@@ -1,4 +1,4 @@
-# T5 guard-deletion mutants for scripts/hook-bypass-scan.sh (cards 746, 928, 929): each rule, pass and anchor, and the de-quoted copy.
+# T5 guard-deletion mutants for scripts/hook-bypass-scan.sh (cards 746, 928, 929; review r2): each rule, pass and anchor, and the de-quoted copy.
 #   HBS_TEST=$PWD/scripts/hook-bypass-scan-test.sh scripts/guard-mutants.sh scripts/hook-bypass-scan.sh scripts/hook-bypass-scan-mutants.txt
 hb-long-flag@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (t ~ /--no-v(e(r(i(fy?)?)?)?)?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")@@
 hb-long-prefix@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (t ~ /--no-v(e(r(i(fy?)?)?)?)?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")@@    if (t ~ /--no-verify([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")
@@ -14,8 +14,8 @@ hb-hash-object@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (t ~ 
 hb-home@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (h ~ /(^|[^A-Za-z0-9_])HOME\+?=/) hit("HOME= (another home drops a hook set in ~/.gitconfig)")@@
 hb-home-append@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (h ~ /(^|[^A-Za-z0-9_])HOME\+?=/) hit("HOME= (another home drops a hook set in ~/.gitconfig)")@@    if (h ~ /(^|[^A-Za-z0-9_])HOME=/) hit("HOME= (another home drops a hook set in ~/.gitconfig)")
 hb-xdg@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (h ~ /XDG_CONFIG_HOME\+?=/) hit("XDG_CONFIG_HOME=")@@
-hb-short-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (tolower(sa) ~ ARGV_N || argvn || shortn(tolower(sa)) || shortn(shellwords(tolower(sa), 1))) hit("commit or merge -n (a short --no-verify)")@@
-hb-argv-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (tolower(sa) ~ ARGV_N || argvn || shortn(tolower(sa)) || shortn(shellwords(tolower(sa), 1))) hit("commit or merge -n (a short --no-verify)")@@    if (argvn || shortn(tolower(sa)) || shortn(shellwords(tolower(sa), 1))) hit("commit or merge -n (a short --no-verify)")
+hb-short-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (argvn || nrule(s) || nrule(ansic(s))) hit("commit or merge -n (a short --no-verify)")@@
+hb-argv-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@function nrule(s) { return tolower(s) ~ ARGV_N || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1)) }@@function nrule(s) { return shortn(tolower(s)) || shortn(shellwords(tolower(s), 1)) }
 hb-argv-lines@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (w == "commit" || w == "merge") incommit = inrun@@
 hb-comments@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (comment(FILENAME, tolower(line))) { judge(FILENAME, FNR, line, 0); next }@@        if (comment(FILENAME, tolower(line))) next
 hb-empty-pair@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(EMPTY, "", line)@@
@@ -33,7 +33,7 @@ hb-root-envi@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    ROOTHOME =
 hb-root-value@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    ROOT = "HOME=/root"@@    ROOT = "HOME=[^ \t]*"
 hb-root-command@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    COMMAND = "[^ \t;&|=]+([ \t;&|)`]|$)"@@    COMMAND = "[^ \t;&|=]+"
 hb-verb-redirect@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    VERB = "(^|[^a-z0-9_-])(commit|merge)([ \t<>]|&>)"@@    VERB = "(^|[^a-z0-9_-])(commit|merge)[ \t]"
-hb-joined-pass@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (tolower(sa) ~ ARGV_N || argvn || shortn(tolower(sa)) || shortn(shellwords(tolower(sa), 1))) hit("commit or merge -n (a short --no-verify)")@@    if (tolower(sa) ~ ARGV_N || argvn || shortn(tolower(sa))) hit("commit or merge -n (a short --no-verify)")
+hb-joined-pass@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@function nrule(s) { return tolower(s) ~ ARGV_N || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1)) }@@function nrule(s) { return tolower(s) ~ ARGV_N || shortn(tolower(s)) }
 hb-backslash@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (bs && c == "\\") { c = substr(s, ++i, 1); out = out (c ~ /[ \t;&|<>()`$]/ ? "_" : c); continue }@@
 hb-dollar-quote@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == "$" && (substr(s, i + 1, 1) == "\"" || substr(s, i + 1, 1) == q)) { i++; esc = substr(s, i, 1) == q; c = substr(s, i, 1) }@@
 hb-quoted-joins@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")@@            out = out (0 ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")
@@ -70,40 +70,63 @@ hb-home-coproc@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    SETS = W
 hb-env-i-cluster-arg@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (h ~ ENV_CMD "(-[0iv]*i[^ \t;&|]*([ \t]+[^- \t;&|][^ \t;&|]*)?|--ignore-e[a-z]*|-)" ENV_OPTS "[ \t]+(" ASSIGN ")*" GITWORD) hit("env -i (git with no HOME at all)")@@    if (h ~ ENV_CMD "(-[0iv]*i[^ \t;&|]*|--ignore-e[a-z]*|-)" ENV_OPTS "[ \t]+(" ASSIGN ")*" GITWORD) hit("env -i (git with no HOME at all)")
 hb-nameref@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (h ~ NAMEREF) hit("a nameref to a home")@@
 hb-nameref-cluster@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    NAMEREF = WORD "(declare|local|typeset)" ARGS "[ \t]+-[a-z]*n[a-z]*" ARGS "[ \t]+[A-Za-z_][A-Za-z0-9_]*=" HOMES WORDEND@@    NAMEREF = WORD "(declare|local|typeset)" ARGS "[ \t]+-n" ARGS "[ \t]+[A-Za-z_][A-Za-z0-9_]*=" HOMES WORDEND
-hb-mirror-dequote@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    d = p@@    d = s
+hb-mirror-dequote@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    both(ansic(p))@@    both(ansic(s))
 hb-mirror-subcmd@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"@@    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+[^ \t;&|`()<>]+([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
 hb-mirror-end@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"@@    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*"
 hb-mirror-dir@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"@@    MIRROR = MPRE MGIT "([ \t]+-C[ \t]+" MWORD ")?" GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
-hb-mirror-envi@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MPRE = "(^|[ \t{(])env[ \t]+-i[ \t]+(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*"@@    MPRE = "(^|[ \t{(])env[ \t]+(-i[ \t]+)?(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*"
-hb-mirror-anchor@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MPRE = "(^|[ \t{(])env[ \t]+-i[ \t]+(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*"@@    MPRE = "env[ \t]+-i[ \t]+(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*"
-hb-mirror-home@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MPRE = "(^|[ \t{(])env[ \t]+-i[ \t]+(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*"@@    MPRE = "(^|[ \t{(])env[ \t]+-i[ \t]+(" ASSIGN ")*"HOME=[^ \t]*"[ \t]+(" ASSIGN ")*"
+hb-mirror-envi@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MPRE = "^" MLEAD "env[ \t]+-i[ \t]+(" MASSIGN ")*" VARHOME "[ \t]+(" MASSIGN ")*"@@    MPRE = "^" MLEAD "env[ \t]+(-i[ \t]+)?(" MASSIGN ")*" VARHOME "[ \t]+(" MASSIGN ")*"
+hb-mirror-anchor@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MPRE = "^" MLEAD "env[ \t]+-i[ \t]+(" MASSIGN ")*" VARHOME "[ \t]+(" MASSIGN ")*"@@    MPRE = MLEAD "env[ \t]+-i[ \t]+(" MASSIGN ")*" VARHOME "[ \t]+(" MASSIGN ")*"
+hb-mirror-home@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MPRE = "^" MLEAD "env[ \t]+-i[ \t]+(" MASSIGN ")*" VARHOME "[ \t]+(" MASSIGN ")*"@@    MPRE = "^" MLEAD "env[ \t]+-i[ \t]+(" MASSIGN ")*"HOME=[^ \t]*"[ \t]+(" MASSIGN ")*"
 hb-mirror-git@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"@@    MIRROR = MPRE "[^ \t]+[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
-hb-mirror-word@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MWORD = "([^ \t;&|`()<>" q "]|" q "[^" q " \t]*" q ")+"@@    MWORD = "[^ \t]+"
-hb-mirror-varname@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    VARHOME = "HOME=(\\$" NAME "|\\$\\{" NAME "\\}|\"\\$" NAME "\"|\"\\$\\{" NAME "\\}\")"@@    VARHOME = "HOME=[^ \t]*"
+hb-mirror-word@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MWORD = "(" MLIT "|" MVAR ")"@@    MWORD = "[^ \t]+"
+hb-mirror-varname@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    VARHOME = "HOME=" MVAR@@    VARHOME = "HOME=[^ \t]*"
 hb-mirror-pass@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (e != "" && mirrorok(e) && match(p, MIRROR)) { e = substr(p, RSTART, RLENGTH); sub("[ \t]" VARHOME "[ \t]", " ", e); sub(/env[ \t]+-i/, "env", e); p = substr(p, 1, RSTART - 1) e substr(p, RSTART + RLENGTH) }@@
 hb-mirror-envi-dropped@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (e != "" && mirrorok(e) && match(p, MIRROR)) { e = substr(p, RSTART, RLENGTH); sub("[ \t]" VARHOME "[ \t]", " ", e); sub(/env[ \t]+-i/, "env", e); p = substr(p, 1, RSTART - 1) e substr(p, RSTART + RLENGTH) }@@    if (e != "" && mirrorok(e) && match(p, MIRROR)) { e = substr(p, RSTART, RLENGTH); sub("[ \t]" VARHOME "[ \t]", " ", e); p = substr(p, 1, RSTART - 1) e substr(p, RSTART + RLENGTH) }
-hb-mirror-plain@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub("[\"" q "\\\\]", "", x)@@
-hb-mirror-backslash@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(e, "\\")) return 0@@
-hb-mirror-all-args@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (e ~ /\$\{?[@*]/) return 0@@
-hb-mirror-envok@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    ENVOK = "^(PATH|GNUPGHOME|GIT_NO_REPLACE_OBJECTS|HOME)$"@@    ENVOK = "^[A-Za-z_]"
+hb-mirror-envok@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    ENVOK = "^(PATH|GNUPGHOME|GIT_NO_REPLACE_OBJECTS|HOME|SSH_KEY)$"@@    ENVOK = "^[A-Za-z_]"
 hb-mirror-gpg-quoted@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})\")?"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"?\\$(" NAME "|\\{" NAME "\\})\"?)?"
 hb-mirror-gpg-key@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})\")?"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.([a-z0-9]+\\.)?program=\"\\$(" NAME "|\\{" NAME "\\})\")?"
 hb-mirror-gpg-any@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})\")?"@@    GPGC = "([ \t]+-c[ \t]+[^ \t]+)?"
 hb-mirror-gpg-twice@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})\")?"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})\")*"
 hb-mirror-gpg-suffix@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})\")?"@@    GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})[^\"]*\")?"
-hb-mirror-fetchopt@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    FETCHOPT = "^--(quiet|no-tags|prune)$"@@    FETCHOPT = "^--"
-hb-mirror-revopt@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    REVOPT = "^--(verify|quiet)$"@@    REVOPT = "^--"
-hb-mirror-logopt@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    LOGOPT = "^(-[0-9]+|--(format|pretty)=.*)$"@@    LOGOPT = "^-"
-hb-mirror-log-count@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (sc == "log" && x == "-n" && plain(w[i + 1]) ~ /^[0-9]+$/) { i++; continue }@@        if (sc == "log" && x == "-n" && plain(w[i + 1]) ~ /./) { i++; continue }
-hb-mirror-baseopt@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    BASEOPT = "^--is-ancestor$"@@    BASEOPT = "^--"
+hb-mirror-fetchopt@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    FETCHOPT = "^--(quiet|no-tags|prune|end-of-options)$"@@    FETCHOPT = "^--"
+hb-mirror-revopt@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    REVOPT = "^--(verify|quiet|end-of-options)$"@@    REVOPT = "^--"
+hb-mirror-logopt@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    LOGOPT = "^(-[0-9]+|--(format|pretty)=.*|--end-of-options)$"@@    LOGOPT = "^-"
+hb-mirror-log-count@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (sc == "log" && x == "-n" && w[i + 1] ~ /^[0-9]+$/) { i++; continue }@@        if (sc == "log" && x == "-n" && w[i + 1] ~ /./) { i++; continue }
+hb-mirror-baseopt@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    BASEOPT = "^--(is-ancestor|end-of-options)$"@@    BASEOPT = "^--"
 hb-mirror-cattype@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    CATTYPE = "^(commit|tree|blob|tag|-t|-s|-e|-p)$"@@    CATTYPE = "."
-hb-mirror-cat-count@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (sc == "cat-file") return n == i + 2 && plain(w[i + 1]) ~ CATTYPE && plain(w[i + 2]) !~ /^-/@@    if (sc == "cat-file") return n >= i + 2 && plain(w[i + 1]) ~ CATTYPE && plain(w[i + 2]) !~ /^-/
-hb-mirror-cat-object@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (sc == "cat-file") return n == i + 2 && plain(w[i + 1]) ~ CATTYPE && plain(w[i + 2]) !~ /^-/@@    if (sc == "cat-file") return n == i + 2 && plain(w[i + 1]) ~ CATTYPE
+hb-mirror-cat-count@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        return n == i + 2 && w[i + 1] ~ CATTYPE && w[i + 2] !~ /^-/ && (eoo || w[i + 2] !~ "^" MVAR "$")@@        return n >= i + 2 && w[i + 1] ~ CATTYPE && w[i + 2] !~ /^-/ && (eoo || w[i + 2] !~ "^" MVAR "$")
+hb-mirror-cat-object@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        return n == i + 2 && w[i + 1] ~ CATTYPE && w[i + 2] !~ /^-/ && (eoo || w[i + 2] !~ "^" MVAR "$")@@        return n == i + 2 && w[i + 1] ~ CATTYPE && (eoo || w[i + 2] !~ "^" MVAR "$")
 hb-mirror-args@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (x ~ /^-/ && x !~ opt) return 0@@
-hb-mirror-plain-dollar@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub("\\$[\"" q "]", "", x)@@
-hb-ansic-rules@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    p = ansic(p)@@
-hb-ansic-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    sa = ansic(s)@@    sa = s
+hb-ansic-rules@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    both(ansic(p))@@
+hb-ansic-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (argvn || nrule(s) || nrule(ansic(s))) hit("commit or merge -n (a short --no-verify)")@@    if (argvn || nrule(s)) hit("commit or merge -n (a short --no-verify)")
 hb-ansic-hex@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@                if (c ~ /^[xuU]$/) for (v = k = 0; k < (c == "x" ? 2 : c == "u" ? 4 : 8) && substr(x, i + 1, 1) != "" && index(HEX, tolower(substr(x, i + 1, 1))); k++) v = v * 16 + index(HEX, tolower(substr(x, ++i, 1))) - 1@@
 hb-ansic-octal@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@                if (c ~ /[0-7]/) for (v = c + 0; length(c) < 3 && substr(x, i + 1, 1) ~ /[0-7]/; c = c "o") v = v * 8 + substr(x, ++i, 1)@@
 hb-ansic-unicode@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@                if (c ~ /^[xuU]$/) for (v = k = 0; k < (c == "x" ? 2 : c == "u" ? 4 : 8) && substr(x, i + 1, 1) != "" && index(HEX, tolower(substr(x, i + 1, 1))); k++) v = v * 16 + index(HEX, tolower(substr(x, ++i, 1))) - 1@@                if (c == "x") for (v = k = 0; k < (c == "x" ? 2 : c == "u" ? 4 : 8) && substr(x, i + 1, 1) != "" && index(HEX, tolower(substr(x, i + 1, 1))); k++) v = v * 16 + index(HEX, tolower(substr(x, ++i, 1))) - 1
 hb-ansic-ctrl@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@                if (c == "c") i++@@
+hb-raw-judged@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    both(p)@@
+hb-raw-n@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (argvn || nrule(s) || nrule(ansic(s))) hit("commit or merge -n (a short --no-verify)")@@    if (argvn || nrule(ansic(s))) hit("commit or merge -n (a short --no-verify)")
+hb-mirror-tilde@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (e ~ /(^|[ \t=:])~/) return 0@@
+hb-mirror-ssh-name@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (k == "GIT_SSH_COMMAND" ? x !~ "^" SSHCMD "$" : k !~ ENVOK) return 0@@        if (k !~ ENVOK) return 0
+hb-mirror-ssh-value@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (k == "GIT_SSH_COMMAND" ? x !~ "^" SSHCMD "$" : k !~ ENVOK) return 0@@        if (k == "GIT_SSH_COMMAND" ? 0 : k !~ ENVOK) return 0
+hb-mirror-path@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (k == "PATH" && v !~ "^" MVAR "$" && !sysdirs(v)) return 0@@
+hb-mirror-path-var@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (k == "PATH" && v !~ "^" MVAR "$" && !sysdirs(v)) return 0@@        if (k == "PATH" && !sysdirs(v)) return 0
+hb-mirror-sysdirs-each@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    for (i = 1; i <= n; i++) if (d[i] !~ "^" SYSDIR "$") return 0@@
+hb-mirror-sysdirs-empty@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    return n > 0@@    return 1
+hb-mirror-sysdir@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    SYSDIR = "/(usr/(local/)?)?s?bin"@@    SYSDIR = "/[^:]*"
+hb-mirror-lit@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MLIT = "[A-Za-z0-9_./:@^~+=%-]+"@@    MLIT = "[^ \t\"]+"
+hb-mirror-var-quoted@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MVAR = "\"\\$(" NAME "|\\{" NAME "\\})\""@@    MVAR = "\"?\\$(" NAME "|\\{" NAME "\\})\"?"
+hb-mirror-var-name@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MVAR = "\"\\$(" NAME "|\\{" NAME "\\})\""@@    MVAR = "\"\\$[^\"]*\""
+hb-mirror-git-path@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MGIT = "(git|" SYSDIR "/git|\"\\$" GITNAME "\"|\"\\$\\{" GITNAME "\\}\")"@@    MGIT = "(git|[^ \t]*/git|\"\\$" GITNAME "\"|\"\\$\\{" GITNAME "\\}\")"
+hb-mirror-ssh-shape@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    SSHCMD = "GIT_SSH_COMMAND=" q "ssh -i \"\\$(SSH_KEY|\\{SSH_KEY\\})\" -o IdentitiesOnly=yes -o BatchMode=yes" q@@    SSHCMD = "GIT_SSH_COMMAND=" q "ssh [^" q "]*" q
+hb-mirror-ssh-key@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    SSHCMD = "GIT_SSH_COMMAND=" q "ssh -i \"\\$(SSH_KEY|\\{SSH_KEY\\})\" -o IdentitiesOnly=yes -o BatchMode=yes" q@@    SSHCMD = "GIT_SSH_COMMAND=" q "ssh -i \"\\$(" NAME "|\\{" NAME "\\})\" -o IdentitiesOnly=yes -o BatchMode=yes" q
+hb-mirror-assign@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MASSIGN = "(" NAME "=" MWORD "?|" SSHCMD ")[ \t]+"@@    MASSIGN = "(" NAME "=[^ \t]*|" SSHCMD ")[ \t]+"
+hb-mirror-eoo@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (x ~ "^" MVAR "$" && !eoo) return 0@@
+hb-mirror-eoo-set@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (x == "--end-of-options") eoo = 1@@
+hb-mirror-cat-eoo@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (w[i + 2] == "--end-of-options") { eoo = 1; w[i + 2] = w[i + 3]; n-- }@@
+hb-mirror-cat-var@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        return n == i + 2 && w[i + 1] ~ CATTYPE && w[i + 2] !~ /^-/ && (eoo || w[i + 2] !~ "^" MVAR "$")@@        return n == i + 2 && w[i + 1] ~ CATTYPE && w[i + 2] !~ /^-/
+hb-mirror-fetch-eoo@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    FETCHOPT = "^--(quiet|no-tags|prune|end-of-options)$"@@    FETCHOPT = "^--(quiet|no-tags|prune)$"
+hb-mirror-rev-eoo@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    REVOPT = "^--(verify|quiet|end-of-options)$"@@    REVOPT = "^--(verify|quiet)$"
+hb-mirror-log-eoo@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    LOGOPT = "^(-[0-9]+|--(format|pretty)=.*|--end-of-options)$"@@    LOGOPT = "^(-[0-9]+|--(format|pretty)=.*)$"
+hb-mirror-base-eoo@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    BASEOPT = "^--(is-ancestor|end-of-options)$"@@    BASEOPT = "^--is-ancestor$"
+hb-mirror-lead@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    MLEAD = "[ \t]*((local[ \t]+)?" NAME "=\\$\\(|" NAME "\\(\\)[ \t]*\\{|[{(])?[ \t]*"@@    MLEAD = "(.*[ \t{(])?"
+hb-mirror-lead-strip@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    sub("^" MLEAD "env[ \t]+-i[ \t]+", "", a)@@

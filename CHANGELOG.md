@@ -1,24 +1,31 @@
 # Changelog
 
-## 2026-11-04 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and decodes ANSI-C strings (the standard and the deploy lib are unchanged; VERSION is not bumped)
+## 2026-11-04 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Cards 928 and 929.** `scripts/hook-bypass-scan.sh` no longer reads `--no-verbose` (or `--no-verb`, or
 merge's `--no-verify-signatures`) as the long flag: the rule is now each prefix git takes for
-`--no-verify`, whole, from `--no-v` (which `git am` takes) to `--no-verify`, quoted or not. Each `$'…'`
-is decoded (`\x`, `\u`, `\U` and octal escapes) before the rules and the `-n` rule read a line, so
-`$'\x2d-no-verify'` and `$'-\x6e'` are findings. And one narrow pass, for deploy scripts that run root's
-mirror with a home of its own: `env -i`, assignments named only `PATH`, `GNUPGHOME`,
-`GIT_NO_REPLACE_OBJECTS` and one `HOME=` from one variable, then a git word, `-C <dir>`, at most
-`-c gpg.program="$X"`, and `fetch`, `rev-parse`, `log`, `cat-file` or `merge-base`, alone on its line (or
-closing a function body or a substitution). Every option must be on its subcommand's list (fetch:
+`--no-verify`, whole, from `--no-v` (which `git am` takes) to `--no-verify`, quoted or not. Every line
+is judged twice, by every rule and the `-n` rule, as written and with each `$'…'` decoded (`\x`, `\u`,
+`\U` and octal escapes); a finding in either is a finding, so `$'\x2d-no-verify'` and `$'-\x6e'` are
+findings, and a stray `$'` (`grep -q '^ok$' f && …`) cannot hide the rest of a line. And one narrow
+pass, for deploy scripts that run root's mirror with a home of its own, over the whole logical line:
+an opening of only `NAME=$(`, `local NAME=$(`, `NAME() {`, `{` or `(`; `env -i`; assignments named only
+`PATH`, `GNUPGHOME`, `GIT_NO_REPLACE_OBJECTS`, `SSH_KEY` and one `HOME=` from one quoted variable, plus
+`GIT_SSH_COMMAND='ssh -i "$SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes'` written exactly; a git word
+(`git`, a system directory's git, or one quoted variable named for git); `-C <word>`; at most
+`-c gpg.program="$X"`; and `fetch`, `rev-parse`, `log`, `cat-file` or `merge-base`, to the line end
+(or `)`, `;` or `; }`). Every word is bash-literal (`[A-Za-z0-9_./:@^~+=%-]`, no tilde a shell expands)
+or exactly `"$NAME"` / `"${NAME}"`, so no brace, glob, parameter operator, array, positional, unquoted
+variable, quote, backslash or `$'…'` passes. `PATH` is one quoted variable or system directories. A
+variable argument must follow `--end-of-options`, which every subcommand's list holds (fetch:
 `--quiet`, `--no-tags`, `--prune`; rev-parse: `--verify`, `--quiet`; log: `-<n>`, `-n <n>`,
 `--format=`, `--pretty=`; cat-file: one type or `-t`/`-s`/`-e`/`-p` and one object; merge-base:
-`--is-ancestor`); any backslash (every `$'…'` escape has one), `"$@"` or `$*` in the span, any
-other env name (so `GIT_SSH_COMMAND`, which the deploy scripts' fetch sets, pending a ruling), any other `-c`, another
-subcommand, a separator, substitution or redirection after it, no `-C`, or a prefix held in a variable
-with no subcommand stays a finding. Known limit: a variable argument whose value opens with `-` is not
-read. 61 new cases (420 in all); 24 new mutant rows, six round-1 rows dropped (their checks were
-removed or moved into the allow-lists), ten rewritten (107 in all). Why: decision: the-hook-bypass-scan-has-one-copy,
-decision: the-mirror-pass-reads-its-own-arguments.
+`--is-ancestor`). Anything else stays a finding. Known limits, in the decision: the scan reads text,
+not values (a variable's value, and config under the mirror's home or repository, can name a command);
+a line is read alone (a heredoc, or a string opened on an earlier line, is read as code); and the
+round-2 deploy lines (a quoted refspec, `'…^{commit}'`, `--format='%G?…'`, a variable with no
+`--end-of-options`) stay findings until rewritten, and `log --format=%G?` cannot be. 155 new cases (514 in all);
+63 new mutant rows (130 in all); every row from before this pull request is kept, some rewritten where their line moved.
+Why: decision: the-hook-bypass-scan-has-one-copy, decision: the-mirror-pass-reads-its-own-arguments.
 
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
 **Card 863.** The `--base <sha>` vetting copied into Scribly, KidsQuest and Reflection gates is now
