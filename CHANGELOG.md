@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-04 — W12: when stuck, ask the peer who knows the area to diagnose (VERSION 2026-11-04)
+**New rule W12; the standard now has 42 rules** (Ghie, 2026-11-04). Stuck means a failure you cannot
+explain, unfamiliar code, a gate or tool behaving oddly, or a guard whose reason you do not follow; the
+session asks the peer who knows that area to diagnose, the same hour, instead of waiting, guessing or
+improvising around it. A permission or guard denial is different: no peer performs the denied effect
+(that is laundering; S1 and "a denial is final for its effect" hold), but a peer may diagnose it, explain
+why it fired or confirm a false deny so it can be reported. A peer's claim is checked before it is
+relayed (W9) and a session says plainly when it thinks a peer is wrong. Checked by review: the daily
+review reads the journals for a blocked item with no peer diagnosis asked within the hour. `README.md`
+now says 42 rules, `SOURCES.md` has a W12 row and `ROLLOUT.md` a "W12 mechanised" row (by review until
+then). The standards text moved, so `VERSION` moves with it. Decision: `ask-a-peer-to-diagnose-when-stuck`.
+
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
 **Card 863.** The `--base <sha>` vetting copied into Scribly, KidsQuest and Reflection gates is now
 `base_vet` in `scripts/lib/deploy/base.sh`, with `base_vet_armed` for the re-check after
