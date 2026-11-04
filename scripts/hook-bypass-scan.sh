@@ -119,7 +119,8 @@ function elements(file, t,    u, m, b, fresh, opens, closes, closed, w, hit) {
 function hit(label) { if (!(label in seen)) { seen[label] = 1; found = found " " label } }
 # Every rule but -n, over t lowercased and s as written.
 function rules(t, s,    h, e, rest) {
-    if (index(t, "--no-ver") || t ~ /--no-ve?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")
+    # Each prefix git takes for --no-verify, whole: --no-ver is it for git am; --no-verb is --no-verbose, never it.
+    if (t ~ /--no-v(e(r(i(fy?)?)?)?)?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")
     if (index(t, "husky=0")) hit("HUSKY=0")
     # Only a --get read of the key with nothing after it but a command end passes, --get its own word (--no-get unsets).
     h = t
@@ -153,12 +154,19 @@ function rules(t, s,    h, e, rest) {
     # A nameref to a home sets it through the other name: declare, local or typeset -n r=HOME.
     if (h ~ NAMEREF) hit("a nameref to a home")
 }
-function judge(file, n, s, argvn,    d) {
+function judge(file, n, s, argvn,    d, p, e) {
     found = ""
     split("", seen)
-    rules(tolower(s), s)
+    # The mirror pass, read as written: env -i, a HOME from one variable, then git -C <dir> fetch or rev-parse, to the line end;
+    # never with --upload-pack (a --u prefix runs a command) or "$@", even quoted.
+    p = s
+    e = match(p, MIRROR) ? substr(p, RSTART, RLENGTH) : ""
+    gsub("\\$[\"" q "]", "", e)
+    gsub("[\"" q "\\\\]", "", e)
+    if (e != "" && e !~ /[ \t]--u|\$\{?[@*]/ && match(p, MIRROR)) { e = substr(p, RSTART, RLENGTH); sub("[ \t]" VARHOME "[ \t]", " ", e); sub(/env[ \t]+-i/, "env", e); p = substr(p, 1, RSTART - 1) e substr(p, RSTART + RLENGTH) }
+    rules(tolower(p), p)
     # Bash drops a quote or backslash inside a word, so a de-quoted copy is judged too: --no-"verify" is the long flag.
-    d = s
+    d = p
     gsub("\\$[\"" q "]", "", d)
     gsub("[\"" q "\\\\]", "", d)
     rules(tolower(d), d)
@@ -176,7 +184,14 @@ BEGIN {
     ARGV_N = Q "(commit|merge)" Q "[ \t]*,([ \t]*" Q "[^\"" q "]*" Q "[ \t]*,)*[ \t]*" Q "-[a-z]*n[a-z]*" Q
     ASSIGN = "[A-Za-z_][A-Za-z0-9_]*=(\"[^\"]*\"|[^ \t\"" q ";&|]*)[ \t]+"
     ROOT = "HOME=/root"
+    NAME = "[A-Za-z_][A-Za-z0-9_]*"
+    GITNAME = "([A-Za-z_][A-Za-z0-9_]*)?(GIT|git)[A-Za-z0-9_]*"
     COMMAND = "[^ \t;&|=]+([ \t;&|)`]|$)"
+    VARHOME = "HOME=(\\$" NAME "|\\$\\{" NAME "\\}|\"\\$" NAME "\"|\"\\$\\{" NAME "\\}\")"
+    MWORD = "[^ \t;&|`()<>]+"
+    # git, a path ending in /git, or one variable named for git, quoted or not.
+    MGIT = "(git|[^ \t;&|`()<>=\"$]*/git|\\$" GITNAME "|\\$\\{" GITNAME "\\}|\"\\$" GITNAME "\"|\"\\$\\{" GITNAME "\\}\")"
+    MIRROR = "(^|[ \t{(])env[ \t]+-i[ \t]+(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*" MGIT "[ \t]+-C[ \t]+" MWORD "[ \t]+(fetch|rev-parse)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
     ROOTHOME = "(^|[ \t;&|({`])env[ \t]+-i[ \t]+(" ASSIGN ")*" ROOT "[ \t]+(" ASSIGN ")*" COMMAND
     HOMES = "(XDG_CONFIG_)?HOME"
     WORDEND = "([^A-Za-z0-9_]|$)"

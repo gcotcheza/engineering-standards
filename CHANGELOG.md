@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-04 — the hook-bypass scan passes --no-verbose and a mirror's read-only git (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Cards 928 and 929.** `scripts/hook-bypass-scan.sh` no longer reads `--no-verbose` (or `--no-verb`, or
+merge's `--no-verify-signatures`) as the long flag: the rule is now each prefix git takes for
+`--no-verify`, whole, from `--no-v` (which `git am` takes) to `--no-verify`, quoted or not. And one
+narrow pass, for deploy scripts that run root's mirror with a home of its own: `env -i`, `HOME=` one
+variable, then a git word, `-C <dir>` and `fetch` or `rev-parse`, alone on its line (or closing a
+function body or a substitution), with no `--upload-pack`, `"$@"` or command end in it. Any other
+subcommand, a separator, substitution or redirection after it, no `-C`, or a prefix held in a variable
+with no subcommand stays a finding. 63 cases (356 in all); 19 new mutant rows and the two long-flag rows
+rewritten (86 in all). Why: decision: the-hook-bypass-scan-has-one-copy.
+
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
 **Card 863.** The `--base <sha>` vetting copied into Scribly, KidsQuest and Reflection gates is now
 `base_vet` in `scripts/lib/deploy/base.sh`, with `base_vet_armed` for the re-check after

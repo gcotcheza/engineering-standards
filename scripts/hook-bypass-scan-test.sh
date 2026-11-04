@@ -216,6 +216,73 @@ expect 'root home refused: env without -i' 1 scripts/a.sh 'env HOM@E=/root git s
 expect 'root home refused: no env -i at all' 1 scripts/a.sh 'HOM@E=/root git status'
 expect 'root home refused: a word that only ends in env' 1 scripts/a.sh 'myenv -i HOM@E=/root git status'
 
+# --- the long flag: every prefix git takes for it, and --no-verbose is not one (card 928) --
+expect 'card 928: no-verbose, a wget arg in a compose file' 0 compose.yaml "                - '--no-@verbose'"
+expect 'card 928: no-verbose in a git command' 0 scripts/a.sh 'git commit --no-@verbose -m x'
+expect 'card 928: no-verb, a prefix of no-verbose only' 0 scripts/a.sh 'git rebase --no-@verb main'
+expect "card 928: merge's no-verify-signatures" 0 scripts/a.sh 'git merge --no-@verify-signatures main'
+expect 'card 928: no-ve, which git am takes' 1 scripts/a.sh 'git am --no-@ve x.patch'
+expect 'card 928: no-ver, which git am takes' 1 scripts/a.sh 'git am --no-@ver x.patch'
+expect 'card 928: no-veri, the shortest commit takes' 1 scripts/a.sh 'git commit --no-@veri -m x'
+expect 'card 928: no-verif' 1 scripts/a.sh 'git commit --no-@verif -m x'
+expect 'card 928: no-ver with a value' 1 scripts/a.sh 'git commit --no-@ver=x -m x'
+expect 'card 928: no-ver at the line end' 1 scripts/a.sh 'git am --no-@ver'
+expect 'card 928: a quoted tail on no-veri' 1 scripts/a.sh 'git commit --no-"@veri" -m x'
+expect 'card 928: a quoted tail on no-ver' 1 scripts/a.sh "git am --no-'@ver' x.patch"
+expect 'card 928: no-verify on a continuation line, after no-verbose' 1 scripts/a.sh 'git commit --no-@verbose \' '    --no-@verify'
+
+# --- one mirror pass: env -i, HOME from one variable, git -C <dir> fetch or rev-parse, to the line end (card 929) --
+expect 'mirror: home "$X", "$MIRROR_GIT" -C, fetch' 0 scripts/a.sh 'en@v -i PATH=/usr/bin:/bin HOM@E="$MIRROR_HOME" GIT_NO_REPLACE_OBJECTS=1 "$MIRROR_GIT" -C "$MIRROR" fetch --quiet origin'
+expect 'mirror: home $X, git -C, rev-parse' 0 scripts/a.sh 'en@v -i HOM@E=$MIRROR_HOME git -C "$MIRROR" rev-parse --verify HEAD'
+expect 'mirror: home ${X}, ${MIRROR_GIT}' 0 scripts/a.sh 'en@v -i HOM@E=${MIRROR_HOME} ${MIRROR_GIT} -C $MIRROR fetch'
+expect 'mirror: home "${X}", $MIRROR_GIT, a path git' 0 scripts/a.sh 'en@v -i HOM@E="${H}" X=1 /usr/bin/git -C /srv/m rev-parse HEAD'
+expect 'mirror: $MIRROR_GIT unquoted' 0 scripts/a.sh 'en@v -i HOM@E="$H" $MIRROR_GIT -C "$M" fetch'
+expect "mirror: the advisor's function form, on continuation lines" 0 scripts/a.sh 'mirror_git_fetch() { en@v -i PATH=/usr/bin:/bin HOM@E="$MIRROR_HOME" GNUPGHOME="$GNUPG" \' '    GIT_SSH_COMMAND="ssh -i $SSH_KEY -o BatchMode=yes" "$MIRROR_GIT" -C "$MIRROR" fetch --quiet --no-tags "$MIRROR_URL" '"'+refs/heads/main:refs/heads/main'"'; }'
+expect 'mirror: in a command substitution' 0 scripts/a.sh 'sha=$(en@v -i HOM@E="$H" "$MIRROR_GIT" -C "$M" rev-parse --verify --quiet main)'
+for sub in commit merge commit-@tree am cherry-pick rebase revert push status log cat-file; do
+    expect "mirror refused: ${sub}" 1 scripts/a.sh "en@v -i HOM@E=\"\$H\" \"\$MIRROR_GIT\" -C \"\$M\" ${sub} x"
+done
+expect 'mirror refused: verify, which git reads as an alias' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" verify'
+expect 'mirror refused: a quoted subcommand' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" "fetch"'
+expect 'mirror refused: a subcommand only named like fetch' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetchx'
+expect 'mirror refused: ; git commit after it' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch; git commit -m x'
+expect 'mirror refused: && git commit after it' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch && git commit -m x'
+expect 'mirror refused: | git commit after it' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch | git commit -m x'
+expect 'mirror refused: $(git commit) in its args' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch $(git commit -m x)'
+expect 'mirror refused: a backtick in its args' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch `git commit -m x`'
+expect 'mirror refused: a quoted ; in its args' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch "x;git commit"'
+expect 'mirror refused: a process substitution' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch <(git commit -m x)'
+expect 'mirror refused: no -C' 1 scripts/a.sh 'en@v -i HOM@E="$H" git fetch'
+expect 'mirror refused: -c, not -C' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -c "$M" fetch'
+expect 'mirror refused: an option between -C and the subcommand' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" -c x.y=1 fetch'
+expect 'mirror refused: a literal home' 1 scripts/a.sh 'en@v -i HOM@E=/tmp git -C "$M" fetch'
+expect 'mirror refused: a home with a suffix' 1 scripts/a.sh 'en@v -i HOM@E="$H/x" git -C "$M" fetch'
+expect 'mirror refused: a home with a default' 1 scripts/a.sh 'en@v -i HOM@E=${H:-/tmp} git -C "$M" fetch'
+expect 'mirror refused: a second HOME' 1 scripts/a.sh 'en@v -i HOM@E="$H" HOM@E=/tmp git -C "$M" fetch'
+expect 'mirror refused: an XDG home beside it' 1 scripts/a.sh 'en@v -i HOM@E="$H" XDG_CONFIG_HOM@E=/tmp git -C "$M" fetch'
+expect 'mirror refused: env without -i' 1 scripts/a.sh 'env HOM@E="$H" git -C "$M" fetch'
+expect 'mirror refused: a word that only ends in env' 1 scripts/a.sh 'myen@v -i HOM@E="$H" git -C "$M" fetch'
+expect 'mirror refused: a word that is not git' 1 scripts/a.sh 'en@v -i HOM@E="$H" "$RUNNER" -C "$M" fetch'
+expect 'mirror refused: a variable prefix with no subcommand' 1 scripts/a.sh 'local GIT="en@v -i PATH=/usr/bin:/bin HOM@E=$MIRROR_HOME $MIRROR_GIT -C $MIRROR"'
+expect 'mirror refused: "$at" for the subcommand' 1 scripts/a.sh 'en@v -i HOM@E="$H" "$MIRROR_GIT" -C "$M" "$@"'
+expect 'mirror refused: fetch with --upload-pack' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch --upload-pack=x "$M2"'
+expect 'mirror refused: fetch with a prefix of --upload-pack' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch --upl x "$M2"'
+expect 'mirror refused: fetch with a quoted --upload-pack' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch -"-upl"oad-pack=x "$M2"'
+# The fixture writer drops every @, so these write ATSIGN and turn it into @ after.
+at_case() { # <label> <line>: must be a finding at scripts/a.sh:1
+    local repo rc=0 out
+    repo="$(fixture scripts/a.sh "$2")"
+    sed -i 's/ATSIGN/@/g' "${repo}/scripts/a.sh"
+    out="$(bash "${SCAN}" "${repo}" 2>&1)" || rc=$?
+    if [[ "${rc}" -eq 1 && "${out}" == *"hook-bypass-scan: scripts/a.sh:1:"* ]]; then ok "$1"; else bad "$1: exit ${rc}, wanted 1: ${out}"; fi
+}
+at_case 'mirror refused: fetch with "$at"' 'mirror_git_fetch() { en@v -i HOM@E="$H" "$MIRROR_GIT" -C "$M" fetch "$ATSIGN"; }'
+at_case 'mirror refused: rev-parse with ${at}' 'en@v -i HOM@E="$H" git -C "$M" rev-parse ${ATSIGN}'
+expect 'mirror refused: fetch with "$*"' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch "$*"'
+expect 'mirror refused: fetch with $*' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch $*'
+expect 'mirror refused: a redirection after it' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch 2>/dev/null'
+expect 'mirror refused: words after the closing brace' 1 scripts/a.sh 'f() { en@v -i HOM@E="$H" git -C "$M" fetch; } ; git commit'
+
 # --- r3: a home taken away is another home; so is one a builtin sets, with no assignment --
 expect 'r3: env with -i and no home' 1 scripts/a.sh 'en@v -i PATH=/usr/bin git commit -m x'
 expect 'r3: env with -i after another option' 1 scripts/a.sh 'en@v -v -i git commit'
