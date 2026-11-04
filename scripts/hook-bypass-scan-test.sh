@@ -280,6 +280,9 @@ at_case 'mirror refused: fetch with "$at"' 'mirror_git_fetch() { en@v -i HOM@E="
 at_case 'mirror refused: rev-parse with ${at}' 'en@v -i HOM@E="$H" git -C "$M" rev-parse ${ATSIGN}'
 expect 'mirror refused: fetch with "$*"' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch "$*"'
 expect 'mirror refused: fetch with $*' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch $*'
+expect 'mirror refused: git in GIT_SSH_COMMAND' 1 scripts/a.sh 'en@v -i HOM@E="$H" GIT_SSH_COMMAND="git commit -m x" "$MIRROR_GIT" -C "$M" fetch "$U"'
+expect 'mirror refused: a git variable in an assignment' 1 scripts/a.sh 'en@v -i HOM@E="$H" GIT_SSH="$MIRROR_GIT" git -C "$M" fetch "$U"'
+expect 'mirror refused: a path git in an assignment, after the home' 1 scripts/a.sh 'en@v -i HOM@E="$H" GIT_ASKPASS=/usr/bin/git git -C "$M" fetch "$U"'
 expect 'mirror refused: a redirection after it' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" fetch 2>/dev/null'
 expect 'mirror refused: words after the closing brace' 1 scripts/a.sh 'f() { en@v -i HOM@E="$H" git -C "$M" fetch; } ; git commit'
 

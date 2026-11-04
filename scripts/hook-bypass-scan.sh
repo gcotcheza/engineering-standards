@@ -154,16 +154,21 @@ function rules(t, s,    h, e, rest) {
     # A nameref to a home sets it through the other name: declare, local or typeset -n r=HOME.
     if (h ~ NAMEREF) hit("a nameref to a home")
 }
-function judge(file, n, s, argvn,    d, p, e) {
+# A word as bash reads it once its quotes go: each quote and backslash dropped, and a $ before a quote.
+function plain(x) {
+    gsub("\\$[\"" q "]", "", x)
+    gsub("[\"" q "\\\\]", "", x)
+    return x
+}
+function judge(file, n, s, argvn,    d, p, e, a) {
     found = ""
     split("", seen)
     # The mirror pass, read as written: env -i, a HOME from one variable, then git -C <dir> fetch or rev-parse, to the line end;
-    # never with --upload-pack (a --u prefix runs a command) or "$@", even quoted.
+    # never with --upload-pack (a --u prefix runs a command), "$@", or a git word in an assignment (GIT_SSH_COMMAND), even quoted.
     p = s
     e = match(p, MIRROR) ? substr(p, RSTART, RLENGTH) : ""
-    gsub("\\$[\"" q "]", "", e)
-    gsub("[\"" q "\\\\]", "", e)
-    if (e != "" && e !~ /[ \t]--u|\$\{?[@*]/ && match(p, MIRROR)) { e = substr(p, RSTART, RLENGTH); sub("[ \t]" VARHOME "[ \t]", " ", e); sub(/env[ \t]+-i/, "env", e); p = substr(p, 1, RSTART - 1) e substr(p, RSTART + RLENGTH) }
+    a = match(e, "^" MPRE) ? plain(substr(e, 1, RLENGTH)) : ""
+    if (e != "" && a !~ GITIN && plain(e) !~ /[ \t]--u|\$\{?[@*]/ && match(p, MIRROR)) { e = substr(p, RSTART, RLENGTH); sub("[ \t]" VARHOME "[ \t]", " ", e); sub(/env[ \t]+-i/, "env", e); p = substr(p, 1, RSTART - 1) e substr(p, RSTART + RLENGTH) }
     rules(tolower(p), p)
     # Bash drops a quote or backslash inside a word, so a de-quoted copy is judged too: --no-"verify" is the long flag.
     d = p
@@ -191,7 +196,9 @@ BEGIN {
     MWORD = "[^ \t;&|`()<>]+"
     # git, a path ending in /git, or one variable named for git, quoted or not.
     MGIT = "(git|[^ \t;&|`()<>=\"$]*/git|\\$" GITNAME "|\\$\\{" GITNAME "\\}|\"\\$" GITNAME "\"|\"\\$\\{" GITNAME "\\}\")"
-    MIRROR = "(^|[ \t{(])env[ \t]+-i[ \t]+(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*" MGIT "[ \t]+-C[ \t]+" MWORD "[ \t]+(fetch|rev-parse)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
+    GITIN = "(^|[^A-Za-z0-9_])git([^A-Za-z0-9_]|$)|\\$\\{?[A-Za-z0-9_]*(GIT|git)"
+    MPRE = "(^|[ \t{(])env[ \t]+-i[ \t]+(" ASSIGN ")*" VARHOME "[ \t]+(" ASSIGN ")*"
+    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD "[ \t]+(fetch|rev-parse)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
     ROOTHOME = "(^|[ \t;&|({`])env[ \t]+-i[ \t]+(" ASSIGN ")*" ROOT "[ \t]+(" ASSIGN ")*" COMMAND
     HOMES = "(XDG_CONFIG_)?HOME"
     WORDEND = "([^A-Za-z0-9_]|$)"
