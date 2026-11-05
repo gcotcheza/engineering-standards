@@ -7,7 +7,7 @@
 make one, the case is a FAIL. In `scripts/lib/dialog-lib.sh`, the five checks keep the pipe and drop
 `-q` (`| grep -aE ... >/dev/null`), so grep reads the whole screen. A here-string would fail open
 there: bash 5.2 keeps a big one in a temp file, and with the temp dir full grep reads nothing, so a
-pane over 64 KiB under a caller's pipefail (`queue-start.sh` sets it) read as no dialog and a tick
+pane over 64 KiB read as no dialog and a tick
 would type into it. grep sees the same bytes as before. In `matches` an empty input is now one
 empty line, which no caller's pattern can match. New cases: a big-output `matches` in `test.sh`,
 three big-screen verdicts in `scripts/queue-start-test.sh` (red on the old lib), and the same three
