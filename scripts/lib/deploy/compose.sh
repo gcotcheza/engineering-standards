@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-05 sha256:7cd6004542c3a37dffa3cb24d9db63e5f18f8958a62690e345f1328d61aaa24e
+# fleet-deploy-lib 2026-11-05 sha256:93aa313b7d9ae171673dc7f637a06f7e52eabf3ed1294ef82b8270766768b9c6
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -282,7 +282,9 @@ deploy_app_env_value() {
     [[ ${1:-} =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || refuse "'${1:-}' is not an env key."
     # shellcheck disable=SC2016  # $1 is the inner bash's; a FIFO or a link is never opened
     dotenv=$(sudo -n -u "$user" -- bash -c '[[ -f $1 && ! -L $1 ]] && exec cat -- "$1"' _ "$ROOT/.env" 2>/dev/null) || { printf 'REFUSED: %s/.env could not be read as %s (sudo), so no value is guessed\n' "$ROOT" "$user" >&2; return 1; }
-    printf '%s\n' "$dotenv" | grep -m1 "^$1=" | cut -d= -f2-
+    # Every stage reads to the end, so none SIGPIPEs under pipefail; a here-string could go empty in a full
+    # temp dir and pass for a missing key (card 934).
+    printf '%s\n' "$dotenv" | grep "^$1=" | sed -n 1p | cut -d= -f2-
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then deploy_compose_exec "$@"; exit; fi
