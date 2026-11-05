@@ -17,6 +17,7 @@ back; the new `scripts/dialog-lib-fulldisk-mutants.txt` puts each here-string ba
 VERSION rises because `deploy-lib-version.sh` counts `test.sh`; the lib headers are re-stamped,
 their hashes unchanged. Re-copy `dialog-lib.sh` to both boxes and to the Pi's vendored copy. Why:
 decision: grep-q-reads-a-here-string-not-a-pipe.
+
 ## 2026-11-05 — a build refuses a tree that differs from the exported merge in four more ways (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
 **Card 363.** `deploy_compose_tracked`, which `compose.sh run` calls before every `build`, `up`,
 `create` and `run`, now runs its git calls as the app user with `-c core.useReplaceRefs=false` and also
