@@ -3,14 +3,20 @@
 ## 2026-11-05 — one gate root-owned check in the deploy lib (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
 **Card 660.** Seven apps carried their own `scripts/root-owned-check.sh`, all different. The check is
 now `root_owned_check <dir>` in `scripts/lib/deploy/ownership.sh`, beside `root_owned_count`, and the
-file runs it when called as a command. It is a subshell, so a refusal never ends the gate that sourced
-it. It walks `<dir>/` with `-xdev` and the deploy's predicate, counts `.claude` too, refuses a link, a
-non-directory, a path that is not its own real path and a failing `find`, names every root-owned path,
-and prints a remedy naming the tree's owner. For Memento and Scribly `-xdev` is a loosening (they
-counted across mounts); Fineprint's copy passed a linked tree, a latent hole that closes when it calls
-the lib. `ownership-test.sh` holds every case; `scripts/deploy-lib-ownership-mutants.txt` holds the T5
-sweep, and every header is re-stamped for 2026-11-05. No app calls it yet; each switches in its own
-pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
+file runs it when called as a command; apps call the box copy through `DEPLOY_LIB`, never a vendored
+one. It is a subshell, so a refusal never ends the gate that sourced it. One walk of `<dir>/` with
+`-xdev` and the deploy's predicate lists each root-owned path and counts it by a dot, so a newline in
+a name miscounts nothing; `.claude` is counted. It judges uid 0 unless the test seam
+`OWNERSHIP_TEST_ROOT_UID=1` lets `DEPLOY_ROOT_UID` stand in. It refuses a link, a non-directory, a
+path that is not its own real path (compared literally) and a failing `mktemp` or `find`, names every
+path, and prints a remedy naming the tree's owner, its `chown` quoted with `%q`. One loosening and
+two tightenings: Memento and Scribly stop counting across mounts; Fineprint's latent linked-tree pass
+closes; and a tree reached through a linked parent now refuses, so callers pass a `pwd -P` path. The
+mount case runs only with CAP_SYS_ADMIN and `OWNERSHIP_TEST_MOUNT=1`, so the gate skips it and the
+mutant run proves `-xdev`. `ownership-test.sh` holds every case and
+`scripts/deploy-lib-ownership-mutants.txt` the T5 sweep; every header is re-stamped for 2026-11-05.
+`README.md` and `ROLLOUT.md` no longer say apps vendor the lib. No app calls it yet; each switches in
+its own pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
 
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
 **Card 863.** The `--base <sha>` vetting copied into Scribly, KidsQuest and Reflection gates is now
