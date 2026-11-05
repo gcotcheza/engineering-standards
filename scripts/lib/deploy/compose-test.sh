@@ -54,14 +54,19 @@ esac
 exit 0
 SH
     chmod 0755 "${CF}/bin/docker"
-    # A git-as whose status lists bin/tracked and exits bin/git-rc (default 0); every call goes to bin/argv.
-    # Like git, it opens <root>/.git/HEAD first, so a FIFO there blocks it.
+    # A git-as whose status lists bin/tracked, ls-files bin/flags, rev-parse bin/top (default the root) then bin/head,
+    # and which exits bin/git-rc (default 0); every call goes to bin/argv. Like git, it opens <root>/.git/HEAD first.
+    printf '%s\n' "${COMPOSE_SHA}" >"${CF}/bin/head"
     cat >"${CF}/bin/git-as" <<'SH'
 #!/bin/sh
 d=$(dirname "$0")
 printf 'git-as %s\n' "$*" >>"$d/argv"
 : <"$3/.git/HEAD"
 [ ! -e "$d/git-hangs" ] || exec sleep 600
+case " $* " in
+    *' ls-files '*) cat "$d/flags" 2>/dev/null; exit 0 ;;
+    *' rev-parse '*) cat "$d/top" 2>/dev/null || printf '%s\n' "$3"; cat "$d/head"; exit "$(cat "$d/head-rc" 2>/dev/null || echo 0)" ;;
+esac
 cat "$d/tracked" 2>/dev/null
 exit "$(cat "$d/git-rc" 2>/dev/null || echo 0)"
 SH
@@ -241,11 +246,13 @@ contains 'build up: up (after a --profile) checks the context too' "${OUT}" "REF
 # Card 363: a build or an up re-reads the tracked files as the app user inside compose.sh run, so
 # every route to it does: deploy_compose, and $DEPLOY_COMPOSE in a job's own bash -c.
 cfx tracked-clean
-STATUS="-C ${CROOT} --no-optional-locks -c core.fsmonitor=false status --porcelain --untracked-files=no"
+GITC='--no-optional-locks -c core.fsmonitor=false -c core.useReplaceRefs=false'
+STATUS="-C ${CROOT} ${GITC} status --porcelain --untracked-files=no"
 crun "${INIT}; deploy_compose build app; deploy_compose up -d; deploy_compose create; deploy_compose ps; deploy_compose exec -T app true"
 equals 'tracked: build, up and create each re-read the tracked files as the app user, ps and exec do not' \
     "$(grep -cxF -- "git-as demo ${STATUS}" <<<"${ARGV}")" 3
-contains 'tracked: the check comes before the build' "${ARGV}" "git-as demo ${STATUS}"$'\ncompose --project-directory '"${CROOT}"
+contains 'tracked: the check, status, flags then HEAD, comes before the build' "${ARGV}" \
+    "git-as demo ${STATUS}"$'\n'"git-as demo -C ${CROOT} ${GITC} ls-files -v"$'\n'"git-as demo -C ${CROOT} ${GITC} rev-parse --show-toplevel --verify -q HEAD"$'\ncompose --project-directory '"${CROOT}"
 cfx tracked-edited
 crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose --profile web up -d"
 contains 'tracked: a tracked file edited between the merge and the up is refused' "${OUT}" \
@@ -283,9 +290,98 @@ equals 'tracked: a plain run over a tracked file edited after the merge is refus
 absent 'tracked: and compose never runs a plain run' "${ARGV}" ' run --rm app true'
 cfx tracked-run-clean
 crun "${INIT}; deploy_compose run --rm app true"
-equals 'tracked: a clean plain run passes after one re-read' "$(grep -cxF -- "git-as demo -C ${CROOT} --no-optional-locks -c core.fsmonitor=false status --porcelain --untracked-files=no" <<<"${ARGV}")" 1
+equals 'tracked: a clean plain run passes after one re-read' "$(grep -cxF -- "git-as demo -C ${CROOT} ${GITC} status --porcelain --untracked-files=no" <<<"${ARGV}")" 1
 contains 'tracked: and it runs' "${ARGV}" ' run --rm app true'
 equals 'tracked: and exits 0' "${RC}" 0
+
+# Card 363: a tree reset to another clean commit is refused too; HEAD is read as the app user after status.
+OTHER_SHA=3333333333333333333333333333333333333333
+cfx head-match
+STATUS="-C ${CROOT} ${GITC} status --porcelain --untracked-files=no"
+LSFILES="git-as demo -C ${CROOT} ${GITC} ls-files -v"
+REVPARSE="git-as demo -C ${CROOT} ${GITC} rev-parse --show-toplevel --verify -q HEAD"
+crun "${INIT}; deploy_compose build app; deploy_compose up -d"
+equals 'head: build and up each read HEAD as the app user' "$(grep -cxF -- "${REVPARSE}" <<<"${ARGV}")" 2
+contains 'head: after the tracked files and their flags' "${ARGV}" "git-as demo ${STATUS}"$'\n'"${LSFILES}"$'\n'"${REVPARSE}"
+contains 'head: a HEAD at the exported merge builds' "${ARGV}" ' build app'
+contains 'head: and runs up' "${ARGV}" ' up -d'
+equals 'head: and exits 0' "${RC}" 0
+cfx head-reset
+crun "${INIT}; echo ${OTHER_SHA} >${CF}/bin/head; deploy_compose up -d"
+contains 'head: a clean tree reset to another commit is refused, naming both shas' "${OUT}" \
+    "REFUSED: HEAD in ${CROOT} is ${OTHER_SHA}, not the merge ${COMPOSE_SHA} fleet-deploy exported, so nothing is built over it"
+absent 'head: and compose never runs up (reset)' "${ARGV}" ' up -d'
+cfx head-reset-job
+crun "${INIT}; echo ${OTHER_SHA} >${CF}/bin/head; COMPOSE=\$DEPLOY_COMPOSE; job=\"\$COMPOSE build app; \$COMPOSE run --rm app true\"; bash -c \"\$job\""
+equals 'head: $DEPLOY_COMPOSE in a bash -c job refuses the build and the run' \
+    "$(grep -c "^REFUSED: HEAD in ${CROOT} is ${OTHER_SHA}, not the merge" <<<"${OUT}")" 2
+absent 'head: and compose never builds (job)' "${ARGV}" ' build app'
+cfx head-git-fails
+crun "${INIT}; echo 128 >${CF}/bin/head-rc; deploy_compose up -d"
+contains 'head: a rev-parse that fails is refused, never read as the merge' "${OUT}" \
+    "REFUSED: git rev-parse HEAD failed in ${CROOT}, so HEAD is not known to be the merge ${COMPOSE_SHA} and nothing is built over it"
+absent 'head: and compose never runs up (rev-parse failed)' "${ARGV}" ' up -d'
+cfx head-export-empty
+crun "${INIT}; : >${CRUN}/export-sha; : >${CF}/bin/head; deploy_compose up -d"
+contains 'head: an empty export and an empty HEAD are refused, never equal' "${OUT}" \
+    "REFUSED: HEAD in ${CROOT} is nothing, not the merge (none) fleet-deploy exported, so nothing is built over it"
+absent 'head: and compose never runs up (empty export)' "${ARGV}" ' up -d'
+cfx head-dirty-still
+crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose up -d"
+contains 'head: an edited tracked file at the merge HEAD is still refused' "${OUT}" \
+    "REFUSED: tracked files in ${CROOT} are modified since the fast-forward, so nothing is built over them:  M app/Models/User.php"
+absent 'head: and compose never runs up (dirty at the merge)' "${ARGV}" ' up -d'
+cfx flags-skip
+crun "${INIT}; printf 'H docker-compose.yml\nS docker/app/Dockerfile\n' >${CF}/bin/flags; deploy_compose up -d"
+contains 'flags: a skip-worktree file is refused, by name' "${OUT}" \
+    "REFUSED: ${CROOT} marks docker/app/Dockerfile skip-worktree or assume-unchanged, so git status never read it and nothing is built over it"
+absent 'flags: and compose never runs up (skip-worktree)' "${ARGV}" ' up -d'
+cfx flags-assume
+crun "${INIT}; printf 'H docker-compose.yml\nh .env\n' >${CF}/bin/flags; deploy_compose up -d"
+contains 'flags: an assume-unchanged file is refused, by name' "${OUT}" "REFUSED: ${CROOT} marks .env skip-worktree or assume-unchanged"
+absent 'flags: and compose never runs up (assume-unchanged)' "${ARGV}" ' up -d'
+cfx toplevel-moved
+crun "${INIT}; echo ${CF}/elsewhere >${CF}/bin/top; deploy_compose up -d"
+contains 'toplevel: a core.worktree pointing git at another tree is refused' "${OUT}" \
+    "REFUSED: git in ${CROOT} reads the work tree ${CF}/elsewhere (a core.worktree), so nothing is built over it"
+absent 'toplevel: and compose never runs up' "${ARGV}" ' up -d'
+
+# Card 363 review: the same attacks against real git, through a git-as that drops the user and runs git.
+rg() { /usr/bin/git -C "${CROOT}" -c user.name=t -c user.email=t@t "$@"; }
+real_git() { # name; CROOT becomes a repo at one commit, export-sha that commit
+    cfx "real-$1"
+    rm -rf -- "${CROOT:?}/.git"
+    cat >"${CF}/bin/git-as" <<'SH'
+#!/bin/sh
+printf 'git-as %s\n' "$*" >>"$(dirname "$0")/argv"
+shift
+exec /usr/bin/git "$@"
+SH
+    printf 'merged\n' >"${CROOT}/app.php"
+    rg init -q -b main && rg add app.php docker docker-compose.yml .env && rg commit -qm merge && rg rev-parse HEAD >"${CRUN}/export-sha" && RINIT="deploy_compose_init $(cat "${CRUN}/export-sha")"
+}
+real_git clean || fail 'real: fixture (clean)'
+crun "${RINIT}; deploy_compose up -d"
+contains 'real: a clean tree at the merge runs up under real git' "${ARGV}" ' up -d'
+real_git replace || fail 'real: fixture (replace)'
+printf 'evil\n' >"${CROOT}/app.php"
+{ rg commit -qam evil && rg replace "$(cat "${CRUN}/export-sha")" "$(rg rev-parse HEAD)" && rg update-ref refs/heads/main "$(cat "${CRUN}/export-sha")" && rg checkout -qf main; } || fail 'real: fixture (replace ref)'
+equals 'real: HEAD names the merge' "$(rg rev-parse HEAD)" "$(cat "${CRUN}/export-sha")"
+equals 'real: while the tree holds the evil file' "$(cat "${CROOT}/app.php")" 'evil'
+crun "${RINIT}; deploy_compose up -d"
+contains 'real: a replace ref over the merge is refused' "${OUT}" "REFUSED: tracked files in ${CROOT} are modified since the fast-forward"
+absent 'real: and compose never runs up (replace)' "${ARGV}" ' up -d'
+real_git skip || fail 'real: fixture (skip)'
+rg update-index --skip-worktree app.php && printf 'evil\n' >"${CROOT}/app.php"
+crun "${RINIT}; deploy_compose up -d"
+contains 'real: an edit hidden by skip-worktree is refused' "${OUT}" "REFUSED: ${CROOT} marks app.php skip-worktree"
+absent 'real: and compose never runs up (skip-worktree)' "${ARGV}" ' up -d'
+real_git worktree || fail 'real: fixture (worktree)'
+mkdir "${CF}/clean" && cp -a "${CROOT}/app.php" "${CROOT}/docker" "${CROOT}/docker-compose.yml" "${CROOT}/.env" "${CF}/clean/" && printf 'evil\n' >"${CROOT}/app.php"
+rg config core.worktree "${CF}/clean"
+crun "${RINIT}; deploy_compose up -d"
+contains 'real: a core.worktree at a clean copy is refused' "${OUT}" "REFUSED: git in ${CROOT} reads the work tree ${CF}/clean (a core.worktree)"
+absent 'real: and compose never runs up (core.worktree)' "${ARGV}" ' up -d'
 
 # 2026-10-11.1: a planted .git is refused before git-as runs; the stub opens HEAD as git does.
 plain_case() { # name, setup run in CROOT/.git
@@ -304,7 +400,7 @@ plain_case worktree_fifo 'mkdir -p worktrees/w; mkfifo worktrees/w/HEAD'
 plain_case gitdir_link 'cd .. && mv .git real.git && ln -s real.git .git'
 cfx plain-regular
 crun "${INIT}; deploy_compose up -d"
-contains 'plain: a regular HEAD still reaches git-as and up' "${ARGV}" "git-as demo -C ${CROOT} --no-optional-locks -c core.fsmonitor=false status"
+contains 'plain: a regular HEAD still reaches git-as and up' "${ARGV}" "git-as demo -C ${CROOT} ${GITC} status"
 
 # B4: a value from the app's .env is read as the app user, never through root's eyes.
 if root_only_case 'env value: read as the app user (sudo)'; then
