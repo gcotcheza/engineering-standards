@@ -267,3 +267,9 @@ branch's check against fresh clones of each app's GitHub main.
 | Open work | What is missing | Owner |
 |---|---|---|
 | a security finding or incident with no acknowledgement line is flagged by itself | W11 is checked by the daily review reading the fleet-docs `docs/journal/<date>-<session>.md` pages; nothing yet matches a finding or incident to its acknowledgement line. | personal-vps |
+
+## W12 mechanised
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| a blocked item with no peer diagnosis asked within the hour is flagged by itself | W12 is checked by the daily review reading the journals; nothing yet matches a blocked item to a peer message sent in the same hour. | personal-vps |
