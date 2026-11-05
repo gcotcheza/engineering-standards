@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-05 sha256:97713d37350b9ffdd1773a87347af8a2de62cbb17cd5054d9c8d59311dd90b9b
+# fleet-deploy-lib 2026-11-05 sha256:8d963ebddf2fc6108b1a2e98ab335074148bb96bb05bf254234070bd06a1fb45
 # shellcheck shell=bash
 # Root hands its own paths in an app tree back to the app user, never through a link. docs/DECISIONS.md (card 363)
 
@@ -41,7 +41,6 @@ root_owned_check() (
     [[ $(/usr/bin/realpath -e -- "$tree") == "$tree" ]] || { printf 'REFUSED: root_owned_check: %s is not its own real path (a link above it, or a . .. or // part), so not one path was counted\n' "$tree" >&2; exit 1; }
     list=$(/usr/bin/mktemp) || { printf 'REFUSED: root_owned_check: mktemp failed, so not one path under %s was counted\n' "$tree" >&2; exit 1; }
     trap '/usr/bin/rm -f -- "$list"' EXIT
-    # One walk: each path goes to the list and one dot to the count, so a newline in a name miscounts nothing.
     count=$(/usr/bin/find -P "${tree%/}/" -xdev -ignore_readdir_race -user "$uid" -fprint "$list" -printf .) \
         || { printf 'REFUSED: root_owned_check: find failed under %s, so a count nobody took is not a clean tree\n' "$tree" >&2; exit 1; }
     [[ -n $count ]] || { printf 'no root-owned path under %s\n' "$tree"; exit 0; }

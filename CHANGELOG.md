@@ -15,7 +15,7 @@ closes; and a tree reached through a linked parent now refuses, so callers pass 
 mount case runs only with CAP_SYS_ADMIN and `OWNERSHIP_TEST_MOUNT=1`, so the gate skips it and the
 mutant run proves `-xdev`. `ownership-test.sh` holds every case and
 `scripts/deploy-lib-ownership-mutants.txt` the T5 sweep; every header is re-stamped for 2026-11-05.
-`README.md` and `ROLLOUT.md` no longer say apps vendor the lib. No app calls it yet; each switches in
+`README.md`'s vendored-scripts section and `ROLLOUT.md`'s root-owned and exit-75 rows no longer say apps vendor the lib. No app calls it yet; each switches in
 its own pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
 
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
