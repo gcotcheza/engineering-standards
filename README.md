@@ -72,7 +72,7 @@ given lines removed (exactly one line when no range is given), or with exactly t
 exactly that text, matched literally and holding no newline (its final newline, or lack of one, kept); otherwise
 one `mutant-sane: REFUSED <why>` line and exit 1. It cannot see a deleted `exit` that still prints the
 grepped text, so suites assert the exit code too. Its T5 table is `scripts/mutant-sane-mutants.txt`;
-why: `docs/decisions/2026-10-26-1915-mutant-sane-before-red.md`.
+why: decision: mutant-sane-before-red.
 
 `scripts/gate-run.sh <app> <sha40> <script> [--keep] [--artifacts-to <dir>] [--ledger <file>] [-- args]`
 runs one app's gate script as root from a root-owned export of that sha, fetched from GitHub only, in

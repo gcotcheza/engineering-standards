@@ -1,0 +1,8 @@
+# T5 mutants for scripts/lib/dialog-lib.sh (card 745): a here-string back in place of each full-read pipe.
+# Red only with a full temp dir, so run them in a throwaway container (never on a host, the case fills /tmp):
+#   docker run --rm --tmpfs /tmp:size=4m --tmpfs /scratch:exec,size=256m -e TMPDIR=/scratch -e QS_TEST_FULL_DIR=/tmp ... \
+#     QUEUE_START_TEST=$PWD/scripts/queue-start-test.sh scripts/guard-mutants.sh scripts/lib/dialog-lib.sh scripts/dialog-lib-fulldisk-mutants.txt
+dl-chrome-herestring@@[ -n "${QS_TEST_FULL_DIR:-}" ] && DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  printf '%s\n' "$s" | grep -aE '^[[:space:]]*❯'"$w"'*[0-9]+\.|^[[:space:]]*│('"$w"'|❯)*[0-9]+\.|Esc to cancel' >/dev/null \@@  grep -aqE '^[[:space:]]*❯'"$w"'*[0-9]+\.|^[[:space:]]*│('"$w"'|❯)*[0-9]+\.|Esc to cancel' <<<"$s" \
+dl-block-herestring@@[ -n "${QS_TEST_FULL_DIR:-}" ] && DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  if [ -z "$out" ] && printf '%s\n' "$s" | grep -aE '^[[:space:]]*(│'"$w"'*)?❯'"$w"'*[0-9]+\.[[:space:]]*[^[:space:]]' >/dev/null; then@@  if [ -z "$out" ] && grep -aqE '^[[:space:]]*(│'"$w"'*)?❯'"$w"'*[0-9]+\.[[:space:]]*[^[:space:]]' <<<"$s"; then
+dl-enter-herestring@@[ -n "${QS_TEST_FULL_DIR:-}" ] && DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  if [ -z "$out" ] && printf '%s\n' "$s" | grep -aE 'Enter to (confirm|select)' >/dev/null \@@  if [ -z "$out" ] && grep -aqE 'Enter to (confirm|select)' <<<"$s" \
+dl-esc-herestring@@[ -n "${QS_TEST_FULL_DIR:-}" ] && DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@     && printf '%s\n' "$s" | grep -aE 'Esc to (cancel|close)' >/dev/null; then@@     && grep -aqE 'Esc to (cancel|close)' <<<"$s"; then

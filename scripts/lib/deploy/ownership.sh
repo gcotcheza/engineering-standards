@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-05 sha256:8d963ebddf2fc6108b1a2e98ab335074148bb96bb05bf254234070bd06a1fb45
+# fleet-deploy-lib 2026-11-05.3 sha256:8d963ebddf2fc6108b1a2e98ab335074148bb96bb05bf254234070bd06a1fb45
 # shellcheck shell=bash
 # Root hands its own paths in an app tree back to the app user, never through a link. docs/DECISIONS.md (card 363)
 

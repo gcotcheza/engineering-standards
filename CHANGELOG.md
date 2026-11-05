@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-05 — one gate root-owned check in the deploy lib (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
+## 2026-11-05 — one gate root-owned check in the deploy lib (deploy-lib VERSION 2026-11-05.3; the standard is unchanged and VERSION is not bumped)
 **Card 660.** Seven apps carried their own `scripts/root-owned-check.sh`, all different. The check is
 now `root_owned_check <dir>` in `scripts/lib/deploy/ownership.sh`, beside `root_owned_count`, and the
 file runs it when called as a command; apps call the box copy through `DEPLOY_LIB`, never a vendored
@@ -14,9 +14,53 @@ two tightenings: Memento and Scribly stop counting across mounts; Fineprint's la
 closes; and a tree reached through a linked parent now refuses, so callers pass a `pwd -P` path. The
 mount case runs only with CAP_SYS_ADMIN and `OWNERSHIP_TEST_MOUNT=1`, so the gate skips it and the
 mutant run proves `-xdev`. `ownership-test.sh` holds every case and
-`scripts/deploy-lib-ownership-mutants.txt` the T5 sweep; every header is re-stamped for 2026-11-05.
+`scripts/deploy-lib-ownership-mutants.txt` the T5 sweep; every header is re-stamped for 2026-11-05.3.
 `README.md`'s vendored-scripts section and `ROLLOUT.md`'s root-owned and exit-75 rows no longer say apps vendor the lib. No app calls it yet; each switches in
 its own pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
+
+## 2026-11-05 — the deploy lib's `deploy_app_env_value` stops quitting its pipe early (deploy-lib VERSION 2026-11-05.2; the standard is unchanged and VERSION is not bumped)
+**Card 934.** The last line of `deploy_app_env_value` in `scripts/lib/deploy/compose.sh` piped the
+`.env` into `grep -m1`. grep quits at its first match, so with the key on line 1 of a `.env` past
+64 KiB, `printf` took SIGPIPE, and under `set -o pipefail` the read failed with 141 although the
+value was printed right. The pipe stays and every stage now reads to the end:
+`grep "^KEY=" | sed -n 1p | cut -d= -f2-`. A here-string would fail open there: with the temp dir
+full it reads as an empty value, the same as a missing key. The output is the same as before, a
+missing key still gives no value (status 1 under pipefail, 0 without), and the REFUSED path is
+unchanged. New cases in `compose-test.sh`: a key on line 1 of a big `.env` under pipefail (red on
+the old line) and a missing key in the same file. No mutant list covers this file. VERSION rises
+to 2026-11-05.2, above card 745's 2026-11-05.1, and every header is re-stamped. Why:
+decision: grep-q-reads-a-here-string-not-a-pipe.
+
+## 2026-11-05 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-05.1; the standard is unchanged and VERSION is not bumped)
+**Card 745.** The two files ES #72 left on the piped form. Under `set -o pipefail` a piped
+`grep -q` that quits at an early match SIGPIPEs its writer and reads as a miss. In
+`scripts/lib/deploy/test.sh`, `matches` takes a here-string, as #72's helpers do: if bash cannot
+make one, the case is a FAIL. In `scripts/lib/dialog-lib.sh`, the five checks keep the pipe and drop
+`-q` (`| grep -aE ... >/dev/null`), so grep reads the whole screen. A here-string would fail open
+there: bash 5.2 keeps a big one in a temp file, and with the temp dir full grep reads nothing, so a
+pane over 64 KiB read as no dialog and a tick
+would type into it. grep sees the same bytes as before. In `matches` an empty input is now one
+empty line, which no caller's pattern can match. New cases: a big-output `matches` in `test.sh`,
+three big-screen verdicts in `scripts/queue-start-test.sh` (red on the old lib), and the same three
+with a full temp dir, opt-in through `QS_TEST_FULL_DIR` and skip-printed without it (red on the
+here-string lib, run in a throwaway container). `scripts/dialog-lib-mutants.txt` puts each `-q` pipe
+back; the new `scripts/dialog-lib-fulldisk-mutants.txt` puts each here-string back, container only.
+VERSION rises because `deploy-lib-version.sh` counts `test.sh`; the lib headers are re-stamped,
+their hashes unchanged. Re-copy `dialog-lib.sh` to both boxes and to the Pi's vendored copy. Why:
+decision: grep-q-reads-a-here-string-not-a-pipe.
+
+## 2026-11-05 — a build refuses a tree that differs from the exported merge in four more ways (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
+**Card 363.** `deploy_compose_tracked`, which `compose.sh run` calls before every `build`, `up`,
+`create` and `run`, now runs its git calls as the app user with `-c core.useReplaceRefs=false` and also
+refuses a file marked skip-worktree or assume-unchanged in `ls-files -v`, a `rev-parse --show-toplevel`
+other than the root (a `core.worktree`), and a HEAD other than the 40-hex sha in `<run>/export-sha`,
+naming both shas; a failed git call refuses too. Still open: ignored and untracked files in a build
+context, an edit between the check and the build, and `start`/`restart`/`scale`, which are not checked;
+and the status check trusts stat data and an index the app user controls (`checkStat`/`trustctime` in
+`.git/config`, a forged index), so an edit at the merge HEAD can still be built. Building from a
+`git archive` of the exported merge (the next card) closes all of these.
+Why: decision: ignored-files-in-the-build-context-wait. `compose-test.sh` holds the cases, three of
+them against real git; every header is re-stamped for 2026-11-05.
 
 ## 2026-11-04 — W12: when stuck, ask the peer who owns the area to diagnose (VERSION 2026-11-04)
 **New rule W12; the standard now has 42 rules** (Ghie, 2026-11-04). A stuck session asks the owning peer
