@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-02 sha256:7cd6004542c3a37dffa3cb24d9db63e5f18f8958a62690e345f1328d61aaa24e
+# fleet-deploy-lib 2026-11-05 sha256:8640e57a7a66d68de497c0d9d19ef7f8bef682eaa2077eb7d86e9be39b4504d8
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -180,7 +180,7 @@ deploy_compose_exec() {
         esac
     done
     case $sub in
-        build|up|create|run) deploy_compose_tracked "$root" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
+        build|up|create|run) deploy_compose_tracked "$root" "$run" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
     esac
     case $sub in
         watch) printf 'REFUSED: compose watch copies the app tree into running containers, so root does not run it\n' >&2; return 1 ;;
@@ -194,14 +194,18 @@ deploy_compose_exec() {
 }
 
 # Before a build, up, create or run (a plain run builds a missing image), the tracked files as the app user
-# sees them: an edit after the fast-forward is not built (cards 363, 371). root -> 0, or 1 with DEPLOY_COMPOSE_ERR
+# sees them, at the exported merge: an edit or a reset after the fast-forward is not built (cards 363, 371).
+# root, run dir -> 0, or 1 with DEPLOY_COMPOSE_ERR. decision: ignored-files-in-the-build-context-wait
 deploy_compose_tracked() {
-    local out rc=0
+    local out rc=0 merge
     deploy_compose_git_plain "$1/.git" || { DEPLOY_COMPOSE_ERR="$1/.git is not a plain git directory (a link, a FIFO or a non-file where git reads), so git is not run in it"; return 1; }
     deploy_compose_git_bounded "${DEPLOY_GIT_AS:-git-as}" "$(deploy_compose_user "$1")" -C "$1" --no-optional-locks -c core.fsmonitor=false status --porcelain --untracked-files=no || rc=$?
     out=$DEPLOY_GIT_OUT
     [ "$rc" = 0 ] || { DEPLOY_COMPOSE_ERR="${DEPLOY_GIT_ERR:-git status exited $rc} in $1, so the tracked files are not known to be the merge and nothing is built over them"; return 1; }
     [ -z "$out" ] || { DEPLOY_COMPOSE_ERR="tracked files in $1 are modified since the fast-forward, so nothing is built over them: ${out//$'\n'/; }"; return 1; }
+    merge=$(head -c 41 "$2/export-sha" | tr -d '\n')
+    deploy_compose_git_bounded "${DEPLOY_GIT_AS:-git-as}" "$(deploy_compose_user "$1")" -C "$1" --no-optional-locks rev-parse --verify -q HEAD || { DEPLOY_COMPOSE_ERR="${DEPLOY_GIT_ERR:-git rev-parse HEAD failed} in $1, so HEAD is not known to be the merge ${merge:-(none)} and nothing is built over it"; return 1; }
+    [[ $merge =~ ^[0-9a-f]{40}$ && $DEPLOY_GIT_OUT == "$merge" ]] || { DEPLOY_COMPOSE_ERR="HEAD in $1 is ${DEPLOY_GIT_OUT:-nothing}, not the merge ${merge:-(none)} fleet-deploy exported, so nothing is built over it"; return 1; }
 }
 
 # summary.sh's deploy_git_plain, which compose.sh run cannot source; test.sh fails if the two drift.

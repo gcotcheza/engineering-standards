@@ -1454,7 +1454,10 @@ build, so an edit in that window was built and run as if merged. `compose.sh run
 `build`, `up` and `create`, ahead of `compose config`. It sits there, not in `deploy_compose`, because
 that is where every compose call lands: an app that sets `COMPOSE=$DEPLOY_COMPOSE` and runs its build
 inside a job's own `bash -c` never calls the shell function. A git status that fails is a refusal
-naming its exit code, never a clean tree. The window is narrowed, not closed: an edit after the check
+naming its exit code, never a clean tree. Since lib 2026-11-05 it also reads `rev-parse HEAD` as the
+app user and refuses, naming both shas, unless HEAD is the merge in `<run>/export-sha` (which
+`deploy_compose_init` proved), so a tree reset to another clean commit is not built; why ignored files
+in a build context are not judged yet: decision: ignored-files-in-the-build-context-wait. The window is narrowed, not closed: an edit after the check
 is still built; an untracked file added in it is not seen; and `exec` is not rechecked. Every `run` is
 (card 371), not only `run --build`: compose v5.5.1 builds a missing image on a plain `run` too, as its
 `--dry-run` shows, so a plain `run` over an edited tree (orbit's assets build) is refused like an `up`.

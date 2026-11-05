@@ -54,14 +54,16 @@ esac
 exit 0
 SH
     chmod 0755 "${CF}/bin/docker"
-    # A git-as whose status lists bin/tracked and exits bin/git-rc (default 0); every call goes to bin/argv.
-    # Like git, it opens <root>/.git/HEAD first, so a FIFO there blocks it.
+    # A git-as whose status lists bin/tracked, whose rev-parse prints bin/head (the export), and which exits
+    # bin/git-rc (default 0); every call goes to bin/argv. Like git, it opens <root>/.git/HEAD first.
+    printf '%s\n' "${COMPOSE_SHA}" >"${CF}/bin/head"
     cat >"${CF}/bin/git-as" <<'SH'
 #!/bin/sh
 d=$(dirname "$0")
 printf 'git-as %s\n' "$*" >>"$d/argv"
 : <"$3/.git/HEAD"
 [ ! -e "$d/git-hangs" ] || exec sleep 600
+case " $* " in *' rev-parse '*) cat "$d/head"; exit "$(cat "$d/head-rc" 2>/dev/null || echo 0)" ;; esac
 cat "$d/tracked" 2>/dev/null
 exit "$(cat "$d/git-rc" 2>/dev/null || echo 0)"
 SH
@@ -245,7 +247,8 @@ STATUS="-C ${CROOT} --no-optional-locks -c core.fsmonitor=false status --porcela
 crun "${INIT}; deploy_compose build app; deploy_compose up -d; deploy_compose create; deploy_compose ps; deploy_compose exec -T app true"
 equals 'tracked: build, up and create each re-read the tracked files as the app user, ps and exec do not' \
     "$(grep -cxF -- "git-as demo ${STATUS}" <<<"${ARGV}")" 3
-contains 'tracked: the check comes before the build' "${ARGV}" "git-as demo ${STATUS}"$'\ncompose --project-directory '"${CROOT}"
+contains 'tracked: the check, status then HEAD, comes before the build' "${ARGV}" \
+    "git-as demo ${STATUS}"$'\n'"git-as demo -C ${CROOT} --no-optional-locks rev-parse --verify -q HEAD"$'\ncompose --project-directory '"${CROOT}"
 cfx tracked-edited
 crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose --profile web up -d"
 contains 'tracked: a tracked file edited between the merge and the up is refused' "${OUT}" \
@@ -286,6 +289,43 @@ crun "${INIT}; deploy_compose run --rm app true"
 equals 'tracked: a clean plain run passes after one re-read' "$(grep -cxF -- "git-as demo -C ${CROOT} --no-optional-locks -c core.fsmonitor=false status --porcelain --untracked-files=no" <<<"${ARGV}")" 1
 contains 'tracked: and it runs' "${ARGV}" ' run --rm app true'
 equals 'tracked: and exits 0' "${RC}" 0
+
+# Card 363: a tree reset to another clean commit is refused too; HEAD is read as the app user after status.
+OTHER_SHA=3333333333333333333333333333333333333333
+cfx head-match
+STATUS="-C ${CROOT} --no-optional-locks -c core.fsmonitor=false status --porcelain --untracked-files=no"
+REVPARSE="git-as demo -C ${CROOT} --no-optional-locks rev-parse --verify -q HEAD"
+crun "${INIT}; deploy_compose build app; deploy_compose up -d"
+equals 'head: build and up each read HEAD as the app user' "$(grep -cxF -- "${REVPARSE}" <<<"${ARGV}")" 2
+contains 'head: after the tracked files' "${ARGV}" "git-as demo ${STATUS}"$'\n'"${REVPARSE}"
+contains 'head: a HEAD at the exported merge builds' "${ARGV}" ' build app'
+contains 'head: and runs up' "${ARGV}" ' up -d'
+equals 'head: and exits 0' "${RC}" 0
+cfx head-reset
+crun "${INIT}; echo ${OTHER_SHA} >${CF}/bin/head; deploy_compose up -d"
+contains 'head: a clean tree reset to another commit is refused, naming both shas' "${OUT}" \
+    "REFUSED: HEAD in ${CROOT} is ${OTHER_SHA}, not the merge ${COMPOSE_SHA} fleet-deploy exported, so nothing is built over it"
+absent 'head: and compose never runs up (reset)' "${ARGV}" ' up -d'
+cfx head-reset-job
+crun "${INIT}; echo ${OTHER_SHA} >${CF}/bin/head; COMPOSE=\$DEPLOY_COMPOSE; job=\"\$COMPOSE build app; \$COMPOSE run --rm app true\"; bash -c \"\$job\""
+equals 'head: $DEPLOY_COMPOSE in a bash -c job refuses the build and the run' \
+    "$(grep -c "^REFUSED: HEAD in ${CROOT} is ${OTHER_SHA}, not the merge" <<<"${OUT}")" 2
+absent 'head: and compose never builds (job)' "${ARGV}" ' build app'
+cfx head-git-fails
+crun "${INIT}; echo 128 >${CF}/bin/head-rc; deploy_compose up -d"
+contains 'head: a rev-parse that fails is refused, never read as the merge' "${OUT}" \
+    "REFUSED: git rev-parse HEAD failed in ${CROOT}, so HEAD is not known to be the merge ${COMPOSE_SHA} and nothing is built over it"
+absent 'head: and compose never runs up (rev-parse failed)' "${ARGV}" ' up -d'
+cfx head-export-empty
+crun "${INIT}; : >${CRUN}/export-sha; : >${CF}/bin/head; deploy_compose up -d"
+contains 'head: an empty export and an empty HEAD are refused, never equal' "${OUT}" \
+    "REFUSED: HEAD in ${CROOT} is nothing, not the merge (none) fleet-deploy exported, so nothing is built over it"
+absent 'head: and compose never runs up (empty export)' "${ARGV}" ' up -d'
+cfx head-dirty-still
+crun "${INIT}; printf ' M app/Models/User.php\n' >${CF}/bin/tracked; deploy_compose up -d"
+contains 'head: an edited tracked file at the merge HEAD is still refused' "${OUT}" \
+    "REFUSED: tracked files in ${CROOT} are modified since the fast-forward, so nothing is built over them:  M app/Models/User.php"
+absent 'head: and compose never runs up (dirty at the merge)' "${ARGV}" ' up -d'
 
 # 2026-10-11.1: a planted .git is refused before git-as runs; the stub opens HEAD as git does.
 plain_case() { # name, setup run in CROOT/.git
