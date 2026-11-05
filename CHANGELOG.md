@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-05 — the deploy lib's `deploy_app_env_value` stops quitting its pipe early (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
+## 2026-11-05 — the deploy lib's `deploy_app_env_value` stops quitting its pipe early (deploy-lib VERSION 2026-11-05.2; the standard is unchanged and VERSION is not bumped)
 **Card 934.** The last line of `deploy_app_env_value` in `scripts/lib/deploy/compose.sh` piped the
 `.env` into `grep -m1`. grep quits at its first match, so with the key on line 1 of a `.env` past
 64 KiB, `printf` took SIGPIPE, and under `set -o pipefail` the read failed with 141 although the
@@ -9,11 +9,11 @@ value was printed right. The pipe stays and every stage now reads to the end:
 full it reads as an empty value, the same as a missing key. The output is the same as before, a
 missing key still gives no value (status 1 under pipefail, 0 without), and the REFUSED path is
 unchanged. New cases in `compose-test.sh`: a key on line 1 of a big `.env` under pipefail (red on
-the old line) and a missing key in the same file. No mutant list covers this file. VERSION stays
-2026-11-05 from card 745, which this change rides; `compose.sh`'s header is re-stamped. Why:
+the old line) and a missing key in the same file. No mutant list covers this file. VERSION rises
+to 2026-11-05.2, above card 745's 2026-11-05.1, and every header is re-stamped. Why:
 decision: grep-q-reads-a-here-string-not-a-pipe.
 
-## 2026-11-05 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
+## 2026-11-05 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-05.1; the standard is unchanged and VERSION is not bumped)
 **Card 745.** The two files ES #72 left on the piped form. Under `set -o pipefail` a piped
 `grep -q` that quits at an early match SIGPIPEs its writer and reads as a miss. In
 `scripts/lib/deploy/test.sh`, `matches` takes a here-string, as #72's helpers do: if bash cannot
@@ -30,6 +30,19 @@ back; the new `scripts/dialog-lib-fulldisk-mutants.txt` puts each here-string ba
 VERSION rises because `deploy-lib-version.sh` counts `test.sh`; the lib headers are re-stamped,
 their hashes unchanged. Re-copy `dialog-lib.sh` to both boxes and to the Pi's vendored copy. Why:
 decision: grep-q-reads-a-here-string-not-a-pipe.
+
+## 2026-11-05 — a build refuses a tree that differs from the exported merge in four more ways (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
+**Card 363.** `deploy_compose_tracked`, which `compose.sh run` calls before every `build`, `up`,
+`create` and `run`, now runs its git calls as the app user with `-c core.useReplaceRefs=false` and also
+refuses a file marked skip-worktree or assume-unchanged in `ls-files -v`, a `rev-parse --show-toplevel`
+other than the root (a `core.worktree`), and a HEAD other than the 40-hex sha in `<run>/export-sha`,
+naming both shas; a failed git call refuses too. Still open: ignored and untracked files in a build
+context, an edit between the check and the build, and `start`/`restart`/`scale`, which are not checked;
+and the status check trusts stat data and an index the app user controls (`checkStat`/`trustctime` in
+`.git/config`, a forged index), so an edit at the merge HEAD can still be built. Building from a
+`git archive` of the exported merge (the next card) closes all of these.
+Why: decision: ignored-files-in-the-build-context-wait. `compose-test.sh` holds the cases, three of
+them against real git; every header is re-stamped for 2026-11-05.
 
 ## 2026-11-04 — W12: when stuck, ask the peer who owns the area to diagnose (VERSION 2026-11-04)
 **New rule W12; the standard now has 42 rules** (Ghie, 2026-11-04). A stuck session asks the owning peer

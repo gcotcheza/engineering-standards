@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-05 sha256:9a4c2d40f009ed2927eac614b6db60b947db60b14cf8e478a8bfce22f9a38cca
+# fleet-deploy-lib 2026-11-05.2 sha256:9a4c2d40f009ed2927eac614b6db60b947db60b14cf8e478a8bfce22f9a38cca
 # shellcheck shell=bash
 # A gate's --base <sha> stands only when its range holds all of origin/main..HEAD, or on a merged head all
 # the main-line commit taking HEAD in brought. decision: one-base-vet-for-every-gate
