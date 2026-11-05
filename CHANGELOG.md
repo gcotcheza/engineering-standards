@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-05 — the deploy lib's `matches` and the dialog check read grep -q from a here-string (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
+**Card 745.** The two files ES #72 left on the piped form now follow its rule. In
+`scripts/lib/deploy/test.sh`, `matches` takes a here-string: under `set -o pipefail` a match on
+line 1 of a big output read as a miss. In `scripts/lib/dialog-lib.sh`, the five `grep -q` checks do
+the same: under a caller's pipefail (`queue-start.sh` sets it), a pane over 64 KiB with its chrome,
+option block or confirm footer near the top read as no dialog, and a tick would type into it. The
+captures (`grep -aE`, `grep -ac`, the escape strip) read all their input and stay piped. grep sees
+the same bytes in `dialog_on` (`printf '%s\n'` and `<<<` both end in one newline); in `matches`
+an empty input is now one empty line, which no caller's pattern can match. New cases: a big-output
+`matches` in `test.sh` and three big-screen verdicts in `scripts/queue-start-test.sh`, each red on
+the old file; four rows in `scripts/dialog-lib-mutants.txt` put each pipe back and go red. The
+locale check's one short line cannot SIGPIPE, so it has no red case. VERSION rises because
+`deploy-lib-version.sh` counts `test.sh`; the lib headers are re-stamped, their hashes unchanged.
+Re-copy `dialog-lib.sh` to both boxes and to the Pi's vendored copy. Why: decision: grep-q-reads-a-here-string-not-a-pipe.
+
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
 **Card 863.** The `--base <sha>` vetting copied into Scribly, KidsQuest and Reflection gates is now
 `base_vet` in `scripts/lib/deploy/base.sh`, with `base_vet_armed` for the re-check after

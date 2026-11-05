@@ -415,6 +415,12 @@ equals 'case 10l: no pinned locale' "$(LC_ALL=C verdict "${FX_list}" xx_XX.UTF-8
 # A C locale (card 595): the check pins UTF-8 itself, so its verdicts hold there too.
 equals 'case 10l: FX_frame under LC_ALL=C' "$(LC_ALL=C verdict "${FX_frame}")" 0
 equals 'case 10l: FX_list under LC_ALL=C' "$(LC_ALL=C verdict "${FX_list}")" 1
+# Each check's line 1 matches, then ~1.4 MB of filler: a piped grep -q would quit early and
+# SIGPIPE its writer, and pipefail read a dialog as none (card 745).
+FILL="$(printf '\nfiller%.0s' {1..200000})"
+equals 'case 10l: framed Yes chrome atop a big screen' "$(verdict "│ 1. Yes${FILL}")" 0
+equals 'case 10l: an option block atop a big screen' "$(verdict $'❯ 1. Foo\n  2. Bar'"${FILL}")" 0
+equals 'case 10l: a confirm footer atop a big screen' "$(verdict "Enter to confirm · Esc to cancel${FILL}")" 0
 
 # A dialog that comes up after the first Enter: no further key at all (an Enter would
 # answer it "1. Yes", and even C-u lands on it), deferred like any dialog, not recorded.
