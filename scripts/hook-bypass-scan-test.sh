@@ -317,9 +317,9 @@ MPFX='en@v -i PATH=/usr/bin:/bin HOM@E="$MIRROR_HOME" GNUPGHOME="$GNUPG" GIT_NO_
 expect 'mirror: fetch, with the gpg program' 0 scripts/a.sh "${MPFX} fetch --quiet --no-tags --prune --end-of-options \"\$MIRROR_URL\" +refs/heads/main:refs/heads/main"
 expect 'r3 refused: the round-2 fetch, a quoted refspec and no end of options' 1 scripts/a.sh "${MPFX} fetch --quiet --no-tags --prune \"\$MIRROR_URL\" '+refs/heads/main:refs/heads/main'"
 expect 'mirror: rev-parse, the gpg program in braces' 0 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" -c gpg.program="${GPG}" rev-parse --verify --quiet refs/heads/main^0'
-expect 'r3 refused: a quoted ^{commit} revision' 1 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" rev-parse --verify --quiet '\''refs/heads/main^{commit}'\'''
+expect 'iii: a single-quoted ^{commit} revision, as GC:104 writes it' 0 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" rev-parse --verify --quiet '\''refs/heads/main^{commit}'\'''
 expect 'mirror: log with a count and a format' 0 scripts/a.sh "x=\$(${MPFX} log -1 --format=%G%x00%GF --end-of-options \"\$MERGE_SHA\")"
-expect 'r3 refused: a quoted format holding a glob' 1 scripts/a.sh "x=\$(${MPFX} log -1 --format='%G?|%GF|%GK' --end-of-options \"\$MERGE_SHA\")"
+expect 'iii: a single-quoted format holding a glob, after the end of options' 0 scripts/a.sh "x=\$(${MPFX} log -1 --format='%G?|%GF|%GK' --end-of-options \"\$MERGE_SHA\")"
 expect 'mirror: log with a spaced count and a pretty format' 0 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" log -@n 2 --pretty=%H main'
 expect 'mirror: cat-file of a commit' 0 scripts/a.sh "${MPFX} cat-file commit --end-of-options \"\$MERGE_SHA\""
 expect 'mirror: cat-file of a type' 0 scripts/a.sh 'en@v -i HOM@E="$H" git -C "$M" cat-file -t --end-of-options "$S"'
@@ -396,6 +396,23 @@ for lead in '  sha=$(' 'local sha=$(' 'f() { ' '( ' '{ '; do
     close=')'; [[ "${lead}" == *'{ ' ]] && close='; }'
     expect "lead: ${lead}" 0 scripts/a.sh "${lead}${R} rev-parse --verify --quiet main${close}"
 done
+# (iii): single-quoted parts, inert to bash, join an argument; its options are judged de-quoted, against the same lists.
+for args in "fetch '--upload-pack=x' origin" "fetch --'upload-pack'=x origin" "fetch -'n' origin" "fetch '-'-no-@verify origin" \
+    "fetch 'x" "fetch origin '+refs/heads/main" "log -1 --format='%H %s' HEAD" "cat-file '--textconv' HEAD:x" "'fetch' origin" \
+    "log -1 --format='%G?|%GF|%GK' \"\$MERGE_SHA\""; do
+    expect "iii refused: ${args}" 1 scripts/a.sh "${R} ${args}"
+done
+for args in "fetch --quiet --no-tags --end-of-options \"\$MIRROR_URL\" '+refs/heads/main:refs/heads/main'" "cat-file 'commit' HEAD" \
+    "fetch --'quiet' origin" "fetch '--end-of-options' \"\$U\""; do
+    expect "iii: ${args}" 0 scripts/a.sh "${R} ${args}"
+done
+# GC scripts/deploy.sh:121 and GW scripts/deploy.sh:377, verbatim: a call of mirror_run, no mirror line, so no finding.
+expect 'iii: the GC and GW signature read, verbatim' 0 scripts/deploy.sh "    IFS='|' read -r sig gf gk <<<\"\$(mirror_run log -1 --format='%G?|%GF|%GK' \"\$MERGE_SHA\")\""
+# The same read as one function per call, its words verbatim plus --end-of-options before the variable, and its call.
+SIG='en@v -i PATH=/usr/bin:/bin HOM@E="$MIRROR_HOME" GNUPGHOME="$GNUPG" GIT_NO_REPLACE_OBJECTS=1 "$MIRROR_GIT" -C "$MIRROR" -c gpg.program="$GPG" log -1 --format='"'%G?|%GF|%GK'"
+expect 'iii: the signature read as a function, with the end of options' 0 scripts/deploy.sh "mirror_sig() { ${SIG} --end-of-options \"\$MERGE_SHA\"; }"
+expect 'iii refused: the signature read as a function, no end of options (R7)' 1 scripts/deploy.sh "mirror_sig() { ${SIG} \"\$MERGE_SHA\"; }"
+expect 'iii: the signature read through that function' 0 scripts/deploy.sh "    IFS='|' read -r sig gf gk <<<\"\$(mirror_sig)\""
 # R7: a variable argument comes after --end-of-options, for all five subcommands.
 for args in 'fetch "$U"' 'fetch -- "$U"' 'fetch "$U" --end-of-options x' 'rev-parse --verify "$REF"' 'log -1 "$S"' \
     'cat-file commit "$S"' 'cat-file -p "$S"' 'cat-file --end-of-options commit "$S"' 'merge-base --is-ancestor "$A" "$B"'; do

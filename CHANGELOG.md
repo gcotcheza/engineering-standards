@@ -15,16 +15,19 @@ an opening of only `NAME=$(`, `local NAME=$(`, `NAME() {`, `{` or `(`; `env -i`;
 `-c gpg.program="$X"`; and `fetch`, `rev-parse`, `log`, `cat-file` or `merge-base`, to the line end
 (or `)`, `;` or `; }`). Every word is bash-literal (`[A-Za-z0-9_./:@^~+=%-]`, no tilde a shell expands)
 or exactly `"$NAME"` / `"${NAME}"`, so no brace, glob, parameter operator, array, positional, unquoted
-variable, quote, backslash or `$'…'` passes. `PATH` is one quoted variable or system directories. A
+variable, backslash or `$'…'` passes. An argument may also join single-quoted parts with no blank
+(`--format='%G?|%GF|%GK'`, `'refs/heads/main^{commit}'`): bash does nothing inside them, so each
+option is judged de-quoted against the same lists, and `'--upload-pack=x'` or `-'n'` refuses. Double
+quotes stay one whole `"$NAME"`, since bash expands inside them. `PATH` is one quoted variable or system directories. A
 variable argument must follow `--end-of-options`, which every subcommand's list holds (fetch:
 `--quiet`, `--no-tags`, `--prune`; rev-parse: `--verify`, `--quiet`; log: `-<n>`, `-n <n>`,
 `--format=`, `--pretty=`; cat-file: one type or `-t`/`-s`/`-e`/`-p` and one object; merge-base:
 `--is-ancestor`). Anything else stays a finding. Known limits, in the decision: the scan reads text,
 not values (a variable's value, and config under the mirror's home or repository, can name a command);
-a line is read alone (a heredoc, or a string opened on an earlier line, is read as code); and the
-round-2 deploy lines (a quoted refspec, `'…^{commit}'`, `--format='%G?…'`, a variable with no
-`--end-of-options`) stay findings until rewritten, and `log --format=%G?` cannot be. 155 new cases (514 in all);
-63 new mutant rows (130 in all); every row from before this pull request is kept, some rewritten where their line moved.
+a line is read alone (a heredoc, or a string opened on an earlier line, is read as code); and GC's and
+GW's `mirror_run` (`"$@"`, a double-quoted `GIT_SSH_COMMAND`, variables with no `--end-of-options`)
+stays a finding until rewritten as one function per call. 173 new cases (532 in all);
+68 new mutant rows (135 in all); every row from before this pull request is kept, some rewritten where their line moved.
 Why: decision: the-hook-bypass-scan-has-one-copy, decision: the-mirror-pass-reads-its-own-arguments.
 
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)

@@ -7,9 +7,11 @@ Card 929 (S1), the advisor's ruling, narrowed by review rounds 1 and 2 of ES #82
 - no parameter operator, quoted or not (`${U:---upload-pack=…}`, `${U/#/…}`);
 - no array, positional or every-argument word (`"${arr[@]}"`, `"${arr[*]}"`, `"$@"`, `"$*"`, `"$1"`);
 - no unquoted variable, which bash splits and globs;
-- no quote of any other shape, no backslash or `$'…'`, and no redirection, separator, substitution or comment.
+- no quote of any other shape (a subcommand argument may also join single-quoted parts, as below), no backslash or `$'…'`, and no redirection, separator, substitution or comment.
 
 A tilde at a word start, or after `=` or `:`, is a variable too (`~-` is `$OLDPWD`), so it refuses the pass. Two words are exceptions, each written exactly: the one `-c` and the one `GIT_SSH_COMMAND` below.
+
+**Single-quoted parts in an argument (round 3, (iii)).** After the subcommand, an argument may also join single-quoted parts (`'…'` holding no quote and no blank) to literal ones, as in `--format='%G?|%GF|%GK'`, `'+refs/heads/main:refs/heads/main'` or `'refs/heads/main^{commit}'`. Bash does nothing inside single quotes, so the word git sees is the word with its quotes taken out. No `$'` can form: a literal part never holds a `$`, and a variable word stands alone. The pass takes the quotes out of every argument before it reads one, so each option is judged as git sees it, against the same lists. `'--upload-pack=x'`, `--'upload-pack'=x` and `-'n'` refuse, as does a quote opened and never closed. Only the values of `--format=` and `--pretty=` may hold other characters, and a `--format=` value is only ever text to git. Double quotes stay allowed only as one whole `"$NAME"`, because bash expands inside them: `"${U:-…}"`, `"$@"` and `"$U"x` all refuse. The git word, the `-C` word, the subcommand and every assignment take no quotes but the one variable form.
 
 **What may stand before `env` (round 3).** Only the openings above. A word there such as `eval`, `ssh host` or `watch` makes a shell parse the expanded values again as code. A quote, backtick or `$'` there puts the rest of the line in a string. And `cmd &&` is a second command. So each of these keeps the line a finding.
 
@@ -28,7 +30,7 @@ A tilde at a word start, or after `=` or `:`, is a variable too (`~-` is `$OLDPW
 A plain `--` is not enough, because only fetch reads it that way. A literal argument that does not open with `-` passes. A literal option passes only on its subcommand's list, compared exactly:
 - `fetch`: `--quiet`, `--no-tags`, `--prune`. So no `--upload-pack` or any prefix of it, and no `--depth`, `-q` or `--QUIET`.
 - `rev-parse`: `--verify`, `--quiet`.
-- `log` (R2): `-<n>`, `-n` with a number next, `--format=…` and `--pretty=…` (with literal values). No `--ext-diff`, `--textconv`, `-p`, `--patch`, `-u`, or `--output=`, which writes a file.
+- `log` (R2): `-<n>`, `-n` with a number next, `--format=…` and `--pretty=…` (literal or single-quoted values). No `--ext-diff`, `--textconv`, `-p`, `--patch`, `-u`, or `--output=`, which writes a file.
 - `cat-file` (R3): exactly `commit`, `tree`, `blob`, `tag`, `-t`, `-s`, `-e` or `-p`, then an optional `--end-of-options`, then one object that does not open with `-`. A variable object needs that `--end-of-options`. No `--textconv`, `--filters`, `--path` or `--batch…`.
 - `merge-base` (R4): `--is-ancestor`.
 
@@ -41,9 +43,9 @@ Each subcommand is a builtin, which no alias can hide, and none makes a commit. 
 
 A line is read alone. One inside a heredoc, or inside a string opened on an earlier line, is read as code, and a shell that parses it again (`bash <<EOF`, `eval "$x"`) turns its values into code. That is the `bash -c` gap of the scan's own decision. A function or alias named `env` or `git` changes what runs; its body is judged as usual. A prefix kept in a variable with no subcommand (`local GIT="env -i … HOME=$H $MIRROR_GIT -C $M"`), and a function handed on as a runner (`ci_evidence … mirror_run`), stay findings or unseen (card 931).
 
-The deploy lines as written in round 2 stay findings until they are rewritten:
-- `'+refs/heads/main:refs/heads/main'` and `'refs/heads/main^{commit}'` are quoted, and the second holds a brace. Write them unquoted, as `+refs/heads/main:refs/heads/main` and `refs/heads/main^0`.
-- A variable with no `--end-of-options` before it.
-- `--format='%G?|%GF|%GK'` holds a glob character, and `%G?` cannot be written without one. A signature-status read through `log` stays a finding.
+The deploy lines as written today (GC `scripts/deploy.sh`:86-89 and GW :343-346, `mirror_run`) stay findings until they are rewritten:
+- The runner hands on `"$@"`. Write one function per call instead.
+- Its `GIT_SSH_COMMAND` is double-quoted with an unquoted `$SSH_KEY`. Write it as the one shape above.
+- Each variable needs `--end-of-options` before it. The quoted refspec, `'refs/heads/main^{commit}'` and `--format='%G?|%GF|%GK'` pass as written (single-quoted parts).
 
-A line the pass cannot clear is rewritten as one function per call, whose body names the subcommand and spells out its arguments: `mirror_main_sha() { env -i PATH=/usr/bin:/bin HOME="$MIRROR_HOME" "$MIRROR_GIT" -C "$MIRROR" rev-parse --verify --quiet refs/heads/main^0; }`.
+A line the pass cannot clear is rewritten as one function per call, whose body names the subcommand and spells out its arguments: `mirror_sig() { env -i PATH=/usr/bin:/bin HOME="$MIRROR_HOME" GNUPGHOME="$GNUPG" GIT_NO_REPLACE_OBJECTS=1 "$MIRROR_GIT" -C "$MIRROR" -c gpg.program="$GPG" log -1 --format='%G?|%GF|%GK' --end-of-options "$MERGE_SHA"; }`, read as `IFS='|' read -r sig gf gk <<<"$(mirror_sig)"`.

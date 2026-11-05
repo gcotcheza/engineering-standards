@@ -198,6 +198,7 @@ function mirrorok(e,    a, w, n, i, x, k, v, sc, opt, eoo) {
     n = split(a, w, /[ \t]+/)
     i = w[4] == "-c" ? 6 : 4
     sc = w[i]
+    for (k = i + 1; k <= n; k++) gsub(q, "", w[k])
     if (sc == "cat-file") {
         if (w[i + 2] == "--end-of-options") { eoo = 1; w[i + 2] = w[i + 3]; n-- }
         return n == i + 2 && w[i + 1] ~ CATTYPE && w[i + 2] !~ /^-/ && (eoo || w[i + 2] !~ "^" MVAR "$")
@@ -259,6 +260,9 @@ BEGIN {
     MLIT = "[A-Za-z0-9_./:@^~+=%-]+"
     MVAR = "\"\\$(" NAME "|\\{" NAME "\\})\""
     MWORD = "(" MLIT "|" MVAR ")"
+    # An argument may also join single-quoted parts, inert to bash, with no blank: its options are read de-quoted.
+    MQ = q "[^" q " \t]*" q
+    MARG = "((" MLIT "|" MQ ")+|" MVAR ")"
     VARHOME = "HOME=" MVAR
     SYSDIR = "/(usr/(local/)?)?s?bin"
     # git, the git of a system directory, or one quoted variable named for git.
@@ -271,7 +275,7 @@ BEGIN {
     MPRE = "^" MLEAD "env[ \t]+-i[ \t]+(" MASSIGN ")*" VARHOME "[ \t]+(" MASSIGN ")*"
     # decision: the-mirror-pass-reads-its-own-arguments
     GPGC = "([ \t]+-c[ \t]+gpg\\.program=\"\\$(" NAME "|\\{" NAME "\\})\")?"
-    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MWORD ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
+    MIRROR = MPRE MGIT "[ \t]+-C[ \t]+" MWORD GPGC "[ \t]+(fetch|rev-parse|log|cat-file|merge-base)([ \t]+" MARG ")*[ \t]*(\\)|;([ \t]*\\})?)?[ \t]*$"
     ENVOK = "^(PATH|GNUPGHOME|GIT_NO_REPLACE_OBJECTS|HOME|SSH_KEY)$"
     FETCHOPT = "^--(quiet|no-tags|prune|end-of-options)$"
     REVOPT = "^--(verify|quiet|end-of-options)$"
