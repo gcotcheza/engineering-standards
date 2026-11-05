@@ -2144,3 +2144,208 @@ other than docker still run as root (backlog 720). The export-tree block is now 
 fleet-deploy and fleet-deploy-on-merge are installed under /usr/local/sbin and still carry their own
 copies until a packet makes them source it. Rejected: git archive through git-as, whose bytes
 nothing ties to the sha; and a pack route from the app user, which gate-once makes unnecessary.
+
+### a-worktree-whose-git-config-names-a-filter-is-kept
+
+*2026-10-25 — A worktree whose git config names a filter is kept, and every status forces fsmonitor off*
+
+**Card 714.** Card 694 left three gaps, each a program a tree's own git config can make git run.
+
+**`worktree remove`.** Root's `${GIT} worktree remove` runs a `status` of its own inside the
+worktree, which started the tree's `core.fsmonitor` program, and that `status` refreshed and wrote
+the index, which fired `post-index-change` as root from a `core.hooksPath` in the tree's
+`config.worktree` (it outranks the fleet's global one) or from `.git/hooks` (ES #70's review). It
+is now `${GIT} --no-optional-locks -c core.fsmonitor=false worktree remove`, options after the
+seam as every other `${GIT}` call puts them; both reach the inner `status`. Probed on git 2.39.5
+with a script for every hook git names, in both places: without `--no-optional-locks` only
+`post-index-change` ran, and with it none did.
+
+**The other `status` calls.** `preflight.sh`'s two read `ROOT`, the app's checkout, which the app
+user can configure; `compose.sh`'s reads the same tree as the app user; `ledger.sh`'s two read the
+gate's tree, which the developer owns. A non-root user can set `core.fsmonitor` in each, so all
+five force it off. None was safe without it. All five already pass `--no-optional-locks`, so none
+writes the index or fires a hook; the `.env` probe's `ls-files` never writes the index.
+
+**Filters.** A `filter.<name>.clean` or `.process` program is run by `status` (and by `worktree
+remove`'s inner `status`) on a tracked file whose stat changed, with fsmonitor off too (probed on
+git 2.39.5 in a throwaway container). No single `-c` turns every filter off. So `cleanup_filters`
+reads `git config --show-scope --get-regexp '^filter\..*\.(clean|process)$'` through `WT_GIT`
+before `status`, and again just before `worktree remove`; a match in any scope but `system` (which
+only root can write) keeps the tree as `filter`, and a failed read keeps it too. `diff.*.textconv`
+is not checked: the same probe showed `status` never runs it. The pattern is `.*`, not `.+`: a
+filter may have an empty name (`[filter ""]`, selected by `* filter=`), which `.+` missed while
+`status` and root's `worktree remove` both ran it (ES #70's review).
+
+**The limits, plainly.** The read is not atomic with the git call after it: an app that writes a
+filter in that instant still has its program run, by `status` as its own uid through `git-as`
+(no escalation), or by root's `worktree remove` in the shorter window the second read leaves. A
+submodule's own config is not read, and `status` recurses into submodules; `worktree remove`
+refuses a tree with submodules. A box whose app-user global config names a filter (git-lfs, say)
+keeps every worktree as `filter` until that changes. The hook probe covers git 2.39.5 only: a
+later git that runs a hook from `worktree remove` itself, or from a `status` that takes no locks,
+would reach root again. The `status` calls in `preflight.sh`, `compose.sh` and `ledger.sh` read
+no filter guard: a filter that `ROOT`'s or the gate tree's own config names still runs there, as
+whichever user that call's git runs as. A test that set one in `ROOT` saw the deploy's own checks
+run it before the cleanup began.
+
+**The rest of the library.** Its other git calls (`rev-parse`, `merge-base`, `branch -r`,
+`cat-file`, `show`, `fetch`, `worktree list`, and the commit-to-commit `diff`s in `resolve.sh` and
+`ledger.sh`) never read a working tree, so fsmonitor and filters never start; they are unchanged.
+
+### grep-q-reads-a-here-string-not-a-pipe
+
+*2026-10-25 — grep -q never reads a pipe; a guard that must fail closed reads all its input*
+
+Under `set -o pipefail`, `<writer> | grep -q <pattern>` can give the wrong answer. grep -q exits at
+the first matching line; if the writer then writes again, it gets SIGPIPE and exits 141, and
+pipefail makes the whole pipeline fail. A match then reads as a miss, and a negated check
+(`! ... | grep -q`) passes. All it takes is one more write after the matched line. Output past the
+64 KiB pipe buffer does that every time. A short multi-line output does it now and then, because
+bash's printf builtin may write a few lines in several calls: on the VPS's bash 5.2.21, case 30 of
+gate-image-tags-test (577 bytes) went out in 7 writes with the match in the 6th, and the old pipe
+missed it about once in 3000 runs (card 730).
+
+So a guard that must fail closed reads its input fully: keep the pipe and drop -q
+(`<writer> | grep <pattern> >/dev/null`). grep then reads to the end, so the writer never takes
+SIGPIPE, and nothing touches disk. A here-string is no cure for such a guard: bash 5.2 keeps one
+larger than the pipe buffer in a temp file, and with the temp dir full it prints "cannot create temp
+file for here-document", grep reads nothing and the guard reads a miss (card 745, ES #83 review).
+A here-string (`grep -q <pattern> <<<"$text"`) is safe only when its failure fails closed or its
+input is small. The test helpers keep it, `matches` in the deploy lib's test.sh too: there a failed
+here-string is a FAIL. A reader that consumes all its input (`grep -c`, `wc`, `sort`, `sha256sum`)
+is safe in a pipe, and so is `head -n 1 | grep -q`: head has written its one line before grep can
+match it. Cards 704, 730 and 745.
+
+### the-hook-bypass-scan-has-one-copy
+
+*2026-10-26 — The hook-bypass scan has one copy, here, run against an app root*
+
+Card 746 (S1). `scripts/hook-bypass-scan.sh` and its cases, `scripts/hook-bypass-scan-test.sh`, are lifted from Memento at 466b957 (its scan was Fineprint's, widened with the routes this repository's deploy-library suite scan names; Fineprint keeps an older copy). Like `decisions-check.sh`, an app runs it from the central checkout against its own root, through its gate: `HOOK_BYPASS_GIT="$GIT" bash <standards>/scripts/hook-bypass-scan.sh <app-root> [<skipped path>...]`. Exit 0 clean, 1 with one line per finding, 2 when nothing was judged. This repository's gate runs it over its own tree and runs its cases in step 2. Apps move to this copy, and delete theirs, in follow-up cards; until then their own copies are findings when this one scans them.
+
+**What is skipped, and nothing else.** Every file git lists under `docs/`, in every app. The scanner itself, by its resolved path, since it names every route; an app's own copy of it is judged. And each path the caller names after the root, exact (never a directory or a prefix), skipped whole. The skips are arguments, not a file the scanner reads: the smallest form, in the one line of the app's gate that a reviewer already reads, with no file format to validate. This repository skips seven: `CHANGELOG.md`, `ENGINEERING-STANDARDS.md` and `ROLLOUT.md` name the routes in prose, and `scripts/gate-run-mutants.txt`, `scripts/gate-run-lib-run-mutants.txt` and `scripts/hook-bypass-scan-mutants.txt` are test data, mutant rows that rewrite the root gate's `env -i` lines or the scanner's own (advisor ruling, card 746). The seventh, `scripts/lib/deploy/test.sh`, came with the `env -u` rule below: its `git-as` shim runs git as another user with HOME unset on purpose, and the deploy lib changes only with a VERSION bump. The skip is temporary: card 759 reworks that shim to keep HOME out without `env -u HOME`, and then the skip is dropped. It was deferred past the 2026-11-02 lib version (card 863, which changed no shim); its trigger is now the next deploy-lib version change that touches `test.sh`'s `git-as` shim, or card 759 itself, whichever comes first. A path git lists that is not in the root (and is not a symlink) means git listed another tree, so the scan exits 2; an unstaged delete of a tracked file does the same until it is staged.
+
+**Three passes: Memento's two and one for root (advisor ruling, card 746).** `-e HOME=` or `--env HOME=` after the word `docker run` or `docker compose run`, before that command ends or a `$(` or backtick opens; `git config --get core.hooksPath` with nothing after the key but a command end; and `env -i`, assignments, exactly `HOME=/root`, assignments, then any command word in the same command, which hands root back its own home and so its own hooks. Any other HOME value or a suffix on it, a second `HOME=`, one after the command word or in a later command, a separator before the command, `env` without `-i` or no `env -i` at all stays a finding. **The gap this pass leaves:** the scanner cannot know who runs a line, so a non-root user running `env -i HOME=/root git commit` on the Pi, where the fleet hook lives in `~/.gitconfig`, would drop the hook and pass this scan.
+
+**One deliberate difference from this repository's suite scan, in the short `-n` rule only.** After `commit` or `merge`, quoted or not, the rest of the logical line is judged up to a command separator (`;`, `&` or `|` outside quotes; the `&` of `>&`, `<&` or `&>` and the `|` of `>|` are redirections), and a quoted string holding a blank or a shell operator is blanked to one word. So a dash-n inside a `-m` message or after `&&` is not a finding here. Everywhere else the scan matches the suite scan or is wider (comment lines are judged, the hooks key in any case).
+
+**Two rules new in this copy (the advisor's review of 466b957).** An empty quote pair, `''` or `""`, splits a word for nothing: ``git c''ommit -n`` is a commit with the short flag, and `core.hooks''Path` is the hooks key, yet both got past every text rule. Each pair is now dropped from a line before anything is judged, even inside the other quotes, which can only add findings. The cases therefore hide their own routes with a `@` that the fixture writer drops, never with a quote pair. And the read pass now needs `--get` as its own word: `git config --unset --no-get core.hooksPath` unsets the key, and was found only because the read pattern happened to need two dashes before `get`.
+
+**Bash drops quotes and backslashes inside a word, so the scan reads words as bash does (the advisor's review of 9ac4ffa).** `--no-"verify"`, `HOME\=/tmp`, `GIT_CONFIG_"GLOBAL"` and `commit"-tree"` are the routes, yet each passed. Every rule but `-n` now also judges a de-quoted copy of each line: each `"`, `'` and `\` removed, and the `$` of `$'…'` or `$"…"`. `-n` stays quote-aware, so a `-m` message is still no flag, but a quoted string with no blank or shell operator in it joins its word as bash joins it (`-"q"n`, `$'-n'`, `c"ommit"`), unless it opens the value of `-m` or another value option; a backslash outside quotes keeps the next character (`-\n`); and a redirection after `commit` ends the word (`commit>/dev/null -n`). `HOME+=` and `XDG_CONFIG_HOME+=` count as `=`. `scripts/hook-bypass-scan-mutants.txt` holds a mutant for each rule, pass and anchor and for the de-quoted copy. **The limit left:** the scan reads text, not values, so a route built from a variable, an alias or a function (`${v:-commit}`, `alias c=commit`) passes it. Nor does it join strings: Python's `"--no-" "verify"` or JavaScript's `'--no-' + 'verify'` is two strings to it, and passes.
+
+**A home taken away, or set by a builtin, is another home; an include key is the hooks key (the advisor's review of c0a845a).** `unset HOME`, in any of its forms, and `env -u HOME` (`--unset`, glued, after other options) drop the home git reads `~/.gitconfig` from, as `HOME=` replaces it, and the same holds for `XDG_CONFIG_HOME`. `HOME[0]=`, `read` (any options, any of its names), `readarray`, `mapfile`, `printf -v`, `declare`, `typeset`, `local`, `export -n`, `getopts`, `wait -p`, `for` or `select` over the name, a `coproc` named it, and `let` or `(( ))` that sets it, are findings too; a longer name (`MY_HOME`, `HOMEDIR`), a read of `$HOME` and a plain `export HOME` are not. `git -c include.path=`, `--config-env=include.path=` and `includeIf.<cond>.path` load a file that can set `core.hooksPath`, so they are findings in any case. `env -i` (or `-`, or `--ignore-environment`) is a finding only with a git word next, after its assignments: git, a path ending in it, or `"$GIT_BIN"`. The deploy lib runs `env -i` with no home before python3, bash and `"$@"` on purpose, so **the gaps this leaves**, pinned as passing cases, are `env -i … bash -c 'git …'`, a shell or script that runs git, and `env -i … "$@"` as in `scripts/lib/gate/run.sh`, where the caller decides whether git runs; the root pass above still passes `env -i HOME=/root`. A nameref (`declare -n r=HOME`, `local -n`, `typeset -n`) is a finding too. **Known limits, for card 747:** `exec -c git`, which clears the environment; `env -i` before `nice`, `timeout` or `sudo` and then git, the same wrapper family as `bash -c`; `-c 'includeIf.onbranch:a|b.path=…'`, as the rule stops reading at the `|`; and `(( ++HOME ))`.
+
+### t9-follows-the-deploy-lib
+
+*2026-10-26 — T9's check follows the shared deploy lib*
+
+Apps no longer vendor the deploy lib: their gates source `${DEPLOY_LIB}/ledger.sh`, with `DEPLOY_LIB` pinned to `/srv/engineering-standards/scripts/lib/deploy` by the app's own `scripts/lib/gate/deploy-lib.sh`. `gate-image-tags.sh` followed only sources inside the app tree, so every bare `docker compose` call below that source line came out unjudged and the check went red. Reflection's browser gate moved its ledger arm below such a call to get past it, which card 717 (arm before anything runs) forbids.
+
+The check now resolves a source path that starts with `$DEPLOY_LIB/` or `${DEPLOY_LIB}/` against `scripts/lib/deploy` of the standards clone the check itself runs from, and only on positive proof that the gate pinned it there. Proof is two things. First, the chain of files the gate sources, above that line, sources the app's `scripts/lib/gate/deploy-lib.sh`, and that file's first code (comment lines aside, whitespace normalised, nothing else) is exactly the pin block every app carries: `DEPLOY_LIB_CLONE` and `DEPLOY_LIB` set to the standards clone, then the test seam that points `DEPLOY_LIB` at `$DEPLOY_LIB_TEST_CLONE` only inside the guard that requires `DEPLOY_LIB_HARNESS=deploy-lib-test` and a non-root user. The guard refuses the seam for root, who runs every real gate, and a non-root run cannot write a ledger row a deploy trusts (the ledger is root's, mode 644). A non-root gate that sets both names itself would still get a stand-in lib, so its compose calls could build over the production tag while the check judged the real lib; that is why a write to either name taints the chain (below). Code before the block (a wrapping `if`, a `return`) breaks the match. Second, no file in the chain, the helper's rest included, mentions `DEPLOY_LIB`, `DEPLOY_LIB_TEST_CLONE` or `DEPLOY_LIB_HARNESS` except as a plain read, `$NAME` or `${NAME}`. Any other use (an assignment, `export`, `read`, `eval`, a nameref, `unset`, `exec {DEPLOY_LIB}<`, `${DEPLOY_LIB:=}`, a `-e DEPLOY_LIB=` argument) leaves every `$DEPLOY_LIB/` line of that gate script unjudged, wherever it sits in the chain, because a function or a loop makes "below the line" meaningless. Each name is matched as a whole token, so `GATE_DEPLOY_LIB_SUITE` does not count. `DEPLOY_LIB_CLONE` does not either: outside the seam branch nothing derives `DEPLOY_LIB` from it, so a write moves only the clone `deploy_lib_ready` inspects, never the lib a gate sources. Comments are not exempt: telling a comment from code needs a shell parser, and an `eval`'d string can turn a `#` line back into code.
+
+Round 2 enumerated assignment forms instead; review found nine it missed (another sourced file, `eval`, `IFS= read`, `if X=`, an export list, a nameref, `while read`, an inherited value), so the enumeration was removed. What this still cannot see is a name built at run time (`eval "DEPLOY_""LIB=x"`, `printf -v "$n"`), and a helper sourced inside a branch that does not run; both need a shell evaluator, not a text check. The scan also reads raw text with no eval, so a name split before the shell joins it passes too: a quote (`DEPLOY_LIB_HAR''NESS=`, `DEPLOY_L''IB=`, which passed before this change as well), a backslash (`DEPLOY\_LIB_HARNESS=`), a line continuation (`DEPLOY_LIB_HAR\` then `NESS=` on the next line) or a positional parameter (`$1DEPLOY_LIB_HARNESS=`). Normalising the text before the scan is backlog 761.
+
+A followed file is accepted only when its fully resolved path (`readlink -f`, so a symlink inside the lib counts by its target) lies inside the lib's physical path (`pwd -P`). Only a path that came through `$DEPLOY_LIB/` is held to the lib; a literal path into the lib, or another variable whose rest happens to land there, is judged by the app-tree rule and stays unjudged. A copy of the check with no `lib/deploy` beside it reads no `$DEPLOY_LIB/` path at all.
+
+Cases 65 to 81 in `gate-image-tags-test.sh` hold each part; the mutant sweep is in the PR's commit message.
+
+### mutant-sane-before-red
+
+*2026-10-26 — A mutant is checked before its red is believed*
+
+A deletion mutant can go red for a reason that has nothing to do with the guard it removed, and the
+red then reads as proof. Three of these have happened: deleting one line inside an if-block left the
+script unparseable, so every case failed on a syntax error; a mutant copied without its exec bit
+failed on "permission denied"; and a stale sed range removed more lines than the one under test.
+`scripts/mutant-sane.sh <original> <mutant> [<from>[-<to>]]` refuses each of these before a sweep
+trusts the red, and also refuses a mutant that is not a regular file on disk (a FIFO or a `<(...)`
+path is read once, so a multi-case suite sees it empty on every later case) and one identical to the
+original.
+
+Each check looks removable and is not. The mode comparison looks redundant when a sweep copies with
+`cp -p`, but a hand-made mutant is often `sed ... > copy` and loses the exec bit. The parse check runs
+only when the original has a bash or sh shebang, because other files are not bash and would fail it
+for no reason. The exact-deletion check compares bytes, not "some line went missing": with a range,
+the mutant must equal the original with exactly those lines removed (and the range must lie inside
+the original), and without one, `diff` must show one removed line and nothing added or changed.
+A symlink is refused, not followed, for the original as well as the mutant: `/dev/fd/N` is one, and it
+names whatever descriptor N holds in the process that opens it, so a case's child can read something
+else, or nothing. `[ -L ]` looks at the last name after the kernel has resolved `//`, `..` and every
+symlinked directory before it, so `//dev/fd/N`, a `..` route and a link to `/dev/fd` are all caught.
+Resolving first (`realpath -e`, `readlink -f`) would not do: in the checker's own process it turns
+`/dev/fd/N` into the file N holds there and passes it. A link a sweep made to a good file is refused
+too, which costs nothing, because sweeps write real files. A hardlink is a regular file and is judged
+by its bytes: one to the original is byte-identical, so it is refused.
+
+A replacement mutant, `<line> --replaced-with <text>`, must equal the original with exactly that line
+swapped for exactly that text, matched byte for byte, so `&` and backslashes mean themselves; the
+line keeps its newline or its lack of one, so a sweep that adds a final newline is refused. Text with
+a newline is a usage error, since it would swap one line for several. Text equal to the line's own is
+refused as byte-identical, and a line past the end is refused before the comparison, which would
+otherwise accept text appended to the file. Both forms count lines as awk does, so a last line with no
+newline counts and may be deleted. `scripts/guard-mutants.sh` runs the check on every mutant it writes, after
+its own `bash -n`, which stays a separate outcome: it parse-checks any target `bash -n` accepts,
+including sourced libs with no shebang that this check skips. A refused mutant is never counted red,
+and the summary line only gains a last field, so anything reading the older fields still matches.
+
+It cannot see a deleted `exit` after which the script still prints the message a suite greps for:
+the mutant is sane and the suite is weak. Suites assert the exit code as well as the text.
+
+### fleet-versions-reads-app-owners
+
+*2026-10-31 — The fleet check reads its projects from app-owners*
+
+Card 609 retired the vendored `docs/STANDARDS.md` and card 623 the vendored `scripts/lib/deploy/`, and the fleet check still found projects by those two files. By 2026-10-31 it reported 11 of 11 projects needing attention: nine apps it could no longer find came out UNLISTED, and the standards health row had been red for 27 days with nobody reading it, because a row that is always red says nothing.
+
+The projects are now the first column of `/etc/fleet/app-owners` (blank and `#`-led lines are notes, an unterminated last line counts), the registry every fleet tool already uses to say which apps exist. Walking `/var/www` for markers was removed as a way to find projects: it found a project by what it vendored, and the fleet has stopped vendoring. The UNLISTED row still walks the root, now asking "is this repository in the registry?", so a new repo that skips the registry is still named. `STANDARDS_APP_OWNERS` overrides the path for the test; `STANDARDS_PROJECTS` still wins over both.
+
+A registry that is missing, not a regular file, or lists no app makes the check exit 2 with a message: zero projects is never a clean fleet (C9).
+
+A listed app with no `docs/STANDARDS.md` and no `.claude/rules/standards.md` reads `retired (609)` whether or not it vendors a deploy lib, and counts as fine, but only when the directory is a checkout (it has a `.git`): an empty directory would otherwise read retired and the fleet clean. A left-behind link is still HALFRETIRED. A listed name with no directory, a directory with no `.git`, or a name that is `.`, `..` or contains `/` (which would point the check at the root, its parent or a nested path) is MISSING, since nothing there could be checked, and gets no deploy-lib row.
+
+An app with `scripts/deploy.sh` and no `scripts/lib/deploy/` reads `shared` (lowercase, so the watchdog's ALL-CAPS parser ignores it) when its `scripts/lib/gate/deploy-lib.sh` has the exact line `DEPLOY_LIB=<canonical>/scripts/lib/deploy`, the pin every de-vendored app carries; the version shown is the canonical clone's, because that is the lib the gate reads. Without that line it is still MISSING. An app that still vendors the lib (health-tracker until its #154) keeps the byte and VERSION comparison even when it also carries the pin, so its STALE row stays.
+
+### ghie-acknowledges-important-reports
+
+*2026-11-01 — Ghie acknowledges important reports*
+
+On 2026-11-01, in the advisor session, Ghie asked for this rule in their own words: "you know that i can not always read all your messages. Good that you requires recognition from me about important things, this should be a fleet rule from now on". That session had been holding one report at the top of every reply until Ghie answered it, and Ghie wanted every session to do the same.
+
+The reason is the hooks bypass found on the dev box on 2026-10-25. It was written into a merge-order file and stayed there for four days; it reached Ghie only when it surfaced again on 2026-10-29. Nobody hid it, and nobody delivered it either: a line in a file, a handoff or a journal is read by whoever opens that file, and Ghie does not open them. So W11 says a report Ghie must see counts as delivered only when Ghie acknowledges it in their own words, and the session keeps it as the first sentence of every reply until then. The acknowledgement (date and Ghie's words) goes in the session's fleet-docs journal page, `docs/journal/<date>-<session>.md`, and the daily review reads those pages: a security finding or incident with no acknowledgement line is the finding. Nothing checks this mechanically yet; `ROLLOUT.md` carries it as open work.
+
+Delivery has an owner. A session that receives such an item from a worker or a peer owns its delivery, so the item cannot fall between the one who found it and the one who talks to Ghie. A session Ghie is not talking to hands the item to the session Ghie does read, the advisor, which then holds it at the top of its replies. An acknowledgement says only that Ghie has seen the item; it is not approval of the step, and W3 still decides who merges.
+
+W11 covers three kinds only: a security finding, an incident (a site down, data lost or wrong, a guard bypassed), and a blocked step whose wait does harm, such as a security fix waiting for a merge or an install, or a site still down. A routine PR waiting for merge and a routine approval are not covered, nor are ordinary questions and decisions. An S8 advisory that a session already closed under W3, with a dependabot-only merge, goes in the journal and is not held: nothing is left for Ghie to do. These are left out on purpose, because every held item costs Ghie a read. If every question were held that way, the few that matter would be buried again, which is the failure this rule exists to stop.
+
+### one-base-vet-for-every-gate
+
+*2026-11-02 — One base vetting for every gate*
+
+Scribly, KidsQuest and Reflection each copied the same block that vets a gate's `--base <sha>`: the base is a commit, an ancestor of HEAD, behind origin/main, and, when HEAD is already merged, at or below the first parent of the main-line commit that took HEAD in. The third copy is where C1 says extract, so the block is now `base_vet` in `scripts/lib/deploy/base.sh`, and apps adopt it in their own pull requests.
+
+The caller hands in its git as the trailing words of the call, a word list (`git-as app -C tree`) or a function name (`git_owner`), because the apps reach git differently and the lib must not guess. The apps' second lines differ (the fetch hint, and Reflection's hint after the not-an-ancestor sentence), so those lines are arguments; every first sentence is the copies' own, word for word, because the apps' tests assert them.
+
+Two fixes ride the move. Every `merge-base --is-ancestor` reads exit 0 as yes and 1 as no, and anything else refuses with a sentence naming the exit; the first-parent `rev-list` of origin/main refuses on any non-zero exit too. Scribly and KidsQuest read an error in the floor loop as "not an ancestor" and broke early, which floors too late and accepts a base inside the merge; a truncated list does the same. And `base_vet_armed` closes the gap between vetting and the commit a row records: the base is vetted against HEAD, and whether the gate arms before vetting (KidsQuest, Scribly) or after it (Reflection), step 1 later reads its range against the armed sha, which can differ from the HEAD that was vetted. So a gate calls `base_vet_armed` after both, with `GATE_ARMED_SHA`, and it runs the whole vet again at that sha (`base_vet --head`), floor included: an ancestry check alone passes a base vetted under an unmerged child of a merged head and then armed on the merged head itself, where the base lies inside the merge.
+
+A refusal returns 2 rather than exiting, because a gate calls `base_vet` inside `$(...)` and decides itself to exit 2, before its trap can record anything; the call shape is `|| exit 2`. Every git call inside sits in a `||` list, so a gate under `set -e` still gets the sentence and the 2, never a silent exit 1.
+
+### ask-a-peer-to-diagnose-when-stuck
+
+*2026-11-04 — Ask a peer to diagnose when stuck*
+
+On 2026-11-04, Ghie asked for this fleetwide: "If you are stuck, try to ask peer diagnoses. If you are blocked by permission, i understand that you don't ask another peer to do it for you. That's the right step. But sometimes, you are blocked by things where a peer probably can help. Make this fleetwide. Increase cooperation to be more productive but critical to each other as a team. That way, we can keep the quality of our work to the highest possible we can."
+
+W12 is drawn between diagnosing and doing. A peer may explain a denial or confirm it was a false deny, from the quoted command and never by re-running it; the denied step still waits for the ruling, because doing it through a peer reaches the same effect by another route (S1, S7).
+
+"The same hour" and "the peer who owns that area" are the fleet's way of making Ghie's ask checkable, not Ghie's words: without a time and a named peer, the daily review would have nothing to flag. A W11 item still goes to Ghie at once; the peer ask runs alongside it. Nothing checks this mechanically yet; `ROLLOUT.md` carries it as open work.
+
+### ignored-files-in-the-build-context-wait
+
+*2026-11-05 — Ignored files in the build context wait for their own card*
+
+Card 363 asked two things of the root compose path: that a build runs only over the merge commit, and that no file the app user can add reaches the build context. Neither is fully done. What lib 2026-11-05 enforces is a check on the tracked files: `deploy_compose_tracked`, which `compose.sh run` calls before every `build`, `up`, `create` and `run` (the check from the 2026-10-05 decision "a build re-reads the tracked files"), now runs every git call as the app user with `-c core.useReplaceRefs=false` and refuses unless `git status --untracked-files=no` is empty, `ls-files -v` marks no file skip-worktree (`S`) or assume-unchanged (lowercase), `rev-parse --show-toplevel` is the root itself, and `rev-parse HEAD` is the sha in `<run>/export-sha`, which `deploy_compose_init` already proved is the merge. Each closes one way to make the live tree differ from the merge while that check reads clean, all found by card 363's review: a tree reset to another clean commit (refused naming both shas), a `git replace` of the merge by another commit (rev-parse still prints the merge; without the flag, status compares against the replacement), an edit to a file whose index flag tells status not to look, and a `core.worktree` in the tree's own `.git/config` that points git at a clean copy elsewhere (git-as vets `-c` keys only, and refuses `--work-tree`, so the tree cannot be forced; it is compared instead). `compose-test.sh` runs the last three against real git as well as the stub.
+
+What stays open, so the card is not closed by this: ignored and untracked files in a build context are not judged (below); the check runs before compose, so an edit between the check and the build is still built, the same race the tracked-files decision calls narrowed, not closed; and only `build`, `up`, `create` and `run` are checked, so `compose start`, `restart` or `scale` over images or containers already built are not. The status check also trusts stat data and an index the app user controls (`core.checkStat=minimal` or `core.trustctime=false` in `.git/config` with a same-size edit and its mtime restored, or a hand-forged `.git/index` entry), so an edit at the merge HEAD can still be built; building from a `git archive` of the exported merge, the next card, is what closes all of these.
+
+Ignored files are not judged here, on purpose. Refusing a tree where `git status --porcelain --ignored` lists anything under a path a Dockerfile COPYs is not cheap and would not be right. Every app's build context is its tree's root or a `docker/` directory, and every deployed tree holds ignored files by design: `.env`, `vendor/`, `node_modules/`, `storage/`, `public/build`. A blanket refusal stops every deploy. A narrow one has to know which of those files actually enter the context, which means parsing each Dockerfile's `COPY`/`ADD` sources (globs, `--from` stages, heredocs, `ARG`-built paths) and applying `.dockerignore` with Docker's own matching rules; a shell copy of those rules that drifts from Docker's reads as safe while it is not, which is worse than the known gap (C9).
+
+What already holds: `deploy_compose_buildcheck` refuses any file under `docker/` that is not in the merged commit, and every Dockerfile and `.dockerignore` must match the export byte for byte. What remains open: an ignored or untracked file elsewhere in a context that `.dockerignore` does not exclude can reach the image. The sound fix is to build from the exported commit itself (a `git archive` of the merge as the context, which is what fleet-deploy already does for `compose/` and `buildcheck/`), not to inspect the live tree; that is a fleet-deploy change and goes on its own card.
