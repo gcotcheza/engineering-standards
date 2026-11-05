@@ -1,13 +1,14 @@
 # Changelog
 
-## 2026-11-05 — a build runs only over the exported merge (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
+## 2026-11-05 — a build refuses a tree that differs from the exported merge in four more ways (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
 **Card 363.** `deploy_compose_tracked`, which `compose.sh run` calls before every `build`, `up`,
-`create` and `run`, now also reads `rev-parse --verify -q HEAD` as the app user (through the same
-`git-as` and timeout as its status) and refuses unless HEAD is the 40-hex sha in `<run>/export-sha`,
-naming both: an app user who resets the tree to another clean commit no longer gets it built. A failed
-rev-parse refuses too. Ignored and untracked files inside a build context are not judged yet. Why:
-decision: ignored-files-in-the-build-context-wait. `compose-test.sh` holds the cases; every header is
-re-stamped for 2026-11-05.
+`create` and `run`, now runs its git calls as the app user with `-c core.useReplaceRefs=false` and also
+refuses a file marked skip-worktree or assume-unchanged in `ls-files -v`, a `rev-parse --show-toplevel`
+other than the root (a `core.worktree`), and a HEAD other than the 40-hex sha in `<run>/export-sha`,
+naming both shas; a failed git call refuses too. Still open: ignored and untracked files in a build
+context, an edit between the check and the build, and `start`/`restart`/`scale`, which are not checked.
+Why: decision: ignored-files-in-the-build-context-wait. `compose-test.sh` holds the cases, three of
+them against real git; every header is re-stamped for 2026-11-05.
 
 ## 2026-11-04 — W12: when stuck, ask the peer who owns the area to diagnose (VERSION 2026-11-04)
 **New rule W12; the standard now has 42 rules** (Ghie, 2026-11-04). A stuck session asks the owning peer
