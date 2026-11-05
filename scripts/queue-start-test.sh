@@ -421,6 +421,19 @@ FILL="$(printf '\nfiller%.0s' {1..200000})"
 equals 'case 10l: framed Yes chrome atop a big screen' "$(verdict "│ 1. Yes${FILL}")" 0
 equals 'case 10l: an option block atop a big screen' "$(verdict $'❯ 1. Foo\n  2. Bar'"${FILL}")" 0
 equals 'case 10l: a confirm footer atop a big screen' "$(verdict "Enter to confirm · Esc to cancel${FILL}")" 0
+# A full temp dir (card 745): bash spills a big here-string to a file there and grep reads nothing.
+# QS_TEST_FULL_DIR names a small throwaway filesystem this case fills; unset, it skips.
+if [ -n "${QS_TEST_FULL_DIR:-}" ]; then
+    { [ -d "${QS_TEST_FULL_DIR}" ] && [ -w "${QS_TEST_FULL_DIR}" ]; } || fail "QS_TEST_FULL_DIR=${QS_TEST_FULL_DIR} is not a writable directory"
+    cat /dev/zero >"${QS_TEST_FULL_DIR}/qs-fill" 2>/dev/null
+    equals 'case 10l: the temp dir is full' "$(printf x 2>/dev/null >>"${QS_TEST_FULL_DIR}/qs-probe" && echo room || echo full)" full
+    equals 'case 10l: framed Yes chrome atop a big screen, temp dir full' "$(TMPDIR="${QS_TEST_FULL_DIR}" verdict "│ 1. Yes${FILL}")" 0
+    equals 'case 10l: an option block atop a big screen, temp dir full' "$(TMPDIR="${QS_TEST_FULL_DIR}" verdict $'❯ 1. Foo\n  2. Bar'"${FILL}")" 0
+    equals 'case 10l: a confirm footer atop a big screen, temp dir full' "$(TMPDIR="${QS_TEST_FULL_DIR}" verdict "Enter to confirm · Esc to cancel${FILL}")" 0
+    rm -f "${QS_TEST_FULL_DIR}/qs-fill" "${QS_TEST_FULL_DIR}/qs-probe"
+else
+    printf 'skip case 10l with a full temp dir (QS_TEST_FULL_DIR is unset)\n'
+fi
 
 # A dialog that comes up after the first Enter: no further key at all (an Enter would
 # answer it "1. Yes", and even C-u lands on it), deferred like any dialog, not recorded.
