@@ -6,7 +6,10 @@
 refuses a file marked skip-worktree or assume-unchanged in `ls-files -v`, a `rev-parse --show-toplevel`
 other than the root (a `core.worktree`), and a HEAD other than the 40-hex sha in `<run>/export-sha`,
 naming both shas; a failed git call refuses too. Still open: ignored and untracked files in a build
-context, an edit between the check and the build, and `start`/`restart`/`scale`, which are not checked.
+context, an edit between the check and the build, and `start`/`restart`/`scale`, which are not checked;
+and the status check trusts stat data and an index the app user controls (`checkStat`/`trustctime` in
+`.git/config`, a forged index), so an edit at the merge HEAD can still be built. Building from a
+`git archive` of the exported merge (the next card) closes all of these.
 Why: decision: ignored-files-in-the-build-context-wait. `compose-test.sh` holds the cases, three of
 them against real git; every header is re-stamped for 2026-11-05.
 

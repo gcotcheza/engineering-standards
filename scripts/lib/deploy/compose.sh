@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-05 sha256:c3a87774c1293f7b2516334064dd418ca8836ad3c271529af6ab81c7fd8283e5
+# fleet-deploy-lib 2026-11-05 sha256:19380775190f52004fcd6703a4b3789f0037510e9c452c6b64c6a3b3c9be2e40
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -194,7 +194,7 @@ deploy_compose_exec() {
 }
 
 # Before a build, up, create or run (a plain run builds a missing image), the tracked files as the app user
-# sees them, at the exported merge: an edit or a reset after the fast-forward is not built (cards 363, 371).
+# sees them, at the exported merge: an edit or a reset seen at this check is refused (cards 363, 371).
 # root, run dir -> 0, or 1 with DEPLOY_COMPOSE_ERR. decision: ignored-files-in-the-build-context-wait
 deploy_compose_tracked() {
     local out rc=0 merge top head flagged=$'\n([[:lower:]]|S) ([^\n]*)'
