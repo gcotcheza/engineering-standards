@@ -197,10 +197,11 @@ equals 'count: a directory below a linked parent refuses, and counts nothing' "$
     "REFUSED: root_owned_count: ${WORK}/count-link/root is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
 
 # root_owned_check: the gate's refusal; the uid standing in for root owns every fixture path unless R_UID names another.
+# OWNERSHIP_TEST_ROOT_UID=1 is the seam that lets DEPLOY_ROOT_UID stand in at all.
 rrun() {
-    OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID="${R_UID:-${ME}}" \
+    OUT="$(env -i PATH=/usr/bin:/bin TMPDIR="${R_TMP:-${TMPDIR:-/tmp}}" OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID="${R_UID:-${ME}}" \
         bash -c 'set -euo pipefail; . "$1"; shift; rc=0; root_owned_check "$@" || rc=$?; printf "RC=%s\n" "$rc"' _ "${LIB_DIR}/ownership.sh" "$@" 2>&1)"
-    R_UID=''
+    R_UID='' R_TMP=''
 }
 RT="${WORK}/check/root"
 mkdir -p "${RT}/a/sub" "${RT}/.claude"; : >"${RT}/a/sub/f"; : >"${RT}/.claude/settings.json"
@@ -215,7 +216,7 @@ contains 'check: a path under .claude is named (the gate counts at least what th
 contains 'check: the remedy says to fix the writer' "${OUT}" 'Fix the writer, never the file'
 contains 'check: a top that root owns too says its owner is not the app user' "${OUT}" "Root owns the tree's own top too, so $(id -un) is not the app user"
 contains 'check: and returns 1' "${OUT}" 'RC=1'
-OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID="${ME}" bash -c '. "$1"; tree=keep; root_owned_check "$2"; printf "after RC=%s tree=%s opts=%s\n" "$?" "$tree" "$-"' _ "${LIB_DIR}/ownership.sh" "${RT}" 2>&1)"
+OUT="$(env -i PATH=/usr/bin:/bin OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID="${ME}" bash -c '. "$1"; tree=keep; root_owned_check "$2"; printf "after RC=%s tree=%s opts=%s\n" "$?" "$tree" "$-"' _ "${LIB_DIR}/ownership.sh" "${RT}" 2>&1)"
 contains 'check: a refusal ends only the check, never the shell that sourced it, nor its names' "${OUT}" 'after RC=1 tree=keep opts=hB'
 R_UID=4242; rrun "${RT}//"
 equals 'check: a plain directory with trailing slashes is walked as itself' "${OUT}" "no root-owned path under ${RT}"$'\nRC=0'
@@ -241,8 +242,30 @@ R_UID='no-such-user-c660'; rrun "${RT}"
 contains 'check: a find that fails refuses' "${OUT}" "REFUSED: root_owned_check: find failed under ${RT}, so a count nobody took is not a clean tree"
 absent 'check: and never reads as clean' "${OUT}" 'no root-owned path'
 contains 'check: and returns 1' "${OUT}" 'RC=1'
-OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID=4242 bash "${LIB_DIR}/ownership.sh" "${RT}" 2>&1; printf 'RC=%s' "$?")"
+OUT="$(env -i PATH=/usr/bin:/bin OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID=4242 bash "${LIB_DIR}/ownership.sh" "${RT}" 2>&1; printf 'RC=%s' "$?")"
 equals 'check: run as a command, the lib file runs the check' "${OUT}" "no root-owned path under ${RT}"$'\nRC=0'
+# Without the seam DEPLOY_ROOT_UID is ignored and uid 0 is judged: as root a uid nobody holds, as nobody its own.
+if [ "${ME}" = 0 ]; then G_UID=4242 G_WANT='REFUSED: root_owned_check: 6 path(s)'; else G_UID=${ME} G_WANT="no root-owned path under ${RT}"; fi
+OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID="${G_UID}" bash "${LIB_DIR}/ownership.sh" "${RT}" 2>&1)"
+contains "check: DEPLOY_ROOT_UID=${G_UID} without OWNERSHIP_TEST_ROOT_UID=1 still judges uid 0" "${OUT}" "${G_WANT}"
+GL="${WORK}/check-glob"
+mkdir -p "${GL}/real-x/t" "${GL}/star*/t"; ln -s "${GL}/real-x" "${GL}/real-*"
+rrun "${GL}/real-*/t"
+equals 'check: a linked parent whose name is a glob matching the real path still refuses (a literal compare)' "${OUT}" \
+    "REFUSED: root_owned_check: ${GL}/real-*/t is not its own real path (a link above it, or a . .. or // part), so not one path was counted"$'\nRC=1'
+R_UID=4242; rrun "${GL}/star*/t"
+equals 'check: a real path holding * is its own real path' "${OUT}" "no root-owned path under ${GL}/star*/t"$'\nRC=0'
+SP="${WORK}/check space/root"; mkdir -p "${SP}"
+rrun "${SP}"
+printf -v SPQ '%q' "${SP}"
+contains 'check: a tree with a space gives a pasteable chown' "${OUT}" "chown -R $(id -un):$(id -gn) ${SPQ}, then"
+contains 'check: quoted with a backslash' "${OUT}" 'check\ space/root'
+NL="${WORK}/check-nl"; mkdir -p "${NL}"; : >"${NL}/new"$'\n'"line"
+rrun "${NL}"
+contains 'check: a name holding a newline counts once' "${OUT}" "REFUSED: root_owned_check: 2 path(s) under ${NL} are owned by root:"
+R_TMP="${WORK}/no-such-tmp"; rrun "${RT}"
+contains 'check: a mktemp that fails refuses' "${OUT}" "REFUSED: root_owned_check: mktemp failed, so not one path under ${RT} was counted"$'\nRC=1'
+absent 'check: and names no path' "${OUT}" "${RT}/a"
 if root_only_case 'check: the remedy names the owner of the tree'; then
     chown -hR nobody:nogroup "${RT}"; chown -h root "${RT}/a/sub/f"
     rrun "${RT}"
