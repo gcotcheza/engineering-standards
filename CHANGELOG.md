@@ -18,6 +18,11 @@ mutant run proves `-xdev`. `ownership-test.sh` holds every case and
 `README.md`'s vendored-scripts section and `ROLLOUT.md`'s root-owned and exit-75 rows no longer say apps vendor the lib. No app calls it yet; each switches in
 its own pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
 
+## 2026-11-04 — W12: when stuck, ask the peer who owns the area to diagnose (VERSION 2026-11-04)
+**New rule W12; the standard now has 42 rules** (Ghie, 2026-11-04). A stuck session asks the owning peer
+to diagnose, the same hour; a denial is never handed to a peer (S1, S7), though a peer may explain it.
+`README.md`, `SOURCES.md` and `ROLLOUT.md` move with it. Decision: `ask-a-peer-to-diagnose-when-stuck`.
+
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
 **Card 863.** The `--base <sha>` vetting copied into Scribly, KidsQuest and Reflection gates is now
 `base_vet` in `scripts/lib/deploy/base.sh`, with `base_vet_armed` for the re-check after
