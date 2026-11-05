@@ -1,0 +1,15 @@
+# The gate's root-owned check lives in the deploy lib
+
+Seven apps (Fineprint, GhieCode, Ghie Writes, Health Tracker, Memento, Reflection, Scribly) each carry their own `scripts/root-owned-check.sh`, the last gate step that refuses a tree holding any path root owns. All seven differ. C1 says the third copy is where the code is extracted, so the check is now `root_owned_check <dir>` in `scripts/lib/deploy/ownership.sh`, beside the deploy's own `root_owned_count`. Apps do not vendor it: their gates already source the lib from the one copy on the box through `DEPLOY_LIB` (decision: t9-follows-the-deploy-lib), so each app's gate calls `bash "${DEPLOY_LIB}/ownership.sh" <tree>` (the command entry, as `compose.sh` has one) or sources the file and calls the function, then deletes its own copy in its own pull request.
+
+The function is a subshell body, GhieCode's shape, so its `exit`, a refusal included, never ends or changes the gate that sourced it. It prints one line on stdout and returns 0 when the tree is clean; otherwise it names every path on stderr, then the remedy, and returns 1. The remedy reads the owner off the tree's top, as Scribly's does, because one hardcoded app name is wrong in every other app's worktree: write as `runuser -u <owner>`, fix the writer and never the file, and only once the writer is fixed hand the tree back with `chown -R <owner>:<group> <tree>`. When root owns the top too, the remedy says that name is not the app user.
+
+The predicate is `find -P <dir>/ -xdev -ignore_readdir_race -user ${DEPLOY_ROOT_UID:-0}`, the deploy's and the fleet health check's own, with the same refusals as `root_owned_count`: a link or a path with a trailing slash over a link, a non-directory, a relative or empty path, and a path that is not its own real path (a linked parent, a `.` or `..` part). A find that fails refuses, and is never read as clean. The glob refusal is not taken over: it guards `root_owned_count`'s `-path` pattern, and this check has none.
+
+`-xdev` is in. Memento and Scribly count across mounts today, so for those two the check gets looser: a root-owned path on a filesystem mounted inside the tree is no longer named. That is accepted because a mount inside a worktree is not part of the tree the deploy hands over or sweeps, and the gate should judge exactly what the deploy and the fleet health check judge; a gate that counts more refuses trees the box itself calls clean.
+
+`.claude` is not set aside, unlike `root_owned_count`. The gate must count at least what the deploy counts, and a root-owned file under `.claude/` in a gate worktree is still a root writer to fix, not a deploy-time exception.
+
+Fineprint's copy neither walks `<tree>/` nor resolves the start, so `root-owned-check.sh <a link to a tree>` passes with exit 0 over a root-owned file (proved in a container). No live caller passes a link, so the hole is latent; it closes when Fineprint calls the lib copy, which refuses a linked start outright.
+
+Cases are in `ownership-test.sh` (the `check:` lines); the mutants are in `scripts/deploy-lib-ownership-mutants.txt`, run as root in a throwaway container that may mount a tmpfs.

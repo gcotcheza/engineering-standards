@@ -1,0 +1,13 @@
+# T5 guard-deletion mutants for root_owned_check in scripts/lib/deploy/ownership.sh (card 660), for scripts/guard-mutants.sh.
+#   OWNERSHIP_TEST=$PWD/scripts/lib/deploy/ownership-test.sh OWNERSHIP_TEST_MOUNT=1 TMPDIR=<dir> scripts/guard-mutants.sh scripts/lib/deploy/ownership.sh scripts/deploy-lib-ownership-mutants.txt
+# Run as root in a throwaway container with CAP_SYS_ADMIN: roc-owner needs root, roc-xdev a tmpfs mount; a guard line deleted or loosened.
+roc-trim@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@    while [[ $tree == ?*/ ]]; do tree=${tree%/}; done@@
+roc-plain@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@    [[ $tree == /* && -d $tree && ! -L $tree ]] || { printf 'REFUSED: root_owned_check: %s is not a plain absolute directory, so not one path was counted\n' "$tree" >&2; exit 1; }@@
+roc-real@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@    [[ $(/usr/bin/realpath -e -- "$tree") == "$tree" ]] || { printf 'REFUSED: root_owned_check: %s is not its own real path (a link above it, or a . .. or // part), so not one path was counted\n' "$tree" >&2; exit 1; }@@
+roc-find-fails@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@        || { printf 'REFUSED: root_owned_check: find failed under %s, so a count nobody took is not a clean tree\n' "$tree" >&2; exit 1; }@@        || true
+roc-xdev@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@    found=$(/usr/bin/find -P "${tree%/}/" -xdev -ignore_readdir_race -user "${DEPLOY_ROOT_UID:-0}" -print) \@@    found=$(/usr/bin/find -P "${tree%/}/" -ignore_readdir_race -user "${DEPLOY_ROOT_UID:-0}" -print) \
+roc-clean@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@    [[ -n $found ]] || { printf 'no root-owned path under %s\n' "$tree"; exit 0; }@@
+roc-owner@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@    user=$(/usr/bin/stat -c %U -- "$tree") group=$(/usr/bin/stat -c %G -- "$tree")@@    user=root group=root
+roc-top-note@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@    [[ $(/usr/bin/stat -c %u -- "$tree") != "${DEPLOY_ROOT_UID:-0}" ]] || note="Root owns the tree's own top too, so ${user} is not the app user: name the app user yourself."@@
+roc-refuses@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@    exit 1@@
+roc-cli@@DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$OWNERSHIP_TEST"@@if [ "${BASH_SOURCE[0]}" = "$0" ]; then root_owned_check "$@"; exit; fi@@

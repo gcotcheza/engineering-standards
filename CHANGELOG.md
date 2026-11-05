@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-05 — one gate root-owned check in the deploy lib (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
+**Card 660.** Seven apps carried their own `scripts/root-owned-check.sh`, all different. The check is
+now `root_owned_check <dir>` in `scripts/lib/deploy/ownership.sh`, beside `root_owned_count`, and the
+file runs it when called as a command. It is a subshell, so a refusal never ends the gate that sourced
+it. It walks `<dir>/` with `-xdev` and the deploy's predicate, counts `.claude` too, refuses a link, a
+non-directory, a path that is not its own real path and a failing `find`, names every root-owned path,
+and prints a remedy naming the tree's owner. For Memento and Scribly `-xdev` is a loosening (they
+counted across mounts); Fineprint's copy passed a linked tree, a latent hole that closes when it calls
+the lib. `ownership-test.sh` holds every case; `scripts/deploy-lib-ownership-mutants.txt` holds the T5
+sweep, and every header is re-stamped for 2026-11-05. No app calls it yet; each switches in its own
+pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
+
 ## 2026-11-02 — one shared `--base` vetting in the deploy lib (deploy-lib VERSION 2026-11-02; the standard is unchanged and VERSION is not bumped)
 **Card 863.** The `--base <sha>` vetting copied into Scribly, KidsQuest and Reflection gates is now
 `base_vet` in `scripts/lib/deploy/base.sh`, with `base_vet_armed` for the re-check after

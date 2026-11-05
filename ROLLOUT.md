@@ -227,6 +227,15 @@ in the same change. Nothing breaks for the rest: each keeps its own count until 
 |---|---|---|
 | fineprint, ghiecode, ghie-writes, moneywise, reflection and scribly count root-owned paths through `root_owned_count` | Each vendors `ownership.sh` but counts with its own `find`; when it next re-vendors `scripts/lib/deploy/`, its verify step and `ROOT-OWNED` line call `root_owned_count "$ROOT"` instead, so a failing `find` refuses rather than reading as 0. | each project, in its own re-vendor PR |
 
+## Gate root-owned check — each app calls the lib copy
+
+`root_owned_check` (card 660) is in the library from deploy-lib `2026-11-05`. Nothing breaks: each app
+keeps its own `scripts/root-owned-check.sh` until it switches. Decision: gate-root-owned-check-lives-in-the-deploy-lib.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| fineprint, ghiecode, ghie-writes, health-tracker, memento, reflection and scribly refuse root-owned paths through `root_owned_check` | Each gate's last step runs its own copy; it calls `bash "${DEPLOY_LIB}/ownership.sh" <tree>` instead and deletes the copy and its test. Memento and Scribly stop counting across mounts (`-xdev`); Fineprint's linked-tree pass closes. | each project, in its own PR |
+
 ## Standards-text change — merge order
 
 **Merge order.** The exception is text, and a project reads it when it re-vendors
