@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-06 sha256:3d01dcd6254f6b50f4320034b674cab08d6c762680fb1c1656a61e431a46f695
+# fleet-deploy-lib 2026-11-06 sha256:e37c157d26f2f9b1c7e45e0cafbcc5a118b00ab19d942612d077fe642f826273
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -37,7 +37,7 @@ def fleet_off($ok): select(IN($ok[]) | not);
   (select($v.build.privileged == true) | "F\t\($s)\tbuild.privileged"),
   (select(($v.build.entitlements // []) | length > 0) | "F\t\($s)\tbuild.entitlements"),
   (select($v.build.network == "host") | "F\t\($s)\tbuild.network"),
-  (select(($v.build // {}) | has("provenance") and .provenance != false) | "F\t\($s)\tbuild.provenance other than false"),
+  (select(($v.build // {}) | has("provenance") and (IN(.provenance; false, "false") | not)) | "F\t\($s)\tbuild.provenance other than false"),
   ($v.volumes[]? | select(.type == "bind") | "P\t\($s)\tvolumes\t\(.source // "")"),
   ($v.env_file[]? | "P\t\($s)\tenv_file\t\(if type == "object" then .path else . end)"),
   ($v.build? // empty | "P\t\($s)\tbuild.context\t\(.context // "")"),
