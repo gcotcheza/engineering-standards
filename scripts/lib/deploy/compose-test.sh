@@ -466,6 +466,24 @@ policy_case provider '.services.app.provider = {type: "model"}' 'compose app set
 policy_case build_privileged '.services.app.build.privileged = true' 'compose app sets build.privileged,'
 policy_case build_entitlements '.services.app.build.entitlements = ["network.host"]' 'compose app sets build.entitlements,'
 policy_case build_network '.services.app.build.network = "host"' 'compose app sets build.network,'
+while read -r name v; do
+    policy_case "build_provenance_${name}" ".services.app.build.provenance = ${v}" 'compose app sets build.provenance other than false,'
+done <<'CASES'
+bool_true true
+str_true "true"
+str_cap_false "False"
+str_mode_max "mode=max"
+str_max "max"
+str_zero "0"
+str_empty ""
+null null
+CASES
+for v in str_false:'"false"' bool_false:false; do
+    cfx "build-provenance-${v%%:*}"; cjson ".services.app.build.provenance = ${v#*:}"
+    crun "${INIT}; deploy_compose up -d"
+    absent "build provenance ${v%%:*}: not refused" "${OUT}" 'REFUSED'
+    contains "build provenance ${v%%:*}: compose runs" "${ARGV}" "--env-file ${CENV} up -d"
+done
 policy_case volume_external '.volumes.data.external = true' 'compose volume data sets external,'
 policy_case network_driver_host '.networks = {n: {driver: "host"}}' 'compose network n sets driver host,'
 policy_case network_external_host '.networks = {n: {external: true, name: "host"}}' 'compose network n sets external host,'

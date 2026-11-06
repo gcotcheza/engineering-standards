@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-05 — one gate root-owned check in the deploy lib (deploy-lib VERSION 2026-11-05.3; the standard is unchanged and VERSION is not bumped)
+## 2026-11-06 — one gate root-owned check in the deploy lib (deploy-lib VERSION 2026-11-06.3; the standard is unchanged and VERSION is not bumped)
 **Card 660.** Seven apps carried their own `scripts/root-owned-check.sh`, all different. The check is
 now `root_owned_check <dir>` in `scripts/lib/deploy/ownership.sh`, beside `root_owned_count`, and the
 file runs it when called as a command; apps call the box copy through `DEPLOY_LIB`, never a vendored
@@ -14,11 +14,11 @@ two tightenings: Memento and Scribly stop counting across mounts; Fineprint's la
 closes; and a tree reached through a linked parent now refuses, so callers pass a `pwd -P` path. The
 mount case runs only with CAP_SYS_ADMIN and `OWNERSHIP_TEST_MOUNT=1`, so the gate skips it and the
 mutant run proves `-xdev`. `ownership-test.sh` holds every case and
-`scripts/deploy-lib-ownership-mutants.txt` the T5 sweep; every header is re-stamped for 2026-11-05.3.
+`scripts/deploy-lib-ownership-mutants.txt` the T5 sweep; every header is re-stamped for 2026-11-06.3.
 `README.md`'s vendored-scripts section and `ROLLOUT.md`'s root-owned and exit-75 rows no longer say apps vendor the lib. No app calls it yet; each switches in
 its own pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
 
-## 2026-11-05 — the deploy lib's `deploy_app_env_value` stops quitting its pipe early (deploy-lib VERSION 2026-11-05.2; the standard is unchanged and VERSION is not bumped)
+## 2026-11-06 — the deploy lib's `deploy_app_env_value` stops quitting its pipe early (deploy-lib VERSION 2026-11-06.2; the standard is unchanged and VERSION is not bumped)
 **Card 934.** The last line of `deploy_app_env_value` in `scripts/lib/deploy/compose.sh` piped the
 `.env` into `grep -m1`. grep quits at its first match, so with the key on line 1 of a `.env` past
 64 KiB, `printf` took SIGPIPE, and under `set -o pipefail` the read failed with 141 although the
@@ -28,10 +28,10 @@ full it reads as an empty value, the same as a missing key. The output is the sa
 missing key still gives no value (status 1 under pipefail, 0 without), and the REFUSED path is
 unchanged. New cases in `compose-test.sh`: a key on line 1 of a big `.env` under pipefail (red on
 the old line) and a missing key in the same file. No mutant list covers this file. VERSION rises
-to 2026-11-05.2, above card 745's 2026-11-05.1, and every header is re-stamped. Why:
+to 2026-11-06.2, above card 745's 2026-11-06.1, and every header is re-stamped. Why:
 decision: grep-q-reads-a-here-string-not-a-pipe.
 
-## 2026-11-05 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-05.1; the standard is unchanged and VERSION is not bumped)
+## 2026-11-06 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-06.1; the standard is unchanged and VERSION is not bumped)
 **Card 745.** The two files ES #72 left on the piped form. Under `set -o pipefail` a piped
 `grep -q` that quits at an early match SIGPIPEs its writer and reads as a miss. In
 `scripts/lib/deploy/test.sh`, `matches` takes a here-string, as #72's helpers do: if bash cannot
@@ -48,6 +48,13 @@ back; the new `scripts/dialog-lib-fulldisk-mutants.txt` puts each here-string ba
 VERSION rises because `deploy-lib-version.sh` counts `test.sh`; the lib headers are re-stamped,
 their hashes unchanged. Re-copy `dialog-lib.sh` to both boxes and to the Pi's vendored copy. Why:
 decision: grep-q-reads-a-here-string-not-a-pipe.
+
+## 2026-11-06 — root's compose allows `build.provenance: false` and refuses every other value (deploy-lib VERSION 2026-11-06; the standard is unchanged and VERSION is not bumped)
+**GW card 809.** The compose policy's `build` allow-list gains `provenance`, and a new F rule refuses it
+unless it is the string `"false"` (what compose-go's `transformStringOrX` renders YAML `false` as) or the
+boolean `false`; `true`, `"true"`, `"False"`, `"mode=max"`, `"max"`, `"0"`, `""` and `null` are refused,
+named by key only. An app can now turn BuildKit's attestation off so identical builds keep one image id.
+Why: decision: compose-build-provenance. `compose-test.sh` holds the cases; every header is re-stamped for 2026-11-06.
 
 ## 2026-11-05 — a build refuses a tree that differs from the exported merge in four more ways (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
 **Card 363.** `deploy_compose_tracked`, which `compose.sh run` calls before every `build`, `up`,
