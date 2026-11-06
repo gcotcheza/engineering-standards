@@ -1198,6 +1198,7 @@ the seven apps' deploy compose files use today (normalised `config --format json
 - top level (4): `name`, `networks`, `services`, `volumes`; plus any `x-` key, the one extra: compose ignores extension fields.
 - service (21): `build`, `cap_drop`, `command`, `depends_on`, `entrypoint`, `environment`, `healthcheck`, `image`, `mem_limit`, `memswap_limit`, `networks`, `ports`, `profiles`, `read_only`, `restart`, `security_opt`, `stop_grace_period`, `tmpfs`, `user`, `volumes`, `working_dir`.
 - `build` (3): `args`, `context`, `dockerfile`.
+  `provenance` is now allowed too, only when false; decision: compose-build-provenance.
 - a service's volume entry (6): `bind`, `read_only`, `source`, `target`, `type`, `volume`; `type` (2): `bind`, `volume`.
 - top-level volume (2): `driver`, `name`; top-level network (4): `driver`, `external`, `ipam`, `name`.
 
