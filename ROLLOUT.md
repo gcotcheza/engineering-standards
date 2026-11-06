@@ -216,16 +216,25 @@ them: the library never sees a step.
 
 | Open work | What is missing | Owner |
 |---|---|---|
-| A step that exits 75 ends the gate with `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exit 75, never `GATE FAILED` | Each adopter's `check.sh`/`ci.sh` still turns a give-up into its ordinary failure banner, which sends someone looking for a failure that never ran. Each takes the convention when it next re-vendors `scripts/lib/deploy/`, where the header comment names it and `docs/DECISIONS.md` carries the full text. | each project, in its own re-vendor PR |
+| A step that exits 75 ends the gate with `=== GATE NOT RUN (step N: name — heavy-work gave up) ===` and exit 75, never `GATE FAILED` | Each adopter's `check.sh`/`ci.sh` still turns a give-up into its ordinary failure banner, which sends someone looking for a failure that never ran. Each takes the convention in its own change to its gate, which reads the box copy of `scripts/lib/deploy/` through `DEPLOY_LIB`; the header comment names it and `docs/DECISIONS.md` carries the full text. | each project, in its own PR |
 
-## Root-owned count — each app switches at its next re-vendor
+## Root-owned count — each app switches in its own PR
 
 `root_owned_count` (card 527) is in the library from deploy-lib `2026-10-16`; kidsquest adopts it
-in the same change. Nothing breaks for the rest: each keeps its own count until it re-vendors.
+in the same change. Nothing breaks for the rest: each keeps its own count until its own PR calls the box copy through `DEPLOY_LIB`.
 
 | Open work | What is missing | Owner |
 |---|---|---|
-| fineprint, ghiecode, ghie-writes, moneywise, reflection and scribly count root-owned paths through `root_owned_count` | Each vendors `ownership.sh` but counts with its own `find`; when it next re-vendors `scripts/lib/deploy/`, its verify step and `ROOT-OWNED` line call `root_owned_count "$ROOT"` instead, so a failing `find` refuses rather than reading as 0. | each project, in its own re-vendor PR |
+| fineprint, ghiecode, ghie-writes, moneywise, reflection and scribly count root-owned paths through `root_owned_count` | Each reads `ownership.sh` from the box copy through `DEPLOY_LIB` (decision: t9-follows-the-deploy-lib) but counts with its own `find`; its verify step and `ROOT-OWNED` line call `root_owned_count "$ROOT"` instead, so a failing `find` refuses rather than reading as 0. | each project, in its own PR |
+
+## Gate root-owned check — each app calls the lib copy
+
+`root_owned_check` (card 660) is in the library from deploy-lib `2026-11-05`. Nothing breaks: each app
+keeps its own `scripts/root-owned-check.sh` until it switches. Decision: gate-root-owned-check-lives-in-the-deploy-lib.
+
+| Open work | What is missing | Owner |
+|---|---|---|
+| fineprint, ghiecode, ghie-writes, health-tracker, memento, reflection and scribly refuse root-owned paths through `root_owned_check` | Each gate's last step runs its own copy; it calls `bash "${DEPLOY_LIB}/ownership.sh" <tree>` instead and deletes the copy and its test. Memento and Scribly stop counting across mounts (`-xdev`); Fineprint's linked-tree pass closes. A tightening: a tree reached through a linked parent now refuses (Memento and Scribly resolved one with `pwd -P`; Fineprint's and Health Tracker's logical `cd .. && pwd` fails loud through a link), so each caller passes a physical, `pwd -P` path. | each project, in its own PR |
 
 ## Standards-text change — merge order
 

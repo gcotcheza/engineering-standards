@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-11-06 — one gate root-owned check in the deploy lib (deploy-lib VERSION 2026-11-06.3; the standard is unchanged and VERSION is not bumped)
+**Card 660.** Seven apps carried their own `scripts/root-owned-check.sh`, all different. The check is
+now `root_owned_check <dir>` in `scripts/lib/deploy/ownership.sh`, beside `root_owned_count`, and the
+file runs it when called as a command; apps call the box copy through `DEPLOY_LIB`, never a vendored
+one. It is a subshell, so a refusal never ends the gate that sourced it. One walk of `<dir>/` with
+`-xdev` and the deploy's predicate lists each root-owned path and counts it by a dot, so a newline in
+a name miscounts nothing; `.claude` is counted. It judges uid 0 unless the test seam
+`OWNERSHIP_TEST_ROOT_UID=1` lets `DEPLOY_ROOT_UID` stand in. It refuses a link, a non-directory, a
+path that is not its own real path (compared literally) and a failing `mktemp` or `find`, names every
+path, and prints a remedy naming the tree's owner, its `chown` quoted with `%q`. One loosening and
+two tightenings: Memento and Scribly stop counting across mounts; Fineprint's latent linked-tree pass
+closes; and a tree reached through a linked parent now refuses, so callers pass a `pwd -P` path. The
+mount case runs only with CAP_SYS_ADMIN and `OWNERSHIP_TEST_MOUNT=1`, so the gate skips it and the
+mutant run proves `-xdev`. `ownership-test.sh` holds every case and
+`scripts/deploy-lib-ownership-mutants.txt` the T5 sweep; every header is re-stamped for 2026-11-06.3.
+`README.md`'s vendored-scripts section and `ROLLOUT.md`'s root-owned and exit-75 rows no longer say apps vendor the lib. No app calls it yet; each switches in
+its own pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
+
 ## 2026-11-06 — the deploy lib's `deploy_app_env_value` stops quitting its pipe early (deploy-lib VERSION 2026-11-06.2; the standard is unchanged and VERSION is not bumped)
 **Card 934.** The last line of `deploy_app_env_value` in `scripts/lib/deploy/compose.sh` piped the
 `.env` into `grep -m1`. grep quits at its first match, so with the key on line 1 of a `.env` past
