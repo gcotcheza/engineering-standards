@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-06 — the deploy lib's `deploy_app_env_value` stops quitting its pipe early (deploy-lib VERSION 2026-11-06.2; the standard is unchanged and VERSION is not bumped)
+**Card 934.** The last line of `deploy_app_env_value` in `scripts/lib/deploy/compose.sh` piped the
+`.env` into `grep -m1`. grep quits at its first match, so with the key on line 1 of a `.env` past
+64 KiB, `printf` took SIGPIPE, and under `set -o pipefail` the read failed with 141 although the
+value was printed right. The pipe stays and every stage now reads to the end:
+`grep "^KEY=" | sed -n 1p | cut -d= -f2-`. A here-string would fail open there: with the temp dir
+full it reads as an empty value, the same as a missing key. The output is the same as before, a
+missing key still gives no value (status 1 under pipefail, 0 without), and the REFUSED path is
+unchanged. New cases in `compose-test.sh`: a key on line 1 of a big `.env` under pipefail (red on
+the old line) and a missing key in the same file. No mutant list covers this file. VERSION rises
+to 2026-11-06.2, above card 745's 2026-11-06.1, and every header is re-stamped. Why:
+decision: grep-q-reads-a-here-string-not-a-pipe.
+
 ## 2026-11-06 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-06.1; the standard is unchanged and VERSION is not bumped)
 **Card 745.** The two files ES #72 left on the piped form. Under `set -o pipefail` a piped
 `grep -q` that quits at an early match SIGPIPEs its writer and reads as a miss. In
