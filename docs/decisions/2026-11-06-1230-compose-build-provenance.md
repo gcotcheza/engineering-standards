@@ -1,0 +1,7 @@
+# Root's compose allows build.provenance only when it is false
+
+The root compose policy lets a service's `build` carry `args`, `context` and `dockerfile`, and now `provenance`, but only as the boolean `false`; any other value (`true`, `"mode=max"`, `"max"`, the string `"false"`, `null`) is refused by its own F rule, named by key and never by value.
+
+Why false is wanted: BuildKit attaches a provenance attestation to the image by default, and the attestation records the build's time and invocation, so two builds of identical sources produce two different image ids, and `up -d` keeps the old container (GW card 809); a deploy then cannot prove that the running container is the image built from the merge. With `provenance: false` an identical build gives an identical id, which is what lets a deploy bind its running container to the merged build (T9's second half, GW card 809).
+
+Why only false: provenance is the one `build` key that turns on extra work inside the builder, and its non-false forms (`mode=max` in particular) record build arguments and context details into an attestation stored with the image. Allowing the key in general would widen what an app's compose file can make root's build do; allowing the one value that switches the feature off widens nothing. The string `"false"` is refused too, so the rule matches one JSON value exactly and no parser's idea of truthiness decides it.
