@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-04 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
+## 2026-11-06 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Cards 928 and 929.** `scripts/hook-bypass-scan.sh` no longer reads `--no-verbose` (or `--no-verb`, or
 merge's `--no-verify-signatures`) as the long flag: the rule is now each prefix git takes for
 `--no-verify`, whole, from `--no-v` (which `git am` takes) to `--no-verify`, quoted or not. Every line
@@ -29,6 +29,13 @@ GW's `mirror_run` (`"$@"`, a double-quoted `GIT_SSH_COMMAND`, variables with no 
 stays a finding until rewritten as one function per call. 173 new cases (532 in all);
 68 new mutant rows (135 in all); every row from before this pull request is kept, some rewritten where their line moved.
 Why: decision: the-hook-bypass-scan-has-one-copy, decision: the-mirror-pass-reads-its-own-arguments.
+
+## 2026-11-06 — root's compose allows `build.provenance: false` and refuses every other value (deploy-lib VERSION 2026-11-06; the standard is unchanged and VERSION is not bumped)
+**GW card 809.** The compose policy's `build` allow-list gains `provenance`, and a new F rule refuses it
+unless it is the string `"false"` (what compose-go's `transformStringOrX` renders YAML `false` as) or the
+boolean `false`; `true`, `"true"`, `"False"`, `"mode=max"`, `"max"`, `"0"`, `""` and `null` are refused,
+named by key only. An app can now turn BuildKit's attestation off so identical builds keep one image id.
+Why: decision: compose-build-provenance. `compose-test.sh` holds the cases; every header is re-stamped for 2026-11-06.
 
 ## 2026-11-05 — a build refuses a tree that differs from the exported merge in four more ways (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
 **Card 363.** `deploy_compose_tracked`, which `compose.sh run` calls before every `build`, `up`,
