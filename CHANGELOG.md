@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-05 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-05.1; the standard is unchanged and VERSION is not bumped)
+## 2026-11-06 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-06.1; the standard is unchanged and VERSION is not bumped)
 **Card 745.** The two files ES #72 left on the piped form. Under `set -o pipefail` a piped
 `grep -q` that quits at an early match SIGPIPEs its writer and reads as a miss. In
 `scripts/lib/deploy/test.sh`, `matches` takes a here-string, as #72's helpers do: if bash cannot
@@ -17,6 +17,13 @@ back; the new `scripts/dialog-lib-fulldisk-mutants.txt` puts each here-string ba
 VERSION rises because `deploy-lib-version.sh` counts `test.sh`; the lib headers are re-stamped,
 their hashes unchanged. Re-copy `dialog-lib.sh` to both boxes and to the Pi's vendored copy. Why:
 decision: grep-q-reads-a-here-string-not-a-pipe.
+
+## 2026-11-06 — root's compose allows `build.provenance: false` and refuses every other value (deploy-lib VERSION 2026-11-06; the standard is unchanged and VERSION is not bumped)
+**GW card 809.** The compose policy's `build` allow-list gains `provenance`, and a new F rule refuses it
+unless it is the string `"false"` (what compose-go's `transformStringOrX` renders YAML `false` as) or the
+boolean `false`; `true`, `"true"`, `"False"`, `"mode=max"`, `"max"`, `"0"`, `""` and `null` are refused,
+named by key only. An app can now turn BuildKit's attestation off so identical builds keep one image id.
+Why: decision: compose-build-provenance. `compose-test.sh` holds the cases; every header is re-stamped for 2026-11-06.
 
 ## 2026-11-05 — a build refuses a tree that differs from the exported merge in four more ways (deploy-lib VERSION 2026-11-05; the standard is unchanged and VERSION is not bumped)
 **Card 363.** `deploy_compose_tracked`, which `compose.sh run` calls before every `build`, `up`,
