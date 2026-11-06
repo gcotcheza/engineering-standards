@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-11-06 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-06.1; the standard is unchanged and VERSION is not bumped)
+**Card 745.** The two files ES #72 left on the piped form. Under `set -o pipefail` a piped
+`grep -q` that quits at an early match SIGPIPEs its writer and reads as a miss. In
+`scripts/lib/deploy/test.sh`, `matches` takes a here-string, as #72's helpers do: if bash cannot
+make one, the case is a FAIL. In `scripts/lib/dialog-lib.sh`, the five checks keep the pipe and drop
+`-q` (`| grep -aE ... >/dev/null`), so grep reads the whole screen. A here-string would fail open
+there: bash 5.2 keeps a big one in a temp file, and with the temp dir full grep reads nothing, so a
+pane over 64 KiB read as no dialog and a tick
+would type into it. grep sees the same bytes as before. In `matches` an empty input is now one
+empty line, which no caller's pattern can match. New cases: a big-output `matches` in `test.sh`,
+three big-screen verdicts in `scripts/queue-start-test.sh` (red on the old lib), and the same three
+with a full temp dir, opt-in through `QS_TEST_FULL_DIR` and skip-printed without it (red on the
+here-string lib, run in a throwaway container). `scripts/dialog-lib-mutants.txt` puts each `-q` pipe
+back; the new `scripts/dialog-lib-fulldisk-mutants.txt` puts each here-string back, container only.
+VERSION rises because `deploy-lib-version.sh` counts `test.sh`; the lib headers are re-stamped,
+their hashes unchanged. Re-copy `dialog-lib.sh` to both boxes and to the Pi's vendored copy. Why:
+decision: grep-q-reads-a-here-string-not-a-pipe.
+
 ## 2026-11-06 — root's compose allows `build.provenance: false` and refuses every other value (deploy-lib VERSION 2026-11-06; the standard is unchanged and VERSION is not bumped)
 **GW card 809.** The compose policy's `build` allow-list gains `provenance`, and a new F rule refuses it
 unless it is the string `"false"` (what compose-go's `transformStringOrX` renders YAML `false` as) or the
