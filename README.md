@@ -259,4 +259,4 @@ guards, the dialog check's locale pin and the owners lint's sessions are
 `scripts/hook-bypass-scan-mutants.txt`, the hook-bypass scan's.
 `scripts/hook-bypass-scan.sh <app-root> [<path> | <path>:<sha256>...]` skips a bare path whole and a
 `<path>:<sha256>` one statement (all its physical lines), by the sha256 of its exact text, lines joined by
-a newline and no final one (`sed -n '<first>,<last>p' <file> | head -c -1 | sha256sum`).
+a newline and no final one (`printf '%s' "$(sed -n '<first>,<last>p' <file>)" | sha256sum`).
