@@ -257,5 +257,6 @@ guards, the dialog check's locale pin and the owners lint's sessions are
 `scripts/queue-start-mutants.txt`, `scripts/dialog-lib-mutants.txt` and
 `scripts/backlog-owners-lint-mutants.txt`, run by hand with `scripts/guard-mutants.sh`, as is
 `scripts/hook-bypass-scan-mutants.txt`, the hook-bypass scan's.
-`scripts/hook-bypass-scan.sh <app-root> [<path> | <path>:<sha256>...]` skips a bare path whole and
-a `<path>:<sha256>` one line, by the sha256 of its exact text (`printf '%s' "$line" | sha256sum`).
+`scripts/hook-bypass-scan.sh <app-root> [<path> | <path>:<sha256>...]` skips a bare path whole and a
+`<path>:<sha256>` one statement (all its physical lines), by the sha256 of its exact text, lines joined by
+a newline and no final one (`sed -n '<first>,<last>p' <file> | head -c -1 | sha256sum`).

@@ -2,11 +2,12 @@
 
 ## 2026-11-06 — the hook-bypass scan skips one line by its hash (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 946.** `scripts/hook-bypass-scan.sh` takes a line skip as `<path>:<sha256>`, beside the bare paths it
-skips whole: the sha256 of the line exactly as the file holds it, no trim, no newline, a CR kept
-(`printf '%s' "$line" | sha256sum`). The argument splits at its first colon and the hash must be 64
-lowercase hex, or exit 2. One argument permits one finding line with that hash; a second is a finding.
-Every applied skip prints its path, line number, hash, count and the line; a skip no finding line hashes
-to is stale, exit 1. Gate step 2 now skips the deploy lib's `test.sh` by its one `env -u HOME` line,
+skips whole: the sha256 of one statement (all its physical lines) exactly as the file holds it, lines
+joined by a newline, no trim, no final newline, a CR kept (`sed -n '<first>,<last>p' <file> | head -c -1 |
+sha256sum`). The argument splits at its first colon and the hash must be 64 lowercase hex, or exit 2; a
+`sha256sum` that gives no hash exits 2. One argument permits one finding statement with that hash; a second
+is a finding. Every applied skip prints, in argument order, its path, line number, hash, count and every
+line of the statement; a skip given more times than statements hash to it is stale, exit 1. Gate step 2 now skips the deploy lib's `test.sh` by its one `env -u HOME` line,
 not whole. Why: decision: the-hook-bypass-scan-skips-one-line-by-its-hash.
 
 ## 2026-11-06 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
