@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-05.2 sha256:ca4388cf03b06575182875ed2f7f48667854dffbf40098e1a2f5899aabbf1917
+# fleet-deploy-lib 2026-11-06.2 sha256:c8d4b48eca4d184ef8dadbbadd0101592f032a602190ee05bc0312a9ad840532
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -37,6 +37,7 @@ def fleet_off($ok): select(IN($ok[]) | not);
   (select($v.build.privileged == true) | "F\t\($s)\tbuild.privileged"),
   (select(($v.build.entitlements // []) | length > 0) | "F\t\($s)\tbuild.entitlements"),
   (select($v.build.network == "host") | "F\t\($s)\tbuild.network"),
+  (select(($v.build // {}) | has("provenance") and (IN(.provenance; false, "false") | not)) | "F\t\($s)\tbuild.provenance other than false"),
   ($v.volumes[]? | select(.type == "bind") | "P\t\($s)\tvolumes\t\(.source // "")"),
   ($v.env_file[]? | "P\t\($s)\tenv_file\t\(if type == "object" then .path else . end)"),
   ($v.build? // empty | "P\t\($s)\tbuild.context\t\(.context // "")"),
@@ -57,7 +58,7 @@ def fleet_off($ok): select(IN($ok[]) | not);
 (keys[] | select(startswith("x-") | not) | fleet_off(["name", "networks", "services", "volumes"]) | "A\ttop level\t\(.)"),
 (.services // {} | to_entries[] | .key as $s | .value | (
   (keys[] | fleet_off(["build", "cap_drop", "command", "depends_on", "entrypoint", "environment", "healthcheck", "image", "mem_limit", "memswap_limit", "networks", "ports", "profiles", "read_only", "restart", "security_opt", "stop_grace_period", "tmpfs", "user", "volumes", "working_dir"]) | "A\t\($s)\t\(.)"),
-  (.build? // empty | keys[] | fleet_off(["args", "context", "dockerfile"]) | "A\t\($s)\tbuild.\(.)"),
+  (.build? // empty | keys[] | fleet_off(["args", "context", "dockerfile", "provenance"]) | "A\t\($s)\tbuild.\(.)"),
   (.volumes[]? | keys[] | fleet_off(["bind", "read_only", "source", "target", "type", "volume"]) | "A\t\($s)\tvolumes.\(.)"),
   (.volumes[]? | .type | fleet_off(["bind", "volume"]) | "A\t\($s)\tvolumes.type \(.)"),
   empty)),
