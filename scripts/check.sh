@@ -128,9 +128,10 @@ step_2() {
     DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 2
     bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 2
     # The prose names the routes; the mutant tables are test data that rewrite the root gate's env -i lines or the scanner's;
-    # the deploy lib's test.sh has a git-as shim that drops HOME on purpose until card 759 (deferred past lib 2026-11-02).
+    # the deploy lib's test.sh has one git-as shim line that drops HOME on purpose until card 759, skipped by its sha256.
     HOOK_BYPASS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
-        scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/hook-bypass-scan-mutants.txt scripts/lib/deploy/test.sh || fail_step 2
+        scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/hook-bypass-scan-mutants.txt \
+        scripts/lib/deploy/test.sh:1b7e399fa4854b12935e4d8a134702d16122764eff22cb6f2de87a924e705a9b || fail_step 2
     bash "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 2
 }
 

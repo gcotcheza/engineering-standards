@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
 # S1: no file git lists outside docs/ stands a commit up past the fleet hook. Exit 0 clean, 1 per finding, 2 if nothing was judged.
-# hook-bypass-scan.sh <app-root> [<path> | <path>:<line text>...], run from this checkout; HOOK_BYPASS_GIT is the git seam.
-# decision: the-hook-bypass-scan-has-one-copy, the-hook-bypass-scan-skips-one-line-by-its-text
+# hook-bypass-scan.sh <app-root> [<path> | <path>:<sha256 of the line>...], run from this checkout; HOOK_BYPASS_GIT is the git seam.
+# decision: the-hook-bypass-scan-has-one-copy, the-hook-bypass-scan-skips-one-line-by-its-hash
 set -uo pipefail
 
-[ "$#" -ge 1 ] || { printf 'usage: hook-bypass-scan.sh <app-root> [<path> | <path>:<line text>...]\n' >&2; exit 2; }
+[ "$#" -ge 1 ] || { printf 'usage: hook-bypass-scan.sh <app-root> [<path> | <path>:<sha256 of the line>...]\n' >&2; exit 2; }
 SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/${BASH_SOURCE[0]##*/}"
 cd -- "$1" || exit 2
 shift
 HERE=$(pwd -P)
 declare -A skip=()
-lines=$(mktemp) && list=$(mktemp) && skipped=$(mktemp) && stale=$(mktemp) || exit 2
-trap 'rm -f "${lines}" "${list}" "${skipped}" "${stale}"' EXIT
+lines=$(mktemp) && list=$(mktemp) && skipped=$(mktemp) && stale=$(mktemp) && raw=$(mktemp) || exit 2
+trap 'rm -f "${lines}" "${list}" "${skipped}" "${stale}" "${raw}"' EXIT
 lpaths=()
 nl=$'\n'
 for p in "$@"; do
     [ -n "${p}" ] || { printf 'hook-bypass-scan: an empty skipped path, so nothing was judged.\n' >&2; exit 2; }
-    # A line skip splits at its first colon; its path and its text go to awk one line each.
+    # A line skip splits at its first colon; its path and its hash go to awk one line each.
     if [[ "${p}" == *:* ]]; then
-        [[ -n "${p%%:*}" && -n "${p#*:}" && "${p}" != *"${nl}"* ]] || { printf 'hook-bypass-scan: the line skip %s needs a path, a colon and one line of text, so nothing was judged.\n' "${p}" >&2; exit 2; }
+        [[ -n "${p%%:*}" && "${p}" != *"${nl}"* ]] || { printf 'hook-bypass-scan: the line skip %s needs a path of one line before its colon, so nothing was judged.\n' "${p}" >&2; exit 2; }
+        [[ "${p#*:}" =~ ^[0123456789abcdef]{64}$ ]] || { printf 'hook-bypass-scan: the line skip %s needs the sha256 of the line after its colon, 64 lowercase hex, so nothing was judged.\n' "${p}" >&2; exit 2; }
         printf '%s\n%s\n' "${p%%:*}" "${p#*:}" >>"${lines}"
         lpaths+=("${p%%:*}")
     else
@@ -49,7 +50,7 @@ done <"${list}"
 
 # Lines joined across a trailing backslash with nothing put between, as bash joins them, judged lowercased: git keys and
 # long flags take any case. A comment line is judged alone; `*` opens one only in a C-style file, so a shell `*)` arm is code.
-findings=$(HBS_LINES="${lines}" HBS_SKIPPED="${skipped}" HBS_STALE="${stale}" LC_ALL=C awk -v q="'" '
+findings=$(HBS_LINES="${lines}" HBS_RAW="${raw}" HBS_SKIPPED="${skipped}" HBS_STALE="${stale}" LC_ALL=C awk -v q="'" '
 function comment(file, s) {
     if (s ~ /^[ \t]*#/) return 1
     return file ~ /\.(php|js|mjs|cjs|ts|vue|css|scss)$/ && s ~ /^[ \t]*(\/\/|\/\*|\*)/
@@ -127,6 +128,15 @@ function elements(file, t,    u, m, b, fresh, opens, closes, closed, w, hit) {
     }
     if (closed) { incommit = 0; inrun = 0 }
     return hit
+}
+# The sha256 of a line as read, CR included and no newline added, which is how a caller hashes it.
+function sha256(s,    h, cmd) {
+    printf "%s", s > ENVIRON["HBS_RAW"]
+    close(ENVIRON["HBS_RAW"])
+    cmd = "sha256sum < \"$HBS_RAW\""
+    cmd | getline h
+    close(cmd)
+    return substr(h, 1, 64)
 }
 function hit(label) { if (!(label in seen)) { seen[label] = 1; found = found " " label } }
 # Every rule but -n, over t lowercased and s as written.
@@ -255,8 +265,8 @@ function judge(file, n, s, argvn,    p, e, k) {
     if (argvn || nrule(s) || nrule(ansic(s))) hit("commit or merge -n (a short --no-verify)")
     sub(/^\.\//, "", file)
     if (found == "") return
-    k = file SUBSEP first
-    if ((k in allowed) && ++count[k] <= allowed[k]) { at[k] = at[k] " " n; return }
+    k = (file in lpath) ? file SUBSEP sha256(first) : ""
+    if ((k in allowed) && ++count[k] <= allowed[k]) { at[k] = at[k] " " n; text[k] = first; return }
     printf "%s:%d:%s\n", file, n, found
 }
 BEGIN {
@@ -322,7 +332,7 @@ BEGIN {
     OPEN = "^[^\"" q "]*[[(]"
     if ((q "x" q ",") !~ ELEMS || "x" !~ ELEMS) { print "hook-bypass-scan: this awk misreads the argv-element pattern." > "/dev/stderr"; exit 2 }
     if ((q "x" q ", " q "x" q ",") !~ ELEMS) { print "hook-bypass-scan: this awk misreads repeated argv elements." > "/dev/stderr"; exit 2 }
-    while ((getline lp < ENVIRON["HBS_LINES"]) > 0 && (getline lt < ENVIRON["HBS_LINES"]) > 0) allowed[lp, lt]++
+    while ((getline lp < ENVIRON["HBS_LINES"]) > 0 && (getline lt < ENVIRON["HBS_LINES"]) > 0) { allowed[lp, lt]++; lpath[lp] = 1 }
 }
 FNR == 1 { if (held != "") judge(prev, start, held, 0); held = ""; incommit = 0; inrun = 0; prev = FILENAME }
 {
@@ -341,12 +351,12 @@ FNR == 1 { if (held != "") judge(prev, start, held, 0); held = ""; incommit = 0;
 }
 END {
     if (held != "") judge(prev, start, held, 0)
-    # One skip permits one line; each applied skip is printed with how many finding lines have its text, and 0 is stale.
+    # One skip permits one line; each applied skip is printed with its text and how many finding lines hash to it, 0 is stale.
     for (k in allowed) {
         split(k, a, SUBSEP)
-        if (!count[k]) { printf "hook-bypass-scan: stale line skip %s:%s matches no finding line; drop it.\n", a[1], a[2] > ENVIRON["HBS_STALE"]; continue }
+        if (!count[k]) { printf "hook-bypass-scan: stale line skip %s:%s, no finding line hashes to it; drop it.\n", a[1], a[2] > ENVIRON["HBS_STALE"]; continue }
         m = split(substr(at[k], 2), ns, " ")
-        for (i = 1; i <= m; i++) printf "hook-bypass-scan: skipped %s:%d (%d finding line(s) have this text)\n", a[1], ns[i], count[k] > ENVIRON["HBS_SKIPPED"]
+        for (i = 1; i <= m; i++) printf "hook-bypass-scan: skipped %s:%d sha256 %s (%d finding line(s) hash to it): %s\n", a[1], ns[i], a[2], count[k], text[k] > ENVIRON["HBS_SKIPPED"]
     }
 }
 ' "${files[@]}") || { printf 'hook-bypass-scan: awk could not read the tree, so nothing was judged.\n' >&2; exit 2; }

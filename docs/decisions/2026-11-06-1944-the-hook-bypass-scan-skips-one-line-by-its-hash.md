@@ -1,0 +1,9 @@
+# The hook-bypass scan skips one line by its hash
+
+Card 946 (S1), an extension of `the-hook-bypass-scan-has-one-copy` (card 746), which it does not supersede: the skips stay arguments, and a bare path keeps its whole-file meaning. An argument holding a colon is a line skip, `<path>:<sha256 of the line>`, split at its first colon; the hash is 64 lowercase hex, anything else exits 2, so a path holding a colon cannot be named, and a listed file whose path starts with a line skip's path and a colon also exits 2. An empty path, or one holding a newline, exits 2 (advisor and devbox16 rulings, 2026-11-06; a skip file was ruled out).
+
+**Why a hash, not the text.** The first form carried the line's text, so the gate script passing it held the flagged text and was itself a finding. A hash names the line without repeating it.
+
+The hash is of the line exactly as the file holds it, the first physical line where the finding is reported: no trimming, no newline added, a CR kept, so a CRLF ending or a trailing blank changes it (`printf '%s' "$line" | sha256sum`). A line skip permits one finding line in that file with that hash; a second is a finding, and an app that means two gives the argument twice. Every applied skip is printed on stdout on every run, `hook-bypass-scan: skipped <path>:<n> sha256 <hash> (<k> finding line(s) hash to it): <line>`, where k counts every finding line in the file with that hash, so a reviewer reads the text the hash stands for. A line skip that permits nothing, because its file, its line or the finding on it is gone, is stale: exit 1, naming it. Any other finding in a file with line skips, including a new route added beside a skipped one, stays a finding.
+
+This repository's gate now skips `scripts/lib/deploy/test.sh` by its one finding line (the `git-as` shim's `env -u HOME`, which 746 skipped whole) instead of the whole file, so a new route added to that file is a finding; the other six skips stay whole paths.
