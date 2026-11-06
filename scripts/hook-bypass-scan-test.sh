@@ -578,6 +578,45 @@ if [[ "${rc}" -eq 0 ]]; then ok 'the scanner does not judge itself'; else bad "t
 rc=0; bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 1 ]]; then ok "an app's own copy of the scanner is judged"; else bad "an app's own copy of the scanner exited ${rc}, wanted 1"; fi
 
+# --- a line skip, <path>:<line text>, permits that one line and nothing else (card 946) ---------
+# <label> <want rc> <repo> <stdout must hold> <stderr must hold> <skip>...; each @ in a skip is dropped as in fixture
+line_skip() {
+    local rc=0 out err args=("${@:6}")
+    out="$(bash "${SCAN}" "$3" "${args[@]//@/}" 2>"${WORK}/stderr")" || rc=$?
+    err="$(cat "${WORK}/stderr")"
+    if [[ "${rc}" -ne "$2" ]]; then bad "$1: exit ${rc}, wanted $2: ${out} ${err}"
+    elif [[ "${out}" != *"$4"* || "${err}" != *"$5"* ]]; then bad "$1: wanted '$4' out and '$5' err: ${out} ${err}"
+    else ok "$1"; fi
+}
+R='git commit --no-@verify -m x'
+repo="$(fixture scripts/a.sh 'true' "${R}")"
+line_skip 'a line skip is applied and printed with its count' 0 "${repo}" 'hook-bypass-scan: skipped scripts/a.sh:2 (1 finding line(s) have this text)' '' "scripts/a.sh:${R}"
+line_skip 'a line skip is printed on every run' 0 "${repo}" 'hook-bypass-scan: skipped scripts/a.sh:2 (1 finding line(s) have this text)' '' "scripts/a.sh:${R}"
+line_skip 'a line skip splits at its first colon only' 0 "$(fixture scripts/a.sh "x=1 ${R}:y")" 'skipped scripts/a.sh:1' '' "scripts/a.sh:x=1 ${R}:y"
+line_skip 'a path holding a colon is refused' 2 "$(fixture 'scripts/a:b.sh' "${R}")" '' 'scripts/a:b.sh holds a colon' "scripts/a:b.sh:${R}"
+line_skip 'a line skip with no text is refused' 2 "${repo}" '' 'needs a path, a colon and one line of text' 'scripts/a.sh:'
+line_skip 'a line skip with no path is refused' 2 "${repo}" '' 'needs a path, a colon and one line of text' ":${R}"
+line_skip 'a line skip must be the whole line' 1 "$(fixture scripts/a.sh "    ${R}")" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${R}"
+line_skip 'trailing spaces in the file do not match' 1 "$(fixture scripts/a.sh "${R}  ")" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${R}"
+line_skip 'a CRLF line in the file does not match' 1 "$(fixture scripts/a.sh "${R}"$'\r')" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${R}"
+repo="$(fixture scripts/a.sh "${R}" 'true' "${R}")"
+line_skip 'one line skip permits one line: the second with its text is a finding' 1 "${repo}" \
+    'hook-bypass-scan: skipped scripts/a.sh:1 (2 finding line(s) have this text)' 'hook-bypass-scan: scripts/a.sh:3:' "scripts/a.sh:${R}"
+line_skip 'the same line skip given twice permits two lines' 0 "${repo}" \
+    'hook-bypass-scan: skipped scripts/a.sh:1 (2 finding line(s) have this text)'$'\n''hook-bypass-scan: skipped scripts/a.sh:3 (2' '' "scripts/a.sh:${R}" "scripts/a.sh:${R}"
+repo="$(fixture scripts/a.sh 'true' 'echo x')"
+line_skip 'a line skip whose text is gone is stale' 1 "${repo}" '' "stale line skip scripts/a.sh:${R//@/} matches no finding line" "scripts/a.sh:${R}"
+line_skip 'a line skip whose file is gone is stale' 1 "${repo}" '' 'stale line skip scripts/gone.sh:' "scripts/gone.sh:${R}"
+line_skip 'a line skip whose line is no finding is stale' 1 "${repo}" '' 'stale line skip scripts/a.sh:echo x' 'scripts/a.sh:echo x'
+line_skip 'a whole-path skip with no line skip reports nothing stale' 0 "${repo}" '' '' scripts/a.sh
+repo="$(fixture scripts/a.sh "${R}" 'git commit -@n -m y')"
+line_skip 'a new route in a file with a line skip still goes red' 1 "${repo}" 'skipped scripts/a.sh:1' 'hook-bypass-scan: scripts/a.sh:2:' "scripts/a.sh:${R}"
+repo="$(fixture scripts/a.sh "${R}")"
+cp -- "${repo}/scripts/a.sh" "${repo}/scripts/b.sh"
+line_skip 'a line skip never permits another route in its file' 1 "$(fixture scripts/a.sh 'git commit -@n -m y')" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${R}"
+line_skip 'the same text in another file still goes red' 1 "${repo}" 'skipped scripts/a.sh:1' 'hook-bypass-scan: scripts/b.sh:1:' "scripts/a.sh:${R}"
+line_skip 'a whole-path skip and a line skip work together' 0 "${repo}" 'skipped scripts/b.sh:1' '' scripts/a.sh "scripts/b.sh:${R}"
+
 # --- nothing judged is never a pass ----------------------------------------
 repo="$(mktemp -d "${WORK}/empty.XXXXXX")"
 git -C "${repo}" init -q
