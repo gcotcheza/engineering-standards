@@ -116,10 +116,45 @@ function elements(file, t,    u, m, b, fresh, opens, closes, closed, w, hit) {
     if (closed) { incommit = 0; inrun = 0 }
     return hit
 }
+# Bash drops a quote or backslash inside a word, so a de-quoted copy is judged too: --no-"verify" is the long flag.
+function dequote(d) {
+    gsub("\\$[\"" q "]", "", d)
+    gsub("[\"" q "\\\\]", "", d)
+    return d
+}
+# An unset $x, ${x}, $1 or $@, or a $( ) or backticks that print nothing, splits a word for nothing: --no-${x}verify.
+function unspliced(t) {
+    gsub(/\$\{[^}]*\}/, "", t)
+    gsub(/\$\([^()]*\)/, "", t)
+    gsub(/`[^`]*`/, "", t)
+    gsub(/\$([a-z_][a-z0-9_]*|[1-9@*])/, "", t)
+    return t
+}
+# Brace expansion as bash does it, each alternative its own word: --no-{verify,} is --no-verify --no-.
+# Past 4096 chars the groups left are collapsed, so a padded line is still judged and never grows without bound.
+function braces(t,    pre, mid, post, wpre, wpost, n, alts, i, out) {
+    while (match(t, /\{[^{} \t]*,[^{} \t]*\}/)) {
+        if (length(t) > 4096) { gsub(/[{},]/, "", t); break }
+        pre = substr(t, 1, RSTART - 1)
+        mid = substr(t, RSTART + 1, RLENGTH - 2)
+        post = substr(t, RSTART + RLENGTH)
+        match(pre, /[^ \t;&|<>()]*$/)
+        wpre = substr(pre, RSTART)
+        pre = substr(pre, 1, RSTART - 1)
+        match(post, /^[^ \t;&|<>()]*/)
+        wpost = substr(post, 1, RLENGTH)
+        post = substr(post, RLENGTH + 1)
+        n = split(mid, alts, ",")
+        out = ""
+        for (i = 1; i <= n; i++) out = out (i > 1 ? " " : "") wpre alts[i] wpost
+        t = pre out post
+    }
+    return t
+}
 function hit(label) { if (!(label in seen)) { seen[label] = 1; found = found " " label } }
 # Every rule but -n, over t lowercased and s as written.
 function rules(t, s,    h, e, rest) {
-    if (index(t, "--no-ver") || t ~ /--no-ve?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")
+    if (t ~ LONGFLAG) hit("--no-verify (or a prefix of it)")
     if (index(t, "husky=0")) hit("HUSKY=0")
     # Only a --get read of the key with nothing after it but a command end passes, --get its own word (--no-get unsets).
     h = t
@@ -157,11 +192,10 @@ function judge(file, n, s, argvn,    d) {
     found = ""
     split("", seen)
     rules(tolower(s), s)
-    # Bash drops a quote or backslash inside a word, so a de-quoted copy is judged too: --no-"verify" is the long flag.
-    d = s
-    gsub("\\$[\"" q "]", "", d)
-    gsub("[\"" q "\\\\]", "", d)
+    d = dequote(s)
     rules(tolower(d), d)
+    # The long flag only, since a JS {HOME,x}= is no assignment: with splices dropped and braces expanded as bash would.
+    if (braces(dequote(unspliced(tolower(s)))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")
     # The -n rule reads quotes as bash does, so a -m message is no flag: as written, and with the quotes in each word joined.
     if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")
     sub(/^\.\//, "", file)
@@ -169,6 +203,7 @@ function judge(file, n, s, argvn,    d) {
 }
 BEGIN {
     Q = "[\"" q "]"
+    LONGFLAG = "--no-(ver|ve?([^a-z-]|$))"
     HOOKSREAD = "(^|[ \t])--get[ \t]+" Q "?core\\.hookspath" Q "?[ \t]*([;&|)`,]|$)"
     VERB = "(^|[^a-z0-9_-])(commit|merge)([ \t<>]|&>)"
     SHORT = "(^|[ \t)`])-[a-z]*n[a-z]*([ \t)`]|$)"

@@ -189,6 +189,33 @@ expect "r2 near miss: a message holding a quoted n" 0 scripts/a.sh "git commit -
 expect 'r2 near miss: a quoted pathspec holding a spaced n' 0 scripts/a.sh 'git commit -q -- "my -@n notes.txt"'
 expect 'r2 near miss: a container home before a $(' 0 scripts/e2e.sh 'docker run --rm -e HOM@E=/tmp node npm ci $(x)'
 
+# --- r4: bash expands braces and drops an empty splice, so the long flag is judged as bash would build it --
+expect 'r4: the long flag braced with an empty alternative' 1 scripts/a.sh 'git commit --no-{@verify,} -m x'
+expect 'r4: the long flag as one alternative of a brace' 1 scripts/a.sh 'git commit --{no-@verify,x} -m x'
+expect 'r4: the long flag with its first dash braced' 1 scripts/a.sh 'git commit -{-,}no-@verify -m x'
+expect 'r4: the long flag with its head braced' 1 scripts/a.sh 'git commit --no-{@ver,}ify -m x'
+expect 'r4: the long flag in a nested brace' 1 scripts/a.sh 'git commit --no-{@v{e,}rify,x} -m x'
+expect 'r4: the long flag quoted inside a brace' 1 scripts/a.sh 'git commit --no-{"@verify",} -m x'
+expect 'r4: the long flag split by ${x}' 1 scripts/a.sh 'git commit --no-${x}@verify -m x'
+expect 'r4: the long flag split by $x, its tail quoted' 1 scripts/a.sh 'git commit --no-$x"@verify" -m x'
+expect 'r4: the long flag split by $*' 1 scripts/a.sh 'git commit --no-$*@verify -m x'
+expect 'r4: the long flag split by an empty $( )' 1 scripts/a.sh 'git commit --no-$()@verify -m x'
+expect 'r4: the long flag split by empty backticks' 1 scripts/a.sh 'git commit --no-``@verify -m x'
+expect 'r4: the long flag inside a $( ) is still judged' 1 scripts/a.sh 'x=$(git commit --no-@verify -m x)'
+expect 'r4 near miss: prose that mentions verify' 0 scripts/a.sh 'echo "verify the build, then commit with --no-edit"'
+expect 'r4 near miss: --no-edit' 0 scripts/a.sh 'git commit --amend --no-edit'
+expect 'r4 near miss: --no-ff' 0 scripts/a.sh 'git merge --no-ff topic'
+expect 'r4 near miss: log --no-merges' 0 scripts/a.sh 'git log --no-merges'
+expect 'r4 near miss: a plain brace' 0 scripts/a.sh 'cp notes.{txt,bak} && echo {a,b}'
+expect 'r4 near miss: a brace of other --no- flags' 0 scripts/a.sh 'git merge --no-{edit,ff} topic'
+expect 'r4 near miss: a splice before another --no- flag' 0 scripts/a.sh 'git commit --no-${x}edit --no-$(true)ff'
+expect 'r4 near miss: a JS destructuring of HOME' 0 e2e/a.js 'const {HOM@E,x}=process.env'
+# 30 groups in one word are 2^30 words: past the cap the rest collapse, so the line is judged, and in time.
+pad="x$(printf '{a,b}%.0s' {1..30})"
+repo="$(fixture scripts/a.sh "${pad} && git commit --no-{@verify,} -m x")"
+rc=0; timeout 20 bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+if [[ "${rc}" -eq 1 ]]; then ok 'r4: a brace-padded line is judged in time'; else bad "r4: a brace-padded line exited ${rc}, wanted 1"; fi
+
 # --- one root-home pass: env -i, the root home among its assignments, then any git, in one command --
 expect 'root home: env -i with only the root home, then git' 0 scripts/a.sh 'en@v -i HOM@E=/root git -C / status'
 expect 'root home: assignments around the root home, then git' 0 scripts/a.sh 'clone_git() { en@v -i PATH=/usr/bin:/bin HOM@E=/root GIT_NO_REPLACE_OBJECTS=1 git -C / "$@"; }'

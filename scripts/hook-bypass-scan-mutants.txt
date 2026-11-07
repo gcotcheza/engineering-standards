@@ -1,7 +1,20 @@
 # T5 guard-deletion mutants for scripts/hook-bypass-scan.sh (card 746): each rule, pass and anchor, and the de-quoted copy.
 #   HBS_TEST=$PWD/scripts/hook-bypass-scan-test.sh scripts/guard-mutants.sh scripts/hook-bypass-scan.sh scripts/hook-bypass-scan-mutants.txt
-hb-long-flag@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(t, "--no-ver") || t ~ /--no-ve?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")@@
-hb-long-prefix@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(t, "--no-ver") || t ~ /--no-ve?([^a-z-]|$)/) hit("--no-verify (or a prefix of it)")@@    if (index(t, "--no-ver")) hit("--no-verify (or a prefix of it)")
+hb-long-flag@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (t ~ LONGFLAG) hit("--no-verify (or a prefix of it)")@@
+hb-long-prefix@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    LONGFLAG = "--no-(ver|ve?([^a-z-]|$))"@@    LONGFLAG = "--no-ver"
+hb-expanded@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (braces(dequote(unspliced(tolower(s)))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")@@
+hb-expanded-braces@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (braces(dequote(unspliced(tolower(s)))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")@@    if (dequote(unspliced(tolower(s))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")
+hb-expanded-dequote@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (braces(dequote(unspliced(tolower(s)))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")@@    if (braces(unspliced(tolower(s))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")
+hb-expanded-splices@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (braces(dequote(unspliced(tolower(s)))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")@@    if (braces(dequote(tolower(s))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")
+hb-splice-braced@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(/\$\{[^}]*\}/, "", t)@@
+hb-splice-subst@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(/\$\([^()]*\)/, "", t)@@
+hb-splice-backtick@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(/`[^`]*`/, "", t)@@
+hb-splice-name@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(/\$([a-z_][a-z0-9_]*|[1-9@*])/, "", t)@@
+hb-splice-special@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(/\$([a-z_][a-z0-9_]*|[1-9@*])/, "", t)@@    gsub(/\$([a-z_][a-z0-9_]*)/, "", t)
+hb-brace-cap@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (length(t) > 4096) { gsub(/[{},]/, "", t); break }@@
+hb-brace-collapse@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (length(t) > 4096) { gsub(/[{},]/, "", t); break }@@        if (length(t) > 4096) break
+hb-brace-wpre@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        for (i = 1; i <= n; i++) out = out (i > 1 ? " " : "") wpre alts[i] wpost@@        for (i = 1; i <= n; i++) out = out (i > 1 ? " " : "") alts[i] wpost
+hb-brace-wpost@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        for (i = 1; i <= n; i++) out = out (i > 1 ? " " : "") wpre alts[i] wpost@@        for (i = 1; i <= n; i++) out = out (i > 1 ? " " : "") wpre alts[i]
 hb-husky@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(t, "husky=0")) hit("HUSKY=0")@@
 hb-hookspath@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (index(h, "core.hookspath")) hit("core.hooksPath")@@
 hb-git-config@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (t ~ /git_config_[a-z0-9_]+/) hit("a GIT_CONFIG_ shim")@@
