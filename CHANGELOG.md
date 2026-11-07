@@ -8,9 +8,11 @@ one. It is a subshell, so a refusal never ends the gate that sourced it. One wal
 `-xdev` and the deploy's predicate lists each root-owned path and counts it by a dot, so a newline in
 a name miscounts nothing; `.claude` is counted. It judges uid 0 unless the test seam
 `OWNERSHIP_TEST_ROOT_UID=1` lets `DEPLOY_ROOT_UID` stand in. It refuses a link, a non-directory, a
-path that is not its own real path (compared literally) and a failing `mktemp` or `find`, names every
-path quoted with `%q` (a newline in a name cannot forge a line), and prints a remedy naming the tree's owner, its
-`chown` quoted with `%q`. All three ownership functions refuse through one `refuse_unless_own_dir`. One loosening and
+path that is not its own real path (compared literally) and a failing `mktemp` or `find`, names the tree and
+the first 50 paths quoted with `%q` (a newline in a name cannot forge a line), then how many more, the count
+exact, and prints a remedy last, naming the tree's owner, its `chown` quoted with `%q`. All three ownership
+functions refuse through one `refuse_unless_own_dir`, which also refuses `/` (and `//`, which trims to it), so
+not one of them can walk or chown the whole filesystem. One loosening and
 two tightenings: Memento and Scribly stop counting across mounts; Fineprint's latent linked-tree pass
 closes; and a tree reached through a linked parent now refuses, so callers pass a `pwd -P` path. The
 mount case runs only with CAP_SYS_ADMIN and `OWNERSHIP_TEST_MOUNT=1`, so the gate skips it and the

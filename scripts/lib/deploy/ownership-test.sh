@@ -102,8 +102,8 @@ fi
 ofx refusals
 ln -s "${OROOT}" "${OF}/root-link"
 for d in root "${OF}/root-link" "${OF}/missing" ''; do
-    orun "${d}" "${TO}"
-    contains "dir: [${d}] refuses" "${OUT}" "REFUSED: chown_root_owned: ${d} is not a plain absolute directory"
+    orun "${d}" "${TO}"; printf -v QD '%q' "${d}"
+    contains "dir: [${d}] refuses" "${OUT}" "REFUSED: chown_root_owned: ${QD} is not a plain absolute directory"
     contains "dir: [${d}] returns 1" "${OUT}" 'RC=1'
 done
 for o in nobody 'nobody:nogroup;id' ':nogroup' 'Nobody:nogroup'; do
@@ -129,7 +129,7 @@ fi
 equals 'refusals: no chown ran' "${LOG}" ''
 for d in / //; do
     orun "${d}" nobody
-    contains "dir: [${d}] is still a plain directory (the owner check is what refuses)" "${OUT}" "REFUSED: chown_root_owned: 'nobody' is not user:group"
+    contains "dir: [${d}] refuses as the whole filesystem, before the owner check" "${OUT}" "REFUSED: chown_root_owned: / is the whole filesystem, never an app tree"
 done
 ofx trailing-slash
 orun "${OROOT}//" "${TO}"
@@ -156,6 +156,28 @@ done
 hrun who "${WORK}/helper-link/root"
 equals 'helper: a linked parent refuses as not its own real path, with no suffix when none is given' "${OUT}" \
     "REFUSED: who: ${WORK}/helper-link/root is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
+
+hrun who /
+equals 'helper: / refuses as the whole filesystem' "${OUT}" 'REFUSED: who: / is the whole filesystem, never an app tree'$'\nRC=1'
+for d in // /.; do
+    hrun who "${d}"
+    equals "helper: [${d}] refuses as not its own real path" "${OUT}" \
+        "REFUSED: who: ${d} is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
+done
+# Every caller refuses / and what trims to it. find's -user names nobody, so with the refusal gone find stops
+# before walking a path, and chown is a stub that only logs: never a walk of the real /.
+SL="${WORK}/slash"; mkdir -p "${SL}/bin"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/chown.log"\nexit 1\n' "${SL}" >"${SL}/bin/chown"; chmod 0755 "${SL}/bin/chown"
+for fn in chown_root_owned root_owned_count root_owned_check; do
+    for d in / // /.; do
+        OUT="$(env -i PATH=/usr/bin:/bin OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID=no-such-user-c660 DEPLOY_EXEC_PATH="${SL}/bin:/usr/bin:/bin" \
+            bash -c '. "$1"; rc=0; "$2" "$3" "$4" || rc=$?; printf "RC=%s\n" "$rc"' _ "${LIB_DIR}/ownership.sh" "${fn}" "${d}" "${TO}" 2>&1)"
+        if [ "${d}" = /. ]; then want="REFUSED: ${fn}: /. is not its own real path"; else want="REFUSED: ${fn}: / is the whole filesystem, never an app tree"; fi
+        contains "slash: ${fn} [${d}] refuses" "${OUT}" "${want}"
+        contains "slash: ${fn} [${d}] returns 1" "${OUT}" 'RC=1'
+    done
+done
+equals 'slash: chown is never reached' "$(cat "${SL}/chown.log" 2>/dev/null)" ''
 
 # root_owned_count: the uid standing in for root owns every fixture path; .claude/** is not counted.
 crun() {
@@ -194,8 +216,8 @@ contains 'count: a find that fails refuses' "${OUT}" "REFUSED: root_owned_count:
 equals 'count: and prints no count, only RC=1' "$(grep -cx '[0-9]*' <<<"${OUT}")" 0
 contains 'count: and returns 1' "${OUT}" 'RC=1'
 for d in root "${WORK}/count/root-link" "${WORK}/count/missing" ''; do
-    crun "${d}"
-    contains "count: [${d}] refuses" "${OUT}" "REFUSED: root_owned_count: ${d} is not a plain absolute directory"
+    crun "${d}"; printf -v QD '%q' "${d}"
+    contains "count: [${d}] refuses" "${OUT}" "REFUSED: root_owned_count: ${QD} is not a plain absolute directory"
     contains "count: [${d}] returns 1" "${OUT}" 'RC=1'
 done
 for d in "${WORK}/count/root-link/" "${WORK}/count/root-link//"; do
@@ -240,9 +262,9 @@ equals 'check: a plain directory with trailing slashes is walked as itself' "${O
 rrun "${RT}/"
 contains 'check: and a trailing slash still names its paths' "${OUT}" $'\n'"${RT}/a/sub/f"$'\n'
 for d in "${WORK}/check/root-link" "${RT}/a/sub/f" "${WORK}/check/missing" root ''; do
-    rrun "${d}"
+    rrun "${d}"; printf -v QD '%q' "${d}"
     equals "check: [${d}] (a link, a file, missing, relative or empty) refuses and counts nothing" "${OUT}" \
-        "REFUSED: root_owned_check: ${d} is not a plain absolute directory, so not one path was counted"$'\nRC=1'
+        "REFUSED: root_owned_check: ${QD} is not a plain absolute directory, so not one path was counted"$'\nRC=1'
 done
 for d in "${WORK}/check/root-link/" "${WORK}/check/root-link//"; do
     rrun "${d}"
@@ -269,7 +291,7 @@ GL="${WORK}/check-glob"
 mkdir -p "${GL}/real-x/t" "${GL}/star*/t"; ln -s "${GL}/real-x" "${GL}/real-*"
 rrun "${GL}/real-*/t"
 equals 'check: a linked parent whose name is a glob matching the real path still refuses (a literal compare)' "${OUT}" \
-    "REFUSED: root_owned_check: ${GL}/real-*/t is not its own real path (a link above it, or a . .. or // part), so not one path was counted"$'\nRC=1'
+    "REFUSED: root_owned_check: ${GL}/real-\\*/t is not its own real path (a link above it, or a . .. or // part), so not one path was counted"$'\nRC=1'
 R_UID=4242; rrun "${GL}/star*/t"
 equals 'check: a real path holding * is its own real path' "${OUT}" "no root-owned path under ${GL}/star*/t"$'\nRC=0'
 SP="${WORK}/check space/root"; mkdir -p "${SP}"
@@ -283,6 +305,19 @@ contains 'check: a name holding a newline counts once' "${OUT}" "REFUSED: root_o
 printf -v NLQ '%q' "${NL}/new"$'\n'"line"
 contains 'check: a name holding a newline is printed %q-quoted, as one line' "${OUT}" $'\n'"${NLQ}"$'\n'
 absent 'check: so its second half never stands alone as a forged line' "${OUT}" $'\n'"line"$'\n'
+# The list stops at 50 paths and says how many more; the count stays exact and the remedy stays last.
+listed() { printf '%s\n' "${OUT}" | awk '/ are owned by root:$/ { f = 1; next } f && /^$/ { exit } f'; }
+CP="${WORK}/check-cap"; mkdir -p "${CP}"; for i in $(seq 1 52); do : >"${CP}/f${i}"; done
+rrun "${CP}"
+contains 'cap: 53 paths are counted exactly' "${OUT}" "REFUSED: root_owned_check: 53 path(s) under ${CP} are owned by root:"
+equals 'cap: 50 paths are listed, then one more line' "$(listed | wc -l)" 51
+equals 'cap: which says how many more' "$(listed | tail -n 1)" '… and 3 more'
+contains 'cap: the remedy is still at the tail' "$(printf '%s\n' "${OUT}" | tail -n 3)" "chown -R"
+rm -f "${CP}/f50" "${CP}/f51" "${CP}/f52"
+rrun "${CP}"
+contains 'cap: 50 paths are counted' "${OUT}" "REFUSED: root_owned_check: 50 path(s) under ${CP} are owned by root:"
+equals 'cap: 50 paths are all listed' "$(listed | wc -l)" 50
+absent 'cap: with no more line' "${OUT}" '… and '
 R_TMP="${WORK}/no-such-tmp"; rrun "${RT}"
 contains 'check: a mktemp that fails refuses' "${OUT}" "REFUSED: root_owned_check: mktemp failed, so not one path under ${RT} was counted"$'\nRC=1'
 absent 'check: and names no path' "${OUT}" "${RT}/a"
