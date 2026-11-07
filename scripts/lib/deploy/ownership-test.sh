@@ -140,6 +140,23 @@ orun "${OROOT}" "${TO}"
 contains 'fail: a chown that fails refuses' "${OUT}" "REFUSED: chown_root_owned: find or chown failed under ${OROOT}, so root-owned paths may remain"
 contains 'fail: and returns 1' "${OUT}" 'RC=1'
 
+# refuse_unless_own_dir: the one plain-directory and real-path refusal all three callers share.
+hrun() {
+    OUT="$(env -i PATH=/usr/bin:/bin bash -c '. "$1"; shift; refuse_unless_own_dir "$@"; printf "RC=%s\n" "$?"' _ "${LIB_DIR}/ownership.sh" "$@" 2>&1)"
+}
+HD="${WORK}/helper/root"; mkdir -p "${HD}"
+ln -s "${HD}" "${WORK}/helper/root-link"; ln -s "${WORK}/helper" "${WORK}/helper-link"
+hrun who "${HD}"
+equals 'helper: a plain directory that is its own real path passes silently' "${OUT}" 'RC=0'
+for d in "${WORK}/helper/root-link" "${WORK}/helper/missing" relative; do
+    hrun who "${d}" ', so nothing'
+    equals "helper: [${d}] refuses as the caller it names, with what the refusal means" "${OUT}" \
+        "REFUSED: who: ${d} is not a plain absolute directory, so nothing"$'\nRC=1'
+done
+hrun who "${WORK}/helper-link/root"
+equals 'helper: a linked parent refuses as not its own real path, with no suffix when none is given' "${OUT}" \
+    "REFUSED: who: ${WORK}/helper-link/root is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
+
 # root_owned_count: the uid standing in for root owns every fixture path; .claude/** is not counted.
 crun() {
     OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID="${C_UID:-${ME}}" \
@@ -263,6 +280,9 @@ contains 'check: quoted with a backslash' "${OUT}" 'check\ space/root'
 NL="${WORK}/check-nl"; mkdir -p "${NL}"; : >"${NL}/new"$'\n'"line"
 rrun "${NL}"
 contains 'check: a name holding a newline counts once' "${OUT}" "REFUSED: root_owned_check: 2 path(s) under ${NL} are owned by root:"
+printf -v NLQ '%q' "${NL}/new"$'\n'"line"
+contains 'check: a name holding a newline is printed %q-quoted, as one line' "${OUT}" $'\n'"${NLQ}"$'\n'
+absent 'check: so its second half never stands alone as a forged line' "${OUT}" $'\n'"line"$'\n'
 R_TMP="${WORK}/no-such-tmp"; rrun "${RT}"
 contains 'check: a mktemp that fails refuses' "${OUT}" "REFUSED: root_owned_check: mktemp failed, so not one path under ${RT} was counted"$'\nRC=1'
 absent 'check: and names no path' "${OUT}" "${RT}/a"

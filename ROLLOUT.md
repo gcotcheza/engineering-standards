@@ -229,7 +229,7 @@ in the same change. Nothing breaks for the rest: each keeps its own count until 
 
 ## Gate root-owned check — each app calls the lib copy
 
-`root_owned_check` (card 660) is in the library from deploy-lib `2026-11-05`. Nothing breaks: each app
+`root_owned_check` (card 660) is in the library from deploy-lib `2026-11-06.3`. Nothing breaks: each app
 keeps its own `scripts/root-owned-check.sh` until it switches. Decision: gate-root-owned-check-lives-in-the-deploy-lib.
 
 | Open work | What is missing | Owner |

@@ -1,14 +1,20 @@
-# fleet-deploy-lib 2026-11-06.3 sha256:8d963ebddf2fc6108b1a2e98ab335074148bb96bb05bf254234070bd06a1fb45
+# fleet-deploy-lib 2026-11-06.3 sha256:2e85bce497ed15d3d08a25c816c2e1d8b9d480a7d2cbd8a976c294c5f3e646cf
 # shellcheck shell=bash
 # Root hands its own paths in an app tree back to the app user, never through a link. docs/DECISIONS.md (card 363)
+
+# refuse_unless_own_dir <caller> <dir> [<what the refusal means>]: 1, refusing as <caller>, unless <dir> is a
+# plain absolute directory that is its own real path.
+refuse_unless_own_dir() {
+    [[ $2 == /* && -d $2 && ! -L $2 ]] || { printf 'REFUSED: %s: %s is not a plain absolute directory%s\n' "$1" "$2" "${3:-}" >&2; return 1; }
+    [[ $(/usr/bin/realpath -e -- "$2") == "$2" ]] || { printf 'REFUSED: %s: %s is not its own real path (a link above it, or a . .. or // part)%s\n' "$1" "$2" "${3:-}" >&2; return 1; }
+}
 
 # chown_root_owned <dir> <user>:<group> [<find -path pattern to leave alone>…]; 1 on any failure.
 chown_root_owned() {
     local dir=${1:-} owner=${2:-} skip=() p
     # A trailing slash hides a link from -L; find walks the trimmed path, which must be its own real path.
     while [[ $dir == ?*/ ]]; do dir=${dir%/}; done
-    [[ $dir == /* && -d $dir && ! -L $dir ]] || { printf 'REFUSED: chown_root_owned: %s is not a plain absolute directory\n' "$dir" >&2; return 1; }
-    [[ $(/usr/bin/realpath -e -- "$dir") == "$dir" ]] || { printf 'REFUSED: chown_root_owned: %s is not its own real path (a link above it, or a . .. or // part)\n' "$dir" >&2; return 1; }
+    refuse_unless_own_dir chown_root_owned "$dir" || return 1
     [[ $owner =~ ^[a-z_][a-z0-9_-]*:[a-z_][a-z0-9_-]*$ ]] || { printf "REFUSED: chown_root_owned: '%s' is not user:group\n" "$owner" >&2; return 1; }
     shift 2
     for p in "$@"; do skip+=(-not -path "$p"); done
@@ -21,8 +27,7 @@ root_owned_count() {
     local dir=${1:-} found
     # A trailing slash hides a link from -L; find walks the trimmed path, which must be its own real path.
     while [[ $dir == ?*/ ]]; do dir=${dir%/}; done
-    [[ $dir == /* && -d $dir && ! -L $dir ]] || { printf 'REFUSED: root_owned_count: %s is not a plain absolute directory\n' "$dir" >&2; return 1; }
-    [[ $(/usr/bin/realpath -e -- "$dir") == "$dir" ]] || { printf 'REFUSED: root_owned_count: %s is not its own real path (a link above it, or a . .. or // part)\n' "$dir" >&2; return 1; }
+    refuse_unless_own_dir root_owned_count "$dir" || return 1
     [[ $dir != *[\*\?\[\\]* ]] || { printf 'REFUSED: root_owned_count: %s holds a glob character (* ? [ or \\)\n' "$dir" >&2; return 1; }
     found=$(/usr/bin/find -P "$dir" -xdev -ignore_readdir_race -user "${DEPLOY_ROOT_UID:-0}" -not -path "${dir%/}/.claude/*" -printf .) \
         || { printf 'REFUSED: root_owned_count: find failed under %s, so the count of root-owned paths is unknown\n' "$dir" >&2; return 1; }
@@ -32,23 +37,22 @@ root_owned_count() {
 # root_owned_check <dir>: the gate's refusal of any path on <dir>'s filesystem root owns, .claude included, each
 # named with a remedy; 0 and one line on stdout when clean, 1 otherwise. A subshell: nothing it sets leaks.
 root_owned_check() (
-    local tree=${1:-} uid=0 list count user group qtree note=''
+    local tree=${1:-} uid=0 list count user group qtree path note=''
     # Only the test seam moves root's uid: a stray DEPLOY_ROOT_UID must never clear a tree.
     [[ ${OWNERSHIP_TEST_ROOT_UID:-} != 1 ]] || uid=${DEPLOY_ROOT_UID:-0}
     # root_owned_count's refusals: a link, or a path not its own, is never walked as clean. decision: gate-root-owned-check-lives-in-the-deploy-lib
     while [[ $tree == ?*/ ]]; do tree=${tree%/}; done
-    [[ $tree == /* && -d $tree && ! -L $tree ]] || { printf 'REFUSED: root_owned_check: %s is not a plain absolute directory, so not one path was counted\n' "$tree" >&2; exit 1; }
-    [[ $(/usr/bin/realpath -e -- "$tree") == "$tree" ]] || { printf 'REFUSED: root_owned_check: %s is not its own real path (a link above it, or a . .. or // part), so not one path was counted\n' "$tree" >&2; exit 1; }
+    refuse_unless_own_dir root_owned_check "$tree" ', so not one path was counted' || exit 1
     list=$(/usr/bin/mktemp) || { printf 'REFUSED: root_owned_check: mktemp failed, so not one path under %s was counted\n' "$tree" >&2; exit 1; }
     trap '/usr/bin/rm -f -- "$list"' EXIT
-    count=$(/usr/bin/find -P "${tree%/}/" -xdev -ignore_readdir_race -user "$uid" -fprint "$list" -printf .) \
+    count=$(/usr/bin/find -P "${tree%/}/" -xdev -ignore_readdir_race -user "$uid" -fprint0 "$list" -printf .) \
         || { printf 'REFUSED: root_owned_check: find failed under %s, so a count nobody took is not a clean tree\n' "$tree" >&2; exit 1; }
     [[ -n $count ]] || { printf 'no root-owned path under %s\n' "$tree"; exit 0; }
     user=$(/usr/bin/stat -c %U -- "$tree") group=$(/usr/bin/stat -c %G -- "$tree")
     printf -v qtree '%q' "$tree"
     [[ $(/usr/bin/stat -c %u -- "$tree") != "$uid" ]] || note="Root owns the tree's own top too, so ${user} is not the app user: name the app user yourself."
     printf 'REFUSED: root_owned_check: %s path(s) under %s are owned by root:\n' "${#count}" "$tree" >&2
-    /usr/bin/cat -- "$list" >&2
+    while IFS= read -r -d '' path; do printf '%q\n' "$path"; done <"$list" >&2
     printf '\n%s\n' "Fix the writer, never the file: a chown sweep hides the writer until the next run." >&2
     printf '%s\n' "An editor or a shell redirection run as root in this tree writes most of these: write as the owner, runuser -u ${user} -- …" \
         'A gate step running as root writes the rest (a service with no user: line, a mount target the daemon created, a host step writing without install(1)): repair that step.' \
