@@ -42,28 +42,39 @@ function comment(file, s) {
     if (s ~ /^[ \t]*#/) return 1
     return file ~ /\.(php|js|mjs|cjs|ts|vue|css|scss)$/ && s ~ /^[ \t]*(\/\/|\/\*|\*)/
 }
+# Bash quoting, one step at s[i] in state qc ("", a quote, or $ and a quote): QC is the state after it, QLIT 0 for a bare char,
+# 1 for a quoted or escaped one, 2 for a quote mark; returns the chars taken. bs: a backslash escapes outside quotes too.
+function qstep(s, i, qc, bs,    c, d) {
+    c = substr(s, i, 1)
+    d = substr(s, i + 1, 1)
+    QC = qc
+    QLIT = 1
+    if (c == "\\" && qc != q && (bs || qc != "")) return 2
+    QLIT = 2
+    if (qc == "" && c == "$" && (d == "\"" || d == q)) { QC = d == q ? "$" q : d; return 2 }
+    if (qc == "" && (c == "\"" || c == q)) { QC = c; return 1 }
+    if (qc != "" && c == substr(qc, length(qc))) { QC = ""; return 1 }
+    QLIT = (qc != "")
+    return 1
+}
 # Quotes as bash reads them: a quoted string with no blank or operator joins its word, unless it opens the value of a
 # VALUEOPT option; any other is one _ word. With bs a backslash keeps the next char; a $ before a quote is dropped.
-function shellwords(s, bs,    i, c, b, qc, st, esc, w, p, out) {
+function shellwords(s, bs,    i, n, c, b, st, w, p, out) {
     out = ""
-    for (i = 1; i <= length(s); i++) {
-        c = substr(s, i, 1)
-        if (bs && c == "\\") { c = substr(s, ++i, 1); out = out (c ~ /[ \t;&|<>()`$]/ ? "_" : c); continue }
+    for (i = 1; i <= length(s); i += n) {
+        n = qstep(s, i, "", bs)
+        c = substr(s, i + n - 1, 1)
+        if (QLIT == 1) { out = out (c ~ /[ \t;&|<>()`$]/ ? "_" : c); continue }
+        if (QLIT == 0) { out = out c; continue }
         b = i > 1 ? substr(s, i - 1, 1) : ""
-        esc = 0
-        if (c == "$" && (substr(s, i + 1, 1) == "\"" || substr(s, i + 1, 1) == q)) { i++; esc = substr(s, i, 1) == q; c = substr(s, i, 1) }
-        if (c == "\"" || c == q) {
-            qc = c
-            st = i
-            for (i++; i <= length(s) && substr(s, i, 1) != qc; i++) if ((qc == "\"" || esc) && substr(s, i, 1) == "\\") i++
-            w = substr(s, st + 1, i - st - 1)
-            p = out
-            sub(/[ \t]+$/, "", p)
-            sub(/.*[ \t]/, "", p)
-            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")
-            continue
-        }
-        out = out c
+        i += n
+        for (st = i; i <= length(s) && QC != ""; i += n) n = qstep(s, i, QC, bs)
+        w = substr(s, st, i - st - (QC == ""))
+        n = 0
+        p = out
+        sub(/[ \t]+$/, "", p)
+        sub(/.*[ \t]/, "", p)
+        out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")
     }
     return out
 }
@@ -131,15 +142,13 @@ function unspliced(t) {
     return t
 }
 # Quoted or escaped blanks, braces, commas and operators are literal to bash, so they never split a brace group.
-function inert(t,    i, c, qc, out) {
+function inert(t,    i, n, c, out) {
     out = ""
-    qc = ""
-    for (i = 1; i <= length(t); i++) {
-        c = substr(t, i, 1)
-        if (qc != q && c == "\\") { c = substr(t, ++i, 1); out = out (c ~ INERT ? "_" : "\\" c); continue }
-        if (qc == "" && (c == "\"" || c == q)) qc = c
-        else if (c == qc) qc = ""
-        else if (qc != "" && c ~ INERT) c = "_"
+    QC = ""
+    for (i = 1; i <= length(t); i += n) {
+        n = qstep(t, i, QC, 1)
+        c = substr(t, i, n)
+        if (QLIT == 1 && substr(t, i + n - 1, 1) ~ INERT) c = "_"
         out = out c
     }
     return out
@@ -198,20 +207,17 @@ function braces(t,    pre, mid, post, wpre, wpost, n, alts, i, out) {
     return t
 }
 # A quote still open at the end of the line, as bash reads it: a # opening a word outside quotes runs to the newline,
-# and a backslash escapes outside quotes, in "..." and in $'...'.
-function openquote(s,    i, c, k, qc, blank) {
-    qc = ""
-    blank = 1
-    for (i = 1; i <= length(s); i++) {
+# and a word opens after a bare blank, newline or ; & | ( ).
+function openquote(s,    i, n, c, k, start) {
+    QC = ""
+    start = 1
+    for (i = 1; i <= length(s); i += n) {
         c = substr(s, i, 1)
-        if (qc == "" && c == "#" && blank) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }
-        else if (qc != q && c == "\\") i++
-        else if (qc == "" && c == "$" && substr(s, i + 1, 1) == q) { qc = "$" q; i++ }
-        else if (qc == "" && (c == "\"" || c == q)) qc = c
-        else if (qc == c || (qc == "$" q && c == q)) qc = ""
-        blank = c ~ /[ \t]/
+        if (QC == "" && c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }
+        n = qstep(s, i, QC, 1)
+        start = c ~ /[ \t\n;&|()]/
     }
-    return qc != ""
+    return QC != ""
 }
 # The long flag as bash would build it: with splices dropped and braces expanded, once with quoted blanks and braces kept
 # literal and once not, since a bash -c "..." expands them again.

@@ -270,6 +270,16 @@ expect 'r6: an escaped quote inside the open quote' 1 scripts/a.sh 'git commit -
 expect 'r7: an escaped quote inside an ANSI-C quote' 1 scripts/a.sh "git commit --no-{\$'\\'x" "y',@verify} -m x"
 expect 'r7: a # after an escaped blank opens no comment' 1 scripts/a.sh 'git commit --no-{\ #"x' 'y",@verify} -m x'
 AT=2 expect 'r6: a comment apostrophe before the route' 1 scripts/a.sh "# it's" 'git commit --no-{"x' 'y",@verify} -m x'
+expect 'r8: an escaped quote inside an ANSI-C quote, on one line' 1 scripts/a.sh "git commit --no-{\$'\\' ',@verify} -m x"
+expect 'r8: a backslash escapes nothing inside single quotes' 1 scripts/a.sh "git commit --no-{'a b\\',@verify} -m x"
+expect 'r8: the short flag after an escaped ;' 1 scripts/a.sh 'git commit a\; -@n'
+AT=2 expect 'r8: a comment after a blank' 1 scripts/a.sh "true # it's" 'git commit --no-{"x' 'y",@verify} -m x'
+AT=2 expect 'r8: a comment after ;' 1 scripts/a.sh "true;# it's" 'git commit --no-{"x' 'y",@verify} -m x'
+AT=2 expect 'r8: a comment after |' 1 scripts/a.sh "true|# it's" 'git commit --no-{"x' 'y",@verify} -m x'
+AT=2 expect 'r8: a comment after &' 1 scripts/a.sh "true&# it's" 'git commit --no-{"x' 'y",@verify} -m x'
+AT=2 expect 'r8: a comment after )' 1 scripts/a.sh "(true)# it's" 'git commit --no-{"x' 'y",@verify} -m x'
+expect 'r8: a quoted ; opens no comment' 1 scripts/a.sh 'git commit -m "a;#b" --no-{"x' 'y",@verify} -m x'
+expect 'r8 near miss: a quoted ;# then a quoted message over two lines' 0 scripts/a.sh 'echo "a;#b"' 'git commit -m "fix it' 'with --no-{edit,ff}"'
 AT=3 expect 'r6: a closed quote, then the route' 1 scripts/a.sh 'echo "a' 'b"' 'git commit --no-{"x' 'y",@verify} -m x'
 expect 'r6 near miss: a quoted message over two lines' 0 scripts/a.sh 'git commit -m "fix it' 'with --no-{edit,ff}"'
 expect 'r6 fails open: a quote open for 20 lines' 0 scripts/a.sh 'git commit --no-{"x' y y y y y y y y y y y y y y y y y y y 'y",@verify} -m x'

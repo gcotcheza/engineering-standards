@@ -9,8 +9,8 @@ hb-expanded-plain@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    retur
 hb-expanded-inert@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    return braces(dequote(u)) ~ LONGFLAG || braces(dequote(inert(u))) ~ LONGFLAG@@    return braces(dequote(u)) ~ LONGFLAG
 hb-expanded-splices@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    u = unspliced(tolower(s))@@    u = tolower(s)
 hb-empty-dollar@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    EMPTY = "\\$?(" q q "|\"\")"@@    EMPTY = "(" q q "|\"\")"
-hb-inert-quoted@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc != "" && c ~ INERT) c = "_"@@
-hb-inert-escaped@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (qc != q && c == "\\") { c = substr(t, ++i, 1); out = out (c ~ INERT ? "_" : "\\" c); continue }@@
+hb-inert-quoted@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QLIT == 1 && substr(t, i + n - 1, 1) ~ INERT) c = "_"@@
+hb-inert-escaped@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        n = qstep(t, i, QC, 1)@@        n = qstep(t, i, QC, 0)
 hb-splice-braced@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(/\$\{[^}]*\}/, "", t)@@
 hb-splice-subst@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(/\$\([^()]*\)/, "", t)@@
 hb-splice-backtick@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub(/`[^`]*`/, "", t)@@
@@ -28,15 +28,24 @@ hb-dashgroup-range@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        
 hb-picks-range@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == substr(want, j, 1) || (c == "\001" && substr(want, j, 1) ~ /[a-z]/)) j++@@        if (c == substr(want, j, 1)) j++
 hb-picks-letter@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == substr(want, j, 1) || (c == "\001" && substr(want, j, 1) ~ /[a-z]/)) j++@@        if (c == substr(want, j, 1) || c == "\001") j++
 hb-wgroup-range@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    WGROUP = "[^ \t;&|<>()]*\\{[^{} \t]*(,|\\.\\.)[^{} \t]*\\}[^ \t;&|<>()]*"@@    WGROUP = "[^ \t;&|<>()]*\\{[^{} \t]*,[^{} \t]*\\}[^ \t;&|<>()]*"
-hb-openquote-comment@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (qc == "" && c == "#" && blank) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }@@        if (0) i += 0
-hb-openquote-word@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (qc == "" && c == "#" && blank) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }@@        if (qc == "" && c == "#") { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }
-hb-openquote-blank@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        blank = c ~ /[ \t]/@@
-hb-openquote-blank-escaped@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        blank = c ~ /[ \t]/@@        blank = substr(s, i, 1) ~ /[ \t]/
-hb-openquote-ansi@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == "" && c == "$" && substr(s, i + 1, 1) == q) { qc = "$" q; i++ }@@
-hb-openquote-ansi-close@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == c || (qc == "$" q && c == q)) qc = ""@@        else if (qc == c) qc = ""
-hb-openquote-escape@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc != q && c == "\\") i++@@        else if (0) i++
-hb-openquote-open@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == "" && (c == "\"" || c == q)) qc = c@@        else if (0) qc = c
-hb-openquote-close@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == c || (qc == "$" q && c == q)) qc = ""@@
+hb-openquote-comment@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }@@
+hb-openquote-word@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }@@        if (QC == "" && c == "#") { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }
+hb-openquote-quoted-hash@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }@@        if (c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }
+hb-openquote-blank@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|()]/@@        start = c ~ /[\n;&|()]/
+hb-openquote-start-kept@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|()]/@@
+hb-openquote-operator@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|()]/@@        start = c ~ /[ \t\n]/
+hb-openquote-paren@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|()]/@@        start = c ~ /[ \t\n;&|(]/
+hb-openquote-linestart@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    start = 1@@    start = 0
+hb-qstep-escape@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (c == "\\" && qc != q && (bs || qc != "")) return 2@@
+hb-qstep-escape-single@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (c == "\\" && qc != q && (bs || qc != "")) return 2@@    if (c == "\\" && (bs || qc != "")) return 2
+hb-qstep-escape-bare@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (c == "\\" && qc != q && (bs || qc != "")) return 2@@    if (c == "\\" && qc != q && qc != "") return 2
+hb-qstep-escape-lit@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    QLIT = 1@@    QLIT = 0
+hb-qstep-dollar@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (qc == "" && c == "$" && (d == "\"" || d == q)) { QC = d == q ? "$" q : d; return 2 }@@
+hb-qstep-ansi@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (qc == "" && c == "$" && (d == "\"" || d == q)) { QC = d == q ? "$" q : d; return 2 }@@    if (qc == "" && c == "$" && (d == "\"" || d == q)) { QC = d; return 2 }
+hb-qstep-open@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (qc == "" && (c == "\"" || c == q)) { QC = c; return 1 }@@
+hb-qstep-close@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (qc != "" && c == substr(qc, length(qc))) { QC = ""; return 1 }@@
+hb-qstep-ansi-close@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (qc != "" && c == substr(qc, length(qc))) { QC = ""; return 1 }@@    if (qc != "" && c == qc) { QC = ""; return 1 }
+hb-qstep-quoted@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    QLIT = (qc != "")@@    QLIT = 0
 hb-multiline-call@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    multiline(FILENAME, FNR, line)@@
 hb-multiline-start@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (qheld == "") { if (openquote(s)) { qheld = s; qstart = n; qlines = 1 }; return }@@
 hb-multiline-join@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    qheld = qheld "\n" s@@
@@ -77,10 +86,10 @@ hb-root-value@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    ROOT = "H
 hb-root-command@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    COMMAND = "[^ \t;&|=]+([ \t;&|)`]|$)"@@    COMMAND = "[^ \t;&|=]+"
 hb-verb-redirect@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    VERB = "(^|[^a-z0-9_-])(commit|merge)([ \t<>]|&>)"@@    VERB = "(^|[^a-z0-9_-])(commit|merge)[ \t]"
 hb-joined-pass@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")@@    if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s))) hit("commit or merge -n (a short --no-verify)")
-hb-backslash@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (bs && c == "\\") { c = substr(s, ++i, 1); out = out (c ~ /[ \t;&|<>()`$]/ ? "_" : c); continue }@@
-hb-dollar-quote@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == "$" && (substr(s, i + 1, 1) == "\"" || substr(s, i + 1, 1) == q)) { i++; esc = substr(s, i, 1) == q; c = substr(s, i, 1) }@@
-hb-quoted-joins@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")@@            out = out (0 ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")
-hb-value-blanked@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")@@            out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ ? w : " _ ")
+hb-backslash@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QLIT == 1) { out = out (c ~ /[ \t;&|<>()`$]/ ? "_" : c); continue }@@        if (QLIT == 1) { out = out c; continue }
+hb-quoted-word-end@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        w = substr(s, st, i - st - (QC == ""))@@        w = substr(s, st, i - st)
+hb-quoted-joins@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")@@        out = out (0 ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")
+hb-value-blanked@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ && !(b ~ /^[ \t]?$/ && p ~ VALUEOPT) ? w : " _ ")@@        out = out (w ~ /^[^ \t;&|<>()`$\\]*$/ ? w : " _ ")
 hb-command-end@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == ";" || (c == "&" && out !~ /[<>]$/ && substr(s, i + 1, 1) != ">") || (c == "|" && out !~ />$/)) break@@        if ((c == "&" && out !~ /[<>]$/ && substr(s, i + 1, 1) != ">") || (c == "|" && out !~ />$/)) break
 hb-redirect-amp@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == ";" || (c == "&" && out !~ /[<>]$/ && substr(s, i + 1, 1) != ">") || (c == "|" && out !~ />$/)) break@@        if (c == ";" || c == "&" || (c == "|" && out !~ />$/)) break
 hb-dequote@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    gsub("[\"" q "\\\\]", "", d)@@
