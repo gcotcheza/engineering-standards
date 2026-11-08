@@ -210,7 +210,27 @@ expect 'r4 near miss: a plain brace' 0 scripts/a.sh 'cp notes.{txt,bak} && echo 
 expect 'r4 near miss: a brace of other --no- flags' 0 scripts/a.sh 'git merge --no-{edit,ff} topic'
 expect 'r4 near miss: a splice before another --no- flag' 0 scripts/a.sh 'git commit --no-${x}edit --no-$(true)ff'
 expect 'r4 near miss: a JS destructuring of HOME' 0 e2e/a.js 'const {HOM@E,x}=process.env'
-# 30 groups in one word are 2^30 words: past the cap the rest collapse, so the line is judged, and in time.
+expect 'r5: the long flag split by an empty $""' 1 scripts/a.sh 'git commit --no-$""@verify -m x'
+expect "r5: the long flag split by an empty \$''" 1 scripts/a.sh "git commit --no-\$''@verify -m x"
+expect 'r5: the long flag split by $!' 1 scripts/a.sh 'git commit --no-$!@verify -m x'
+expect 'r5: a brace alternative holding a quoted blank' 1 scripts/a.sh 'git commit --no-{"x y",@verify} -m x'
+expect 'r5: a brace alternative holding an escaped blank' 1 scripts/a.sh 'git commit --no-{\ ,@verify} -m x'
+expect 'r5: a brace alternative holding a quoted brace' 1 scripts/a.sh 'git commit --no-{"}",@verify} -m x'
+expect 'r5: a brace inside bash -c' 1 scripts/a.sh 'bash -c "git commit --no-{@verify,} -m x"'
+expect 'r5: a one-letter sequence brace' 1 scripts/a.sh 'git commit --{n..n}o-@verify -m x'
+expect 'r5: a sequence brace of two letters' 1 scripts/a.sh 'git commit --n{o..p}-@verify -m x'
+expect 'r5 near miss: rsync --no- flags in a brace' 0 scripts/a.sh 'rsync -a --no-{perms,owner,group} src/ dst/'
+expect 'r5 near miss: splices before other --no- flags' 0 scripts/a.sh 'git log --no-${x}merges --no-$(echo)walk'
+expect 'r5 near miss: --no- inside a ${x:+}' 0 scripts/a.sh 'git commit "${x:+--no-}edit"'
+expect 'r5 near miss: a JS object named verify' 0 e2e/a.js 'const o = {verify,x}'
+expect 'r5 near miss: find -exec' 0 scripts/a.sh 'find . -name x -exec rm {} \;'
+expect 'r5 near miss: a printf brace' 0 scripts/a.sh "printf '{%s,%s}\\n' a b"
+# Past the cap a word holding a brace and a dash fails closed: the flag may be any alternative.
+long="$(printf 'a%.0s' {1..4200})"
+repo="$(fixture scripts/a.sh "echo ${long}; git commit --{x,no-@verify} -m x")"
+rc=0; timeout 20 bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+if [[ "${rc}" -eq 1 ]]; then ok 'r5: past the cap, the flag in a second alternative'; else bad "r5: past the cap, the flag in a second alternative exited ${rc}, wanted 1"; fi
+# 30 groups in one word are 2^30 words: the cap stops expansion in time, and the line is still judged.
 pad="x$(printf '{a,b}%.0s' {1..30})"
 repo="$(fixture scripts/a.sh "${pad} && git commit --no-{@verify,} -m x")"
 rc=0; timeout 20 bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?

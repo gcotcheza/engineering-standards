@@ -2,13 +2,16 @@
 
 ## 2026-11-07 — the hook-bypass scan finds --no-verify built by brace expansion or an empty splice (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 991.** Each line is judged a third time, for the long flag only, as bash would build it: an unset
-`$x`, `${x}`, `$1`-`$9`, `$@` or `$*`, and any `$( )` or backticks, are dropped, the line is de-quoted, and
-brace groups are expanded word by word (`--no-{verify,}`, `--{no-verify,x}`, `-{-,}no-verify`, nested
-groups). Past 4096 chars the groups left are collapsed instead, so a padded line is still judged in time.
-Only the long flag reads this copy: an expanded JS `{HOME,x}=` would be a false HOME= deny. Empty quote
-pairs and backslashes were already dropped, and `--no-ver` followed by anything was already a prefix hit.
-The de-quote step is now one function used by both copies. Still open: a variable or `$( )` that prints
-a non-empty part of the flag, and `{a..z}` sequence braces. 21 new cases; 13 new mutant rows, 2 reworded.
+`$x`, `${x}`, `$1`-`$9`, `$@`, `$*` or `$!`, any `$( )` or backticks, and an empty `$""` or `$''`, are
+dropped, the line is de-quoted, one-character `{a..c}` ranges become lists, and brace groups are expanded
+word by word (`--no-{verify,}`, `--{no-verify,x}`, `-{-,}no-verify`, nested groups). It is expanded twice,
+once more with quoted or escaped blanks, braces, commas and operators made literal, as bash keeps them.
+Past 4096 chars the expansion stops and fails closed: a word left holding a brace group and a dash is a
+hit. Only the long flag reads this copy: an expanded JS `{HOME,x}=` would be a false HOME= deny. Empty
+quote pairs and backslashes were already dropped, and `--no-ver` followed by anything was already a prefix
+hit. The de-quote step is now one function used by both copies. Still open: a variable or `$( )` that
+prints a non-empty part of the flag, ANSI-C quoting (`$'\x76'`), a nested `$( $( ) )`, and multi-character,
+stepped or mixed-class sequence braces. 37 new cases; 20 new mutant rows, 2 reworded.
 
 ## 2026-11-06 — root's compose allows `build.provenance: false` and refuses every other value (deploy-lib VERSION 2026-11-06; the standard is unchanged and VERSION is not bumped)
 **GW card 809.** The compose policy's `build` allow-list gains `provenance`, and a new F rule refuses it

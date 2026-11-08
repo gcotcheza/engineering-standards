@@ -127,14 +127,46 @@ function unspliced(t) {
     gsub(/\$\{[^}]*\}/, "", t)
     gsub(/\$\([^()]*\)/, "", t)
     gsub(/`[^`]*`/, "", t)
-    gsub(/\$([a-z_][a-z0-9_]*|[1-9@*])/, "", t)
+    gsub(/\$([a-z_][a-z0-9_]*|[1-9@*!])/, "", t)
     return t
 }
+# Quoted or escaped blanks, braces, commas and operators are literal to bash, so they never split a brace group.
+function inert(t,    i, c, qc, out) {
+    out = ""
+    qc = ""
+    for (i = 1; i <= length(t); i++) {
+        c = substr(t, i, 1)
+        if (qc != q && c == "\\") { c = substr(t, ++i, 1); out = out (c ~ INERT ? "_" : "\\" c); continue }
+        if (qc == "" && (c == "\"" || c == q)) qc = c
+        else if (c == qc) qc = ""
+        else if (qc != "" && c ~ INERT) c = "_"
+        out = out c
+    }
+    return out
+}
+# A one-character sequence brace is a list of alternatives: --{n..n}o-verify, --n{o..p}-verify.
+function ranges(t,    set, i, j, k, out) {
+    while (match(t, /\{([a-z]\.\.[a-z]|[0-9]\.\.[0-9])\}/)) {
+        set = substr(t, RSTART + 1, 1) ~ /[0-9]/ ? "0123456789" : "abcdefghijklmnopqrstuvwxyz"
+        i = index(set, substr(t, RSTART + 1, 1))
+        j = index(set, substr(t, RSTART + 4, 1))
+        out = substr(set, i, 1)
+        for (k = i; k != j; ) { k += i < j ? 1 : -1; out = out "," substr(set, k, 1) }
+        t = substr(t, 1, RSTART - 1) (i == j ? out : "{" out "}") substr(t, RSTART + RLENGTH)
+    }
+    return t
+}
+# A word holding a brace group and a dash, which only expansion could prove harmless.
+function dashgroup(t) {
+    while (match(t, WGROUP)) { if (index(substr(t, RSTART, RLENGTH), "-")) return 1; t = substr(t, RSTART + RLENGTH) }
+    return 0
+}
 # Brace expansion as bash does it, each alternative its own word: --no-{verify,} is --no-verify --no-.
-# Past 4096 chars the groups left are collapsed, so a padded line is still judged and never grows without bound.
+# Past 4096 chars it stops, and fails closed if a word left could still build a flag.
 function braces(t,    pre, mid, post, wpre, wpost, n, alts, i, out) {
+    t = ranges(t)
     while (match(t, /\{[^{} \t]*,[^{} \t]*\}/)) {
-        if (length(t) > 4096) { gsub(/[{},]/, "", t); break }
+        if (length(t) > 4096) return dashgroup(t) ? "--no-verify" : t
         pre = substr(t, 1, RSTART - 1)
         mid = substr(t, RSTART + 1, RLENGTH - 2)
         post = substr(t, RSTART + RLENGTH)
@@ -188,14 +220,16 @@ function rules(t, s,    h, e, rest) {
     # A nameref to a home sets it through the other name: declare, local or typeset -n r=HOME.
     if (h ~ NAMEREF) hit("a nameref to a home")
 }
-function judge(file, n, s, argvn,    d) {
+function judge(file, n, s, argvn,    d, u) {
     found = ""
     split("", seen)
     rules(tolower(s), s)
     d = dequote(s)
     rules(tolower(d), d)
-    # The long flag only, since a JS {HOME,x}= is no assignment: with splices dropped and braces expanded as bash would.
-    if (braces(dequote(unspliced(tolower(s)))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")
+    # The long flag only, since a JS {HOME,x}= is no assignment: with splices dropped and braces expanded as bash would,
+    # once with quoted blanks and braces kept literal and once not, since a bash -c "..." expands them again.
+    u = unspliced(tolower(s))
+    if (braces(dequote(u)) ~ LONGFLAG || braces(dequote(inert(u))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")
     # The -n rule reads quotes as bash does, so a -m message is no flag: as written, and with the quotes in each word joined.
     if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")
     sub(/^\.\//, "", file)
@@ -231,7 +265,9 @@ BEGIN {
     # The repeated group opens with ELEM: mawk 1.3.4 20200120 never matches one that opens with [ \t]*.
     ELEMS = "^[ \t]*(" ELEM "[ \t]*,[ \t]*)*" ELEM "[ \t]*,?[ \t]*(" CLOSER ")?$"
     QUOTED = Q "[^\"" q "]*" Q
-    EMPTY = q q "|\"\""
+    EMPTY = "\\$?(" q q "|\"\")"
+    INERT = "[ \t{},;&|<>()]"
+    WGROUP = "[^ \t;&|<>()]*\\{[^{} \t]*,[^{} \t]*\\}[^ \t;&|<>()]*"
     CODE = "(^|/)[^./]+$|\\.(php|js|mjs|cjs|ts|tsx|jsx|vue|sh|bash|zsh|py|rb|pl|json|ya?ml|mts|cts)$"
     OPEN = "^[^\"" q "]*[[(]"
     if ((q "x" q ",") !~ ELEMS || "x" !~ ELEMS) { print "hook-bypass-scan: this awk misreads the argv-element pattern." > "/dev/stderr"; exit 2 }
