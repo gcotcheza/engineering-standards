@@ -156,10 +156,24 @@ function ranges(t,    set, i, j, k, out) {
     }
     return length(t) > 4096 && dashgroup(t) ? "--no-verify" : t
 }
-# A word holding a brace group and two dashes expansion could join: -- as written, or a dash before a brace or comma.
-function dashgroup(t) {
-    while (match(t, WGROUP)) { if (substr(t, RSTART, RLENGTH) ~ /--|-[{},]/) return 1; t = substr(t, RSTART + RLENGTH) }
+# A word holding a brace group whose characters, as expansion keeps them in order, could still spell --no-v;
+# a letter range may give any letter.
+function dashgroup(t,    w) {
+    while (match(t, WGROUP)) {
+        w = substr(t, RSTART, RLENGTH)
+        t = substr(t, RSTART + RLENGTH)
+        gsub(/\{[a-z]\.\.[a-z]\}/, "\001", w)
+        if (picks(w, "--no-v")) return 1
+    }
     return 0
+}
+function picks(w, want,    i, j, c) {
+    j = 1
+    for (i = 1; i <= length(w) && j <= length(want); i++) {
+        c = substr(w, i, 1)
+        if (c == substr(want, j, 1) || (c == "\001" && substr(want, j, 1) ~ /[a-z]/)) j++
+    }
+    return j > length(want)
 }
 # Brace expansion as bash does it, each alternative its own word: --no-{verify,} is --no-verify --no-.
 # Past 4096 chars it stops, as ranges() does, and fails closed if a word left could still build a flag.
@@ -183,15 +197,19 @@ function braces(t,    pre, mid, post, wpre, wpost, n, alts, i, out) {
     }
     return t
 }
-# A quote still open at the end of the line, as bash reads it: a # opening a word outside quotes runs to the newline.
-function openquote(s,    i, c, k, qc) {
+# A quote still open at the end of the line, as bash reads it: a # opening a word outside quotes runs to the newline,
+# and a backslash escapes outside quotes, in "..." and in $'...'.
+function openquote(s,    i, c, k, qc, blank) {
     qc = ""
+    blank = 1
     for (i = 1; i <= length(s); i++) {
         c = substr(s, i, 1)
-        if (qc == "" && c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n]/)) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }
+        if (qc == "" && c == "#" && blank) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }
         else if (qc != q && c == "\\") i++
+        else if (qc == "" && c == "$" && substr(s, i + 1, 1) == q) { qc = "$" q; i++ }
         else if (qc == "" && (c == "\"" || c == q)) qc = c
-        else if (qc == c) qc = ""
+        else if (qc == c || (qc == "$" q && c == q)) qc = ""
+        blank = c ~ /[ \t]/
     }
     return qc != ""
 }
@@ -202,7 +220,7 @@ function bashflag(s,    u) {
     return braces(dequote(u)) ~ LONGFLAG || braces(dequote(inert(u))) ~ LONGFLAG
 }
 # Lines joined while a quote is open, for bashflag only, since a quoted newline is literal: --no-{"x<newline>y",verify}.
-# Past 20 lines or 4096 chars the join is dropped unjudged; each line was judged alone already.
+# Past 20 lines or 4096 chars the join is dropped unjudged (decision: hook-bypass-scan-join-fails-open).
 function multiline(file, n, s) {
     if (qheld == "") { if (openquote(s)) { qheld = s; qstart = n; qlines = 1 }; return }
     qheld = qheld "\n" s

@@ -32,7 +32,7 @@ fixture() { # <file> <line>... -> repo path
 expect() {
     local label="$1" want="$2" at="${AT:-1}" repo rc out
     repo="$(fixture "${@:3}")"
-    rc=0; out="$(bash "${SCAN}" "${repo}" 2>&1)" || rc=$?
+    rc=0; out="$(timeout 10 bash "${SCAN}" "${repo}" 2>&1)" || rc=$?
     if [[ "${rc}" -ne "${want}" ]]; then
         bad "${label}: exit ${rc}, wanted ${want}: ${out}"
     elif [[ "${want}" -eq 1 && "${out}" != *"hook-bypass-scan: $3:${at}:"* ]]; then
@@ -238,6 +238,18 @@ timed 'r6: past the cap, the flag tail in a brace' 1 "echo ${long}; git commit -
 timed 'r6: past the cap, the flag built by a sequence brace' 1 "echo ${long}; git commit --{n..n}o-@verify -m x"
 timed 'r6: past the cap, a group between two letters' 1 "echo ${long}; git commit --n{x,}o-@verify -m x"
 timed 'r6: past the cap, a dash inside the group' 1 "echo ${long}; git commit -{-,x}no-@verify -m x"
+timed 'r7: past the cap, an empty first alternative after a dash' 1 "echo ${long}; git commit -{,x}-no-@verify -m x"
+timed 'r7: past the cap, a group opening the word' 1 "echo ${long}; git commit {-,x}-no-@verify -m x"
+timed 'r7: past the cap, two groups building the flag' 1 "echo ${long}; git commit -{-,}{n,}o-@verify -m x"
+timed 'r7: past the cap, an empty quote between the dashes' 1 "echo ${long}; git commit -\"\"-no-{@verify,x} -m x"
+timed 'r7: past the cap, a splice between the dashes' 1 "echo ${long}; git commit "'-$x-no-{@verify,x}'" -m x"
+timed 'r7: past the cap, a quoted dash' 1 "echo ${long}; git commit -'-'no-{@verify,x} -m x"
+timed 'r7: past the cap, a one-letter sequence brace' 1 "echo ${long}; git commit --n{o..o}-@verify -m x"
+timed 'r7: past the cap, a sequence brace naming no letter of the flag' 1 "echo ${long}; git commit --{m..p}o-@verify -m x"
+timed 'r7: past the cap, an escaped dash' 1 "echo ${long}; git commit -\\-no-{@verify,x} -m x"
+timed 'r7: past the cap, two groups of empty alternatives' 1 "echo ${long}; git commit --{n,}{o,}-@verify -m x"
+timed 'r7: past the cap, the whole flag in a group' 1 "echo ${long}; git commit {--no-@verify,x} -m x"
+timed 'r7: past the cap, a splice in the group' 1 "echo ${long}; git commit "'-{$x,y}-no-@verify'" -m x"
 # 30 groups in one word are 2^30 words: the cap stops expansion in time, and the line is still judged.
 timed 'r4: a brace-padded line is judged in time' 1 "x$(printf '{a,b}%.0s' {1..30}) && git commit --no-{@verify,} -m x"
 timed 'r6: 25000 sequence braces are judged in time' 0 "echo $(printf '{a..z}%.0s' {1..25000})"
@@ -245,11 +257,18 @@ timed 'r6: 25000 sequence braces are judged in time' 0 "echo $(printf '{a..z}%.0
 json="[$(for i in $(seq 150); do printf '{"id":%d,"date":"2026-11-02","ok":true},' "${i}"; done)0]"
 expect 'r6 near miss: one-line JSON past the cap, dashes in its dates' 0 data/a.json "${json}"
 expect 'r6 near miss: minified JS past the cap' 0 e2e/a.js "var c=[$(printf '{a:1,b:"x-y"},%.0s' {1..400})0];"
+# A group word with -- passes when no in-order pick of its characters spells the long flag's prefix.
+expect 'r7 near miss: minified CSS custom properties past the cap' 0 web/a.css "$(printf ':root{--font:Inter,Arial}.b{color:red}%.0s' {1..200})"
+expect 'r7 near miss: minified JS decrements past the cap' 0 e2e/a.js "$(printf 'function f(e,t){for(;e--;)g(e,t);return{a:e,b:t--}}%.0s' {1..300})"
+expect 'r7 near miss: one-line JSON holding a long option past the cap' 0 data/a.json "[$(printf '{"cmd":"ls --all","x":[1,2]},%.0s' {1..300})0]"
+expect 'r7 near miss: minified JS objects with a decrement past the cap' 0 e2e/a.js "$(printf 'f({a:-1,b:x--},{c:y-1});%.0s' {1..300})"
 # --- r6: a quoted newline is literal to bash, so the lines it joins are read as one for the long flag --
 expect 'r6: a quoted newline inside a brace group' 1 scripts/a.sh 'git commit --no-{"x' 'y",@verify} -m x'
 expect 'r6: a quoted newline whose next line opens with #' 1 scripts/a.sh 'git commit --no-{"x' '# y",@verify} -m x'
 expect 'r6: a quote open over three lines' 1 scripts/a.sh 'git commit --no-{"x' y 'z",@verify} -m x'
 expect 'r6: an escaped quote inside the open quote' 1 scripts/a.sh 'git commit --no-{"x\"' 'y",@verify} -m x'
+expect 'r7: an escaped quote inside an ANSI-C quote' 1 scripts/a.sh "git commit --no-{\$'\\'x" "y',@verify} -m x"
+expect 'r7: a # after an escaped blank opens no comment' 1 scripts/a.sh 'git commit --no-{\ #"x' 'y",@verify} -m x'
 AT=2 expect 'r6: a comment apostrophe before the route' 1 scripts/a.sh "# it's" 'git commit --no-{"x' 'y",@verify} -m x'
 AT=3 expect 'r6: a closed quote, then the route' 1 scripts/a.sh 'echo "a' 'b"' 'git commit --no-{"x' 'y",@verify} -m x'
 expect 'r6 near miss: a quoted message over two lines' 0 scripts/a.sh 'git commit -m "fix it' 'with --no-{edit,ff}"'

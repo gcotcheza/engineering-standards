@@ -22,14 +22,21 @@ hb-brace-cap@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (le
 hb-brace-failclosed@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (length(t) > 4096) return dashgroup(t) ? "--no-verify" : t@@        if (length(t) > 4096) return t
 hb-range-cap@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    while (length(t) <= 4096 && match(t, /\{([a-z]\.\.[a-z]|[0-9]\.\.[0-9])\}/)) {@@    while (match(t, /\{([a-z]\.\.[a-z]|[0-9]\.\.[0-9])\}/)) {
 hb-range-failclosed@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    return length(t) > 4096 && dashgroup(t) ? "--no-verify" : t@@    return t
-hb-dashgroup-narrow@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    while (match(t, WGROUP)) { if (substr(t, RSTART, RLENGTH) ~ /--|-[{},]/) return 1; t = substr(t, RSTART + RLENGTH) }@@    while (match(t, WGROUP)) { if (index(substr(t, RSTART, RLENGTH), "-")) return 1; t = substr(t, RSTART + RLENGTH) }
-hb-dashgroup-pair@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    while (match(t, WGROUP)) { if (substr(t, RSTART, RLENGTH) ~ /--|-[{},]/) return 1; t = substr(t, RSTART + RLENGTH) }@@    while (match(t, WGROUP)) { if (substr(t, RSTART, RLENGTH) ~ /-[{},]/) return 1; t = substr(t, RSTART + RLENGTH) }
-hb-dashgroup-before@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    while (match(t, WGROUP)) { if (substr(t, RSTART, RLENGTH) ~ /--|-[{},]/) return 1; t = substr(t, RSTART + RLENGTH) }@@    while (match(t, WGROUP)) { if (substr(t, RSTART, RLENGTH) ~ /--/) return 1; t = substr(t, RSTART + RLENGTH) }
+hb-dashgroup-picks@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (picks(w, "--no-v")) return 1@@
+hb-dashgroup-narrow@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (picks(w, "--no-v")) return 1@@        if (index(w, "--")) return 1
+hb-dashgroup-range@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        gsub(/\{[a-z]\.\.[a-z]\}/, "\001", w)@@
+hb-picks-range@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == substr(want, j, 1) || (c == "\001" && substr(want, j, 1) ~ /[a-z]/)) j++@@        if (c == substr(want, j, 1)) j++
+hb-picks-letter@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (c == substr(want, j, 1) || (c == "\001" && substr(want, j, 1) ~ /[a-z]/)) j++@@        if (c == substr(want, j, 1) || c == "\001") j++
 hb-wgroup-range@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    WGROUP = "[^ \t;&|<>()]*\\{[^{} \t]*(,|\\.\\.)[^{} \t]*\\}[^ \t;&|<>()]*"@@    WGROUP = "[^ \t;&|<>()]*\\{[^{} \t]*,[^{} \t]*\\}[^ \t;&|<>()]*"
-hb-openquote-comment@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (qc == "" && c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n]/)) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }@@        if (0) i += 0
+hb-openquote-comment@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (qc == "" && c == "#" && blank) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }@@        if (0) i += 0
+hb-openquote-word@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (qc == "" && c == "#" && blank) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }@@        if (qc == "" && c == "#") { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }
+hb-openquote-blank@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        blank = c ~ /[ \t]/@@
+hb-openquote-blank-escaped@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        blank = c ~ /[ \t]/@@        blank = substr(s, i, 1) ~ /[ \t]/
+hb-openquote-ansi@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == "" && c == "$" && substr(s, i + 1, 1) == q) { qc = "$" q; i++ }@@
+hb-openquote-ansi-close@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == c || (qc == "$" q && c == q)) qc = ""@@        else if (qc == c) qc = ""
 hb-openquote-escape@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc != q && c == "\\") i++@@        else if (0) i++
 hb-openquote-open@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == "" && (c == "\"" || c == q)) qc = c@@        else if (0) qc = c
-hb-openquote-close@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == c) qc = ""@@
+hb-openquote-close@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        else if (qc == c || (qc == "$" q && c == q)) qc = ""@@
 hb-multiline-call@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    multiline(FILENAME, FNR, line)@@
 hb-multiline-start@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (qheld == "") { if (openquote(s)) { qheld = s; qstart = n; qlines = 1 }; return }@@
 hb-multiline-join@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    qheld = qheld "\n" s@@

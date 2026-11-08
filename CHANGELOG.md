@@ -7,16 +7,19 @@ dropped, the line is de-quoted, one-character `{a..c}` ranges become lists, and 
 word by word (`--no-{verify,}`, `--{no-verify,x}`, `-{-,}no-verify`, nested groups). It is expanded twice,
 once more with quoted or escaped blanks, braces, commas and operators made literal, as bash keeps them.
 Past 4096 chars the range and brace expansion stops and fails closed, but only for a word holding a
-brace group and two dashes expansion could join: `--` as written, or a dash before a brace or comma, so
-one-line JSON or minified JS with dashes in its values passes. Lines are joined while a quote is open,
-for the long flag only, so `--no-{"x<newline>y",verify}` is read as bash builds it; past 20 lines or
-4096 chars that join fails open, and each line is still judged alone. Only the long flag reads this copy: an expanded JS `{HOME,x}=` would be a false HOME= deny. Empty
+brace group whose characters, in order, could still spell `--no-v` (a letter range may give any letter),
+since expansion never reorders them; minified CSS, JS or one-line JSON with `--` in it passes. Lines are
+joined while a quote is open, for the long flag only, so `--no-{"x<newline>y",verify}` is read as bash
+builds it; a backslash escapes inside `$'...'` too, and a `#` after an escaped blank opens no comment.
+Past 20 lines or 4096 chars that join fails open (decision: hook-bypass-scan-join-fails-open), and each
+line is still judged alone. Only the long flag reads this copy: an expanded JS `{HOME,x}=` would be a
+false HOME= deny. Every case's scan is bounded at 10 s, so a hang is a failed case. Empty
 quote pairs and backslashes were already dropped, and `--no-ver` followed by anything was already a prefix
 hit. The de-quote step is now one function used by both copies. Still open: a variable or `$( )` that
 prints a non-empty part of the flag, ANSI-C quoting (`$'\x76'`), a nested `$( $( ) )`, and multi-character,
 stepped or mixed-class sequence braces, a quote left open past the join's cap, and a stray unbalanced
 quote outside a `#` comment up to 20 lines before a quoted-newline route, which holds the join open.
-54 new cases; 39 new mutant rows, 2 reworded.
+72 new cases; 46 new mutant rows, 2 reworded.
 
 ## 2026-11-06 — root's compose allows `build.provenance: false` and refuses every other value (deploy-lib VERSION 2026-11-06; the standard is unchanged and VERSION is not bumped)
 **GW card 809.** The compose policy's `build` allow-list gains `provenance`, and a new F rule refuses it
