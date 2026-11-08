@@ -556,6 +556,14 @@ printf 'APP_URL=https://demo.invalid\n' >"${CROOT}/.env"
 C_EXTRA="PATH=${CF}/bin:/usr/bin:/bin"
 crun 'printf "VAL=%s\n" "$(DEPLOY_APP_USER=nobody deploy_app_env_value APP_URL)"'
 contains 'env plain: a regular .env is still read' "${OUT}" 'VAL=https://demo.invalid'
+# The key on line 1 of a .env past the pipe buffer: grep -m1 quit early, SIGPIPEd printf, and under
+# pipefail the read failed (card 934). A missing key keeps today's status: 1 under pipefail, no value.
+cfx env-value-big; printf '#!/bin/sh\nshift 4\nexec "$@"\n' >"${CF}/bin/sudo"; chmod 755 "${CF}/bin/sudo"
+{ printf 'APP_URL=https://demo.invalid\n'; printf 'FILLER=%0100d\n' {1..5000}; } >"${CROOT}/.env"
+C_EXTRA="PATH=${CF}/bin:/usr/bin:/bin"
+crun 'set -o pipefail; for k in APP_URL NO_SUCH_KEY; do v=$(DEPLOY_APP_USER=nobody deploy_app_env_value "$k"); printf "%s RC=%s VAL=[%s]\n" "$k" "$?" "$v"; done'
+contains 'env value: a key on line 1 of a big .env is read under pipefail' "${OUT}" 'APP_URL RC=0 VAL=[https://demo.invalid]'
+contains 'env value: a missing key in a big .env is 1 with no value under pipefail' "${OUT}" 'NO_SUCH_KEY RC=1 VAL=[]'
 cfx env-value-sudo-fails; printf '#!/bin/sh\nexit 1\n' >"${CF}/bin/sudo"; chmod 755 "${CF}/bin/sudo"
 C_EXTRA="PATH=${CF}/bin:/usr/bin:/bin"
 crun 'v=$(DEPLOY_APP_USER=nobody deploy_app_env_value APP_URL) || printf "RC=%s\n" "$?"; printf "VAL=[%s]\n" "${v:-}"'
