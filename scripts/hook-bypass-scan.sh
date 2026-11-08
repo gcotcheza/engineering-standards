@@ -207,15 +207,17 @@ function braces(t,    pre, mid, post, wpre, wpost, n, alts, i, out) {
     return t
 }
 # A quote still open at the end of the line, as bash reads it: a # opening a word outside quotes runs to the newline,
-# and a word opens after a bare blank, newline or ; & | ( ).
-function openquote(s,    i, n, c, k, start) {
+# and a word opens after a bare blank, newline or ; & | (, or a ) closing a ( not opened by $ < or >.
+function openquote(s,    i, n, c, k, start, p, d, bare) {
     QC = ""
     start = 1
     for (i = 1; i <= length(s); i += n) {
         c = substr(s, i, 1)
         if (QC == "" && c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }
+        if (QC == "" && c == "(") bare[++d] = p !~ /[$<>]/
         n = qstep(s, i, QC, 1)
-        start = c ~ /[ \t\n;&|()]/
+        start = c ~ /[ \t\n;&|(]/ || (c == ")" && QC == "" && bare[d--])
+        p = c
     }
     return QC != ""
 }

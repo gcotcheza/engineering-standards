@@ -12,18 +12,20 @@ since expansion never reorders them; minified CSS, JS or one-line JSON with `--`
 characters spell `--no-v` in order. Lines are joined while a quote is open, for the long flag only, so
 `--no-{"x<newline>y",verify}` is read as bash builds it. One shared quote step tells all three quote
 readers which quote ends where and where a backslash escapes (inside `"..."` and `$'...'` too, never
-inside `'...'`); a `#` opens a comment after an unquoted blank, `;`, `&`, `|`, `(` or `)`, never after
-an escaped one. Past 20 lines or 4096 chars that join fails open (decision:
-hook-bypass-scan-join-fails-open), and each line is still judged alone. Only the long flag reads this
+inside `'...'`); a `#` opens a comment after an unquoted blank, `;`, `&`, `|`, `(` or a `)` closing a bare
+`(`, never after an escaped one or the `)` of `$( )`, `$(( ))`, `<( )` or `>( )`. Past 20 lines or 4096
+chars that join fails open (decision: hook-bypass-scan-join-fails-open), and each line is still judged
+alone. Only the long flag reads this
 copy: an expanded JS `{HOME,x}=` would be a false HOME= deny. Every case's scan is bounded at 10 s, so a
 hang is a failed case. Empty quote pairs and backslashes were already dropped, and `--no-ver` followed by
 anything was already a prefix hit. The de-quote step is now one function used by both copies. Still
 open, for a follow-up card: ANSI-C escapes that build flag characters (`$'\055'`, `$'\x76'`); a `$( )`
 or a variable that prints part of the flag (`-$(printf -)`, `${x:--}`); a nested `$( $( ) )`; stepped
 ranges (`{m..o..1}`), and multi-character or mixed-class sequence braces; a quote left open past the
-join's cap; and a stray unbalanced quote outside a comment up to 20 lines before a quoted-newline route,
-which holds the join open.
-82 new cases; 56 new mutant rows, 5 reworded, and `hb-dollar-quote` retired for `hb-qstep-dollar`.
+join's cap; a stray unbalanced quote outside a comment up to 20 lines before a quoted-newline route,
+which holds the join open; and, for that join's comment reading, `<`/`>` as word starts, `;&|` inside
+`${...}`, a backslash-newline before `#`, and a case arm's unmatched `)`.
+88 new cases; 62 new mutant rows, 5 reworded, and `hb-dollar-quote` retired for `hb-qstep-dollar`.
 
 ## 2026-11-06 — root's compose allows `build.provenance: false` and refuses every other value (deploy-lib VERSION 2026-11-06; the standard is unchanged and VERSION is not bumped)
 **GW card 809.** The compose policy's `build` allow-list gains `provenance`, and a new F rule refuses it
