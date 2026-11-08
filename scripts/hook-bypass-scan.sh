@@ -146,7 +146,7 @@ function inert(t,    i, c, qc, out) {
 }
 # A one-character sequence brace is a list of alternatives: --{n..n}o-verify, --n{o..p}-verify.
 function ranges(t,    set, i, j, k, out) {
-    while (match(t, /\{([a-z]\.\.[a-z]|[0-9]\.\.[0-9])\}/)) {
+    while (length(t) <= 4096 && match(t, /\{([a-z]\.\.[a-z]|[0-9]\.\.[0-9])\}/)) {
         set = substr(t, RSTART + 1, 1) ~ /[0-9]/ ? "0123456789" : "abcdefghijklmnopqrstuvwxyz"
         i = index(set, substr(t, RSTART + 1, 1))
         j = index(set, substr(t, RSTART + 4, 1))
@@ -154,15 +154,15 @@ function ranges(t,    set, i, j, k, out) {
         for (k = i; k != j; ) { k += i < j ? 1 : -1; out = out "," substr(set, k, 1) }
         t = substr(t, 1, RSTART - 1) (i == j ? out : "{" out "}") substr(t, RSTART + RLENGTH)
     }
-    return t
+    return length(t) > 4096 && dashgroup(t) ? "--no-verify" : t
 }
-# A word holding a brace group and a dash, which only expansion could prove harmless.
+# A word holding a brace group and two dashes expansion could join: -- as written, or a dash before a brace or comma.
 function dashgroup(t) {
-    while (match(t, WGROUP)) { if (index(substr(t, RSTART, RLENGTH), "-")) return 1; t = substr(t, RSTART + RLENGTH) }
+    while (match(t, WGROUP)) { if (substr(t, RSTART, RLENGTH) ~ /--|-[{},]/) return 1; t = substr(t, RSTART + RLENGTH) }
     return 0
 }
 # Brace expansion as bash does it, each alternative its own word: --no-{verify,} is --no-verify --no-.
-# Past 4096 chars it stops, and fails closed if a word left could still build a flag.
+# Past 4096 chars it stops, as ranges() does, and fails closed if a word left could still build a flag.
 function braces(t,    pre, mid, post, wpre, wpost, n, alts, i, out) {
     t = ranges(t)
     while (match(t, /\{[^{} \t]*,[^{} \t]*\}/)) {
@@ -182,6 +182,33 @@ function braces(t,    pre, mid, post, wpre, wpost, n, alts, i, out) {
         t = pre out post
     }
     return t
+}
+# A quote still open at the end of the line, as bash reads it: a # opening a word outside quotes runs to the newline.
+function openquote(s,    i, c, k, qc) {
+    qc = ""
+    for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (qc == "" && c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n]/)) { k = index(substr(s, i), "\n"); if (!k) return 0; i += k - 1 }
+        else if (qc != q && c == "\\") i++
+        else if (qc == "" && (c == "\"" || c == q)) qc = c
+        else if (qc == c) qc = ""
+    }
+    return qc != ""
+}
+# The long flag as bash would build it: with splices dropped and braces expanded, once with quoted blanks and braces kept
+# literal and once not, since a bash -c "..." expands them again.
+function bashflag(s,    u) {
+    u = unspliced(tolower(s))
+    return braces(dequote(u)) ~ LONGFLAG || braces(dequote(inert(u))) ~ LONGFLAG
+}
+# Lines joined while a quote is open, for bashflag only, since a quoted newline is literal: --no-{"x<newline>y",verify}.
+# Past 20 lines or 4096 chars the join is dropped unjudged; each line was judged alone already.
+function multiline(file, n, s) {
+    if (qheld == "") { if (openquote(s)) { qheld = s; qstart = n; qlines = 1 }; return }
+    qheld = qheld "\n" s
+    if (openquote(qheld) && ++qlines < 20 && length(qheld) <= 4096) return
+    if (!openquote(qheld) && bashflag(qheld)) { sub(/^\.\//, "", file); printf "%s:%d: --no-verify (or a prefix of it)\n", file, qstart }
+    qheld = ""
 }
 function hit(label) { if (!(label in seen)) { seen[label] = 1; found = found " " label } }
 # Every rule but -n, over t lowercased and s as written.
@@ -220,16 +247,14 @@ function rules(t, s,    h, e, rest) {
     # A nameref to a home sets it through the other name: declare, local or typeset -n r=HOME.
     if (h ~ NAMEREF) hit("a nameref to a home")
 }
-function judge(file, n, s, argvn,    d, u) {
+function judge(file, n, s, argvn,    d) {
     found = ""
     split("", seen)
     rules(tolower(s), s)
     d = dequote(s)
     rules(tolower(d), d)
-    # The long flag only, since a JS {HOME,x}= is no assignment: with splices dropped and braces expanded as bash would,
-    # once with quoted blanks and braces kept literal and once not, since a bash -c "..." expands them again.
-    u = unspliced(tolower(s))
-    if (braces(dequote(u)) ~ LONGFLAG || braces(dequote(inert(u))) ~ LONGFLAG) hit("--no-verify (or a prefix of it)")
+    # The long flag only, since a JS {HOME,x}= is no assignment.
+    if (bashflag(s)) hit("--no-verify (or a prefix of it)")
     # The -n rule reads quotes as bash does, so a -m message is no flag: as written, and with the quotes in each word joined.
     if (tolower(s) ~ ARGV_N || argvn || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1))) hit("commit or merge -n (a short --no-verify)")
     sub(/^\.\//, "", file)
@@ -267,17 +292,18 @@ BEGIN {
     QUOTED = Q "[^\"" q "]*" Q
     EMPTY = "\\$?(" q q "|\"\")"
     INERT = "[ \t{},;&|<>()]"
-    WGROUP = "[^ \t;&|<>()]*\\{[^{} \t]*,[^{} \t]*\\}[^ \t;&|<>()]*"
+    WGROUP = "[^ \t;&|<>()]*\\{[^{} \t]*(,|\\.\\.)[^{} \t]*\\}[^ \t;&|<>()]*"
     CODE = "(^|/)[^./]+$|\\.(php|js|mjs|cjs|ts|tsx|jsx|vue|sh|bash|zsh|py|rb|pl|json|ya?ml|mts|cts)$"
     OPEN = "^[^\"" q "]*[[(]"
     if ((q "x" q ",") !~ ELEMS || "x" !~ ELEMS) { print "hook-bypass-scan: this awk misreads the argv-element pattern." > "/dev/stderr"; exit 2 }
     if ((q "x" q ", " q "x" q ",") !~ ELEMS) { print "hook-bypass-scan: this awk misreads repeated argv elements." > "/dev/stderr"; exit 2 }
 }
-FNR == 1 { if (held != "") judge(prev, start, held, 0); held = ""; incommit = 0; inrun = 0; prev = FILENAME }
+FNR == 1 { if (held != "") judge(prev, start, held, 0); held = ""; qheld = ""; incommit = 0; inrun = 0; prev = FILENAME }
 {
     # An empty '' or "" splits a word for nothing (c''ommit is commit), so each pair is dropped first, even inside quotes.
     line = $0
     gsub(EMPTY, "", line)
+    multiline(FILENAME, FNR, line)
     if (held == "") {
         if (comment(FILENAME, tolower(line))) { judge(FILENAME, FNR, line, 0); next }
         start = FNR

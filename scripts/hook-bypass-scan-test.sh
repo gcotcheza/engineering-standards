@@ -225,16 +225,40 @@ expect 'r5 near miss: --no- inside a ${x:+}' 0 scripts/a.sh 'git commit "${x:+--
 expect 'r5 near miss: a JS object named verify' 0 e2e/a.js 'const o = {verify,x}'
 expect 'r5 near miss: find -exec' 0 scripts/a.sh 'find . -name x -exec rm {} \;'
 expect 'r5 near miss: a printf brace' 0 scripts/a.sh "printf '{%s,%s}\\n' a b"
-# Past the cap a word holding a brace and a dash fails closed: the flag may be any alternative.
+timed() { # <label> <want rc> <line>: scripts/a.sh holding <line> is judged within 20 s
+    local repo rc=0
+    repo="$(fixture scripts/a.sh "$3")"
+    timeout 20 bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+    if [[ "${rc}" -eq "$2" ]]; then ok "$1"; else bad "$1: exited ${rc}, wanted $2"; fi
+}
+# Past the cap a word holding a brace and two dashes expansion could join fails closed: the flag may be any alternative.
 long="$(printf 'a%.0s' {1..4200})"
-repo="$(fixture scripts/a.sh "echo ${long}; git commit --{x,no-@verify} -m x")"
-rc=0; timeout 20 bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
-if [[ "${rc}" -eq 1 ]]; then ok 'r5: past the cap, the flag in a second alternative'; else bad "r5: past the cap, the flag in a second alternative exited ${rc}, wanted 1"; fi
+timed 'r5: past the cap, the flag in a second alternative' 1 "echo ${long}; git commit --{x,no-@verify} -m x"
+timed 'r6: past the cap, the flag tail in a brace' 1 "echo ${long}; git commit --no-{x,@verify} -m x"
+timed 'r6: past the cap, the flag built by a sequence brace' 1 "echo ${long}; git commit --{n..n}o-@verify -m x"
+timed 'r6: past the cap, a group between two letters' 1 "echo ${long}; git commit --n{x,}o-@verify -m x"
+timed 'r6: past the cap, a dash inside the group' 1 "echo ${long}; git commit -{-,x}no-@verify -m x"
 # 30 groups in one word are 2^30 words: the cap stops expansion in time, and the line is still judged.
-pad="x$(printf '{a,b}%.0s' {1..30})"
-repo="$(fixture scripts/a.sh "${pad} && git commit --no-{@verify,} -m x")"
-rc=0; timeout 20 bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
-if [[ "${rc}" -eq 1 ]]; then ok 'r4: a brace-padded line is judged in time'; else bad "r4: a brace-padded line exited ${rc}, wanted 1"; fi
+timed 'r4: a brace-padded line is judged in time' 1 "x$(printf '{a,b}%.0s' {1..30}) && git commit --no-{@verify,} -m x"
+timed 'r6: 25000 sequence braces are judged in time' 0 "echo $(printf '{a..z}%.0s' {1..25000})"
+# --- r6: past the cap, a word whose dashes no expansion could join passes --
+json="[$(for i in $(seq 150); do printf '{"id":%d,"date":"2026-11-02","ok":true},' "${i}"; done)0]"
+expect 'r6 near miss: one-line JSON past the cap, dashes in its dates' 0 data/a.json "${json}"
+expect 'r6 near miss: minified JS past the cap' 0 e2e/a.js "var c=[$(printf '{a:1,b:"x-y"},%.0s' {1..400})0];"
+# --- r6: a quoted newline is literal to bash, so the lines it joins are read as one for the long flag --
+expect 'r6: a quoted newline inside a brace group' 1 scripts/a.sh 'git commit --no-{"x' 'y",@verify} -m x'
+expect 'r6: a quoted newline whose next line opens with #' 1 scripts/a.sh 'git commit --no-{"x' '# y",@verify} -m x'
+expect 'r6: a quote open over three lines' 1 scripts/a.sh 'git commit --no-{"x' y 'z",@verify} -m x'
+expect 'r6: an escaped quote inside the open quote' 1 scripts/a.sh 'git commit --no-{"x\"' 'y",@verify} -m x'
+AT=2 expect 'r6: a comment apostrophe before the route' 1 scripts/a.sh "# it's" 'git commit --no-{"x' 'y",@verify} -m x'
+AT=3 expect 'r6: a closed quote, then the route' 1 scripts/a.sh 'echo "a' 'b"' 'git commit --no-{"x' 'y",@verify} -m x'
+expect 'r6 near miss: a quoted message over two lines' 0 scripts/a.sh 'git commit -m "fix it' 'with --no-{edit,ff}"'
+expect 'r6 fails open: a quote open for 20 lines' 0 scripts/a.sh 'git commit --no-{"x' y y y y y y y y y y y y y y y y y y y 'y",@verify} -m x'
+expect 'r6 fails open: a quote open past 4096 chars' 0 scripts/a.sh 'git commit --no-{"x' "${long}" 'y",@verify} -m x'
+repo="$(fixture scripts/a.sh 'git commit --no-{"x')"
+printf '%s\n' 'y",@verify} -m x' | tr -d '@' >"${repo}/scripts/b.sh"
+rc=0; bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+if [[ "${rc}" -eq 0 ]]; then ok 'r6 near miss: a quote left open at the end of a file'; else bad "r6 near miss: a quote left open at the end of a file exited ${rc}, wanted 0"; fi
 
 # --- one root-home pass: env -i, the root home among its assignments, then any git, in one command --
 expect 'root home: env -i with only the root home, then git' 0 scripts/a.sh 'en@v -i HOM@E=/root git -C / status'
