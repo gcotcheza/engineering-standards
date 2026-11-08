@@ -31,16 +31,9 @@ hb-wgroup-range@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    WGROUP 
 hb-openquote-comment@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }@@
 hb-openquote-word@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }@@        if (QC == "" && c == "#") { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }
 hb-openquote-quoted-hash@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }@@        if (c == "#" && start) { k = index(substr(s, i), "\n"); if (!k) return 0; n = k; continue }
-hb-openquote-blank@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|(]/ || (c == ")" && QC == "" && bare[d--])@@        start = c ~ /[\n;&|(]/ || (c == ")" && QC == "" && bare[d--])
-hb-openquote-start-kept@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|(]/ || (c == ")" && QC == "" && bare[d--])@@
-hb-openquote-operator@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|(]/ || (c == ")" && QC == "" && bare[d--])@@        start = c ~ /[ \t\n]/ || (c == ")" && QC == "" && bare[d--])
-hb-openquote-paren@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|(]/ || (c == ")" && QC == "" && bare[d--])@@        start = c ~ /[ \t\n;&|(]/
-hb-openquote-push@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "(") bare[++d] = p !~ /[$<>]/@@
-hb-openquote-subst@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "(") bare[++d] = p !~ /[$<>]/@@        if (QC == "" && c == "(") bare[++d] = 1
-hb-openquote-procsub@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "(") bare[++d] = p !~ /[$<>]/@@        if (QC == "" && c == "(") bare[++d] = p !~ /[$]/
-hb-openquote-push-quoted@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        if (QC == "" && c == "(") bare[++d] = p !~ /[$<>]/@@        if (c == "(") bare[++d] = p !~ /[$<>]/
-hb-openquote-pop-quoted@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n;&|(]/ || (c == ")" && QC == "" && bare[d--])@@        start = c ~ /[ \t\n;&|(]/ || (c == ")" && bare[d--])
-hb-openquote-prev@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        p = c@@
+hb-openquote-blank@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n]/@@        start = c ~ /[\n]/
+hb-openquote-start-kept@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n]/@@
+hb-openquote-operator@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@        start = c ~ /[ \t\n]/@@        start = c ~ /[ \t\n;&|()]/
 hb-openquote-linestart@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    start = 1@@    start = 0
 hb-qstep-escape@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (c == "\\" && qc != q && (bs || qc != "")) return 2@@
 hb-qstep-escape-single@@HOOK_BYPASS_SCAN="$MUTANT_TARGET" bash "$HBS_TEST"@@    if (c == "\\" && qc != q && (bs || qc != "")) return 2@@    if (c == "\\" && (bs || qc != "")) return 2
