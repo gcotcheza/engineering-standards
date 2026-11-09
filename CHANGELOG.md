@@ -19,14 +19,14 @@ alone. Only the long flag reads this
 copy: an expanded JS `{HOME,x}=` would be a false HOME= deny. Every case's scan is bounded at 10 s, so a
 hang is a failed case. Empty quote pairs and backslashes were already dropped, and this copy reads the long flag by
 the whole-prefix rule of cards 928 and 929 below, so it also passes `--no-verbose`. The de-quote step is now one function used by both copies. Still
-open, for a follow-up card: ANSI-C escapes that build flag characters (`$'\055'`, `$'\x76'`); a `$( )`
+open, for a follow-up card: ANSI-C escapes inside a flag built by braces or splices (`$'\x2d'-no-{verify,}`); a `$( )`
 or a variable that prints part of the flag (`-$(printf -)`, `${x:--}`); a nested `$( $( ) )`; stepped
 ranges (`{m..o..1}`), and multi-character or mixed-class sequence braces; a quote left open past the
 join's cap; a stray unbalanced quote outside a comment up to 20 lines before a quoted-newline route,
 which holds the join open; and, for that join's comment reading, a comment after `;`, `&`, `|`, `(` or
 `)` (held as a quote, so a stray quote in it can hide a route on the next lines), `$(echo "(")`, case arms
 inside `$( )`, the contents of `${...}`, `<`/`>` as word starts, and a backslash-newline before `#`.
-86 new cases; 55 new mutant rows, 5 reworded, and `hb-dollar-quote` retired for `hb-qstep-dollar`.
+87 new cases (one added at the merge with cards 928 and 929); 55 new mutant rows, 5 reworded, and `hb-dollar-quote` retired for `hb-qstep-dollar`.
 
 ## 2026-11-06 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Cards 928 and 929.** `scripts/hook-bypass-scan.sh` no longer reads `--no-verbose` (or `--no-verb`, or
