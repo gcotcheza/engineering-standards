@@ -17,8 +17,8 @@ blank, never after an escaped one or after `;`, `&`, `|`, `(` or `)`, where the 
 lines or 4096 chars that join fails open (decision: hook-bypass-scan-join-fails-open), and each line is still judged
 alone. Only the long flag reads this
 copy: an expanded JS `{HOME,x}=` would be a false HOME= deny. Every case's scan is bounded at 10 s, so a
-hang is a failed case. Empty quote pairs and backslashes were already dropped, and `--no-ver` followed by
-anything was already a prefix hit. The de-quote step is now one function used by both copies. Still
+hang is a failed case. Empty quote pairs and backslashes were already dropped, and this copy reads the long flag by
+the whole-prefix rule of cards 928 and 929 below, so it also passes `--no-verbose`. The de-quote step is now one function used by both copies. Still
 open, for a follow-up card: ANSI-C escapes that build flag characters (`$'\055'`, `$'\x76'`); a `$( )`
 or a variable that prints part of the flag (`-$(printf -)`, `${x:--}`); a nested `$( $( ) )`; stepped
 ranges (`{m..o..1}`), and multi-character or mixed-class sequence braces; a quote left open past the
@@ -27,6 +27,36 @@ which holds the join open; and, for that join's comment reading, a comment after
 `)` (held as a quote, so a stray quote in it can hide a route on the next lines), `$(echo "(")`, case arms
 inside `$( )`, the contents of `${...}`, `<`/`>` as word starts, and a backslash-newline before `#`.
 86 new cases; 55 new mutant rows, 5 reworded, and `hb-dollar-quote` retired for `hb-qstep-dollar`.
+
+## 2026-11-06 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Cards 928 and 929.** `scripts/hook-bypass-scan.sh` no longer reads `--no-verbose` (or `--no-verb`, or
+merge's `--no-verify-signatures`) as the long flag: the rule is now each prefix git takes for
+`--no-verify`, whole, from `--no-v` (which `git am` takes) to `--no-verify`, quoted or not. Every line
+is judged twice, by every rule and the `-n` rule, as written and with each `$'…'` decoded (`\x`, `\u`,
+`\U` and octal escapes); a finding in either is a finding, so `$'\x2d-no-verify'` and `$'-\x6e'` are
+findings, and a stray `$'` (`grep -q '^ok$' f && …`) cannot hide the rest of a line. And one narrow
+pass, for deploy scripts that run root's mirror with a home of its own, over the whole logical line:
+an opening of only `NAME=$(`, `local NAME=$(`, `NAME() {`, `{` or `(`; `env -i`; assignments named only
+`PATH`, `GNUPGHOME`, `GIT_NO_REPLACE_OBJECTS`, `SSH_KEY` and one `HOME=` from one quoted variable, plus
+`GIT_SSH_COMMAND='ssh -i "$SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes'` written exactly; a git word
+(`git`, a system directory's git, or one quoted variable named for git); `-C <word>`; at most
+`-c gpg.program="$X"`; and `fetch`, `rev-parse`, `log`, `cat-file` or `merge-base`, to the line end
+(or `)`, `;` or `; }`). Every word is bash-literal (`[A-Za-z0-9_./:@^~+=%-]`, no tilde a shell expands)
+or exactly `"$NAME"` / `"${NAME}"`, so no brace, glob, parameter operator, array, positional, unquoted
+variable, backslash or `$'…'` passes. An argument may also join single-quoted parts with no blank
+(`--format='%G?|%GF|%GK'`, `'refs/heads/main^{commit}'`): bash does nothing inside them, so each
+option is judged de-quoted against the same lists, and `'--upload-pack=x'` or `-'n'` refuses. Double
+quotes stay one whole `"$NAME"`, since bash expands inside them. `PATH` is one quoted variable or system directories. A
+variable argument must follow `--end-of-options`, which every subcommand's list holds (fetch:
+`--quiet`, `--no-tags`, `--prune`; rev-parse: `--verify`, `--quiet`; log: `-<n>`, `-n <n>`,
+`--format=`, `--pretty=`; cat-file: one type or `-t`/`-s`/`-e`/`-p` and one object; merge-base:
+`--is-ancestor`). Anything else stays a finding. Known limits, in the decision: the scan reads text,
+not values (a variable's value, and config under the mirror's home or repository, can name a command);
+a line is read alone (a heredoc, or a string opened on an earlier line, is read as code); and GC's and
+GW's `mirror_run` (`"$@"`, a double-quoted `GIT_SSH_COMMAND`, variables with no `--end-of-options`)
+stays a finding until rewritten as one function per call. 173 new cases (532 in all);
+68 new mutant rows (135 in all); every row from before this pull request is kept, some rewritten where their line moved.
+Why: decision: the-hook-bypass-scan-has-one-copy, decision: the-mirror-pass-reads-its-own-arguments.
 
 ## 2026-11-06 — root's compose allows `build.provenance: false` and refuses every other value (deploy-lib VERSION 2026-11-06; the standard is unchanged and VERSION is not bumped)
 **GW card 809.** The compose policy's `build` allow-list gains `provenance`, and a new F rule refuses it
