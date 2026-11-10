@@ -4,7 +4,8 @@
 #   dockerfile-unzip-check.sh [--stages N] <Dockerfile>   exit 0: no stage leaves unzip, and N stages change apk when given;
 #   1: a stage leaves unzip, no stage changes apk, the count is not N, or nothing was judged; 2: usage
 #   `\` continuations are joined first. An rm (-f or -rf) of exactly /usr/bin/unzip counts only where it starts a RUN or follows
-#   && or ;, before any ` #`, so an rm in a RUN heredoc's body never counts. Blind to apk behind a variable (`${APK} add`).
+#   && or ;, before any ` #`. Blind to apk behind a variable (`${APK} add`) and to an rm that sits there but never runs:
+#   `&& rm … || true`, one inside `if false`, inside quotes with more text after, or in a heredoc body (COPY or RUN).
 
 usage() { printf 'usage: dockerfile-unzip-check.sh [--stages N] <Dockerfile>\n' >&2; exit 2; }
 die() { printf 'dockerfile-unzip-check: FAILED %s\n' "$*" >&2; exit 1; }
