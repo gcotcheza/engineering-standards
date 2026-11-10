@@ -102,8 +102,8 @@ fi
 ofx refusals
 ln -s "${OROOT}" "${OF}/root-link"
 for d in root "${OF}/root-link" "${OF}/missing" ''; do
-    orun "${d}" "${TO}"
-    contains "dir: [${d}] refuses" "${OUT}" "REFUSED: chown_root_owned: ${d} is not a plain absolute directory"
+    orun "${d}" "${TO}"; printf -v QD '%q' "${d}"
+    contains "dir: [${d}] refuses" "${OUT}" "REFUSED: chown_root_owned: ${QD} is not a plain absolute directory"
     contains "dir: [${d}] returns 1" "${OUT}" 'RC=1'
 done
 for o in nobody 'nobody:nogroup;id' ':nogroup' 'Nobody:nogroup'; do
@@ -129,7 +129,7 @@ fi
 equals 'refusals: no chown ran' "${LOG}" ''
 for d in / //; do
     orun "${d}" nobody
-    contains "dir: [${d}] is still a plain directory (the owner check is what refuses)" "${OUT}" "REFUSED: chown_root_owned: 'nobody' is not user:group"
+    contains "dir: [${d}] refuses as the whole filesystem, before the owner check" "${OUT}" "REFUSED: chown_root_owned: / is the whole filesystem, never an app tree"
 done
 ofx trailing-slash
 orun "${OROOT}//" "${TO}"
@@ -139,6 +139,45 @@ ofx chown-fails; O_FAIL=1
 orun "${OROOT}" "${TO}"
 contains 'fail: a chown that fails refuses' "${OUT}" "REFUSED: chown_root_owned: find or chown failed under ${OROOT}, so root-owned paths may remain"
 contains 'fail: and returns 1' "${OUT}" 'RC=1'
+
+# refuse_unless_own_dir: the one plain-directory and real-path refusal all three callers share.
+hrun() {
+    OUT="$(env -i PATH=/usr/bin:/bin bash -c '. "$1"; shift; refuse_unless_own_dir "$@"; printf "RC=%s\n" "$?"' _ "${LIB_DIR}/ownership.sh" "$@" 2>&1)"
+}
+HD="${WORK}/helper/root"; mkdir -p "${HD}"
+ln -s "${HD}" "${WORK}/helper/root-link"; ln -s "${WORK}/helper" "${WORK}/helper-link"
+hrun who "${HD}"
+equals 'helper: a plain directory that is its own real path passes silently' "${OUT}" 'RC=0'
+for d in "${WORK}/helper/root-link" "${WORK}/helper/missing" relative; do
+    hrun who "${d}" ', so nothing'
+    equals "helper: [${d}] refuses as the caller it names, with what the refusal means" "${OUT}" \
+        "REFUSED: who: ${d} is not a plain absolute directory, so nothing"$'\nRC=1'
+done
+hrun who "${WORK}/helper-link/root"
+equals 'helper: a linked parent refuses as not its own real path, with no suffix when none is given' "${OUT}" \
+    "REFUSED: who: ${WORK}/helper-link/root is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
+
+hrun who /
+equals 'helper: / refuses as the whole filesystem' "${OUT}" 'REFUSED: who: / is the whole filesystem, never an app tree'$'\nRC=1'
+for d in // /.; do
+    hrun who "${d}"
+    equals "helper: [${d}] refuses as not its own real path" "${OUT}" \
+        "REFUSED: who: ${d} is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
+done
+# Every caller refuses / and what trims to it. find's -user names nobody, so with the refusal gone find stops
+# before walking a path, and chown is a stub that only logs: never a walk of the real /.
+SL="${WORK}/slash"; mkdir -p "${SL}/bin"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/chown.log"\nexit 1\n' "${SL}" >"${SL}/bin/chown"; chmod 0755 "${SL}/bin/chown"
+for fn in chown_root_owned root_owned_count root_owned_check; do
+    for d in / // /.; do
+        OUT="$(env -i PATH=/usr/bin:/bin OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID=no-such-user-c660 DEPLOY_EXEC_PATH="${SL}/bin:/usr/bin:/bin" \
+            bash -c '. "$1"; rc=0; "$2" "$3" "$4" || rc=$?; printf "RC=%s\n" "$rc"' _ "${LIB_DIR}/ownership.sh" "${fn}" "${d}" "${TO}" 2>&1)"
+        if [ "${d}" = /. ]; then want="REFUSED: ${fn}: /. is not its own real path"; else want="REFUSED: ${fn}: / is the whole filesystem, never an app tree"; fi
+        contains "slash: ${fn} [${d}] refuses" "${OUT}" "${want}"
+        contains "slash: ${fn} [${d}] returns 1" "${OUT}" 'RC=1'
+    done
+done
+equals 'slash: chown is never reached' "$(cat "${SL}/chown.log" 2>/dev/null)" ''
 
 # root_owned_count: the uid standing in for root owns every fixture path; .claude/** is not counted.
 crun() {
@@ -177,8 +216,8 @@ contains 'count: a find that fails refuses' "${OUT}" "REFUSED: root_owned_count:
 equals 'count: and prints no count, only RC=1' "$(grep -cx '[0-9]*' <<<"${OUT}")" 0
 contains 'count: and returns 1' "${OUT}" 'RC=1'
 for d in root "${WORK}/count/root-link" "${WORK}/count/missing" ''; do
-    crun "${d}"
-    contains "count: [${d}] refuses" "${OUT}" "REFUSED: root_owned_count: ${d} is not a plain absolute directory"
+    crun "${d}"; printf -v QD '%q' "${d}"
+    contains "count: [${d}] refuses" "${OUT}" "REFUSED: root_owned_count: ${QD} is not a plain absolute directory"
     contains "count: [${d}] returns 1" "${OUT}" 'RC=1'
 done
 for d in "${WORK}/count/root-link/" "${WORK}/count/root-link//"; do
@@ -195,6 +234,118 @@ ln -s "${WORK}/count" "${WORK}/count-link"
 crun "${WORK}/count-link/root"
 equals 'count: a directory below a linked parent refuses, and counts nothing' "${OUT}" \
     "REFUSED: root_owned_count: ${WORK}/count-link/root is not its own real path (a link above it, or a . .. or // part)"$'\nRC=1'
+
+# root_owned_check: the gate's refusal; the uid standing in for root owns every fixture path unless R_UID names another.
+# OWNERSHIP_TEST_ROOT_UID=1 is the seam that lets DEPLOY_ROOT_UID stand in at all.
+rrun() {
+    OUT="$(env -i PATH=/usr/bin:/bin TMPDIR="${R_TMP:-${TMPDIR:-/tmp}}" OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID="${R_UID:-${ME}}" \
+        bash -c 'set -euo pipefail; . "$1"; shift; rc=0; root_owned_check "$@" || rc=$?; printf "RC=%s\n" "$rc"' _ "${LIB_DIR}/ownership.sh" "$@" 2>&1)"
+    R_UID='' R_TMP=''
+}
+RT="${WORK}/check/root"
+mkdir -p "${RT}/a/sub" "${RT}/.claude"; : >"${RT}/a/sub/f"; : >"${RT}/.claude/settings.json"
+ln -s "${RT}" "${WORK}/check/root-link"
+R_UID=4242; rrun "${RT}"
+equals 'check: a tree root owns nothing in passes' "${OUT}" "no root-owned path under ${RT}"$'\nRC=0'
+rrun "${RT}"
+contains 'check: a root-owned tree refuses and counts every path, .claude included' "${OUT}" "REFUSED: root_owned_check: 6 path(s) under ${RT} are owned by root:"
+contains 'check: a root-owned dir is named' "${OUT}" $'\n'"${RT}/a/sub"$'\n'
+contains 'check: a nested root-owned file is named' "${OUT}" $'\n'"${RT}/a/sub/f"$'\n'
+contains 'check: a path under .claude is named (the gate counts at least what the deploy counts)' "${OUT}" $'\n'"${RT}/.claude/settings.json"$'\n'
+contains 'check: the remedy says to fix the writer' "${OUT}" 'Fix the writer, never the file'
+contains 'check: a top that root owns too says its owner is not the app user' "${OUT}" "Root owns the tree's own top too, so $(id -un) is not the app user"
+contains 'check: and returns 1' "${OUT}" 'RC=1'
+OUT="$(env -i PATH=/usr/bin:/bin OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID="${ME}" bash -c '. "$1"; tree=keep; root_owned_check "$2"; printf "after RC=%s tree=%s opts=%s\n" "$?" "$tree" "$-"' _ "${LIB_DIR}/ownership.sh" "${RT}" 2>&1)"
+contains 'check: a refusal ends only the check, never the shell that sourced it, nor its names' "${OUT}" 'after RC=1 tree=keep opts=hB'
+R_UID=4242; rrun "${RT}//"
+equals 'check: a plain directory with trailing slashes is walked as itself' "${OUT}" "no root-owned path under ${RT}"$'\nRC=0'
+rrun "${RT}/"
+contains 'check: and a trailing slash still names its paths' "${OUT}" $'\n'"${RT}/a/sub/f"$'\n'
+for d in "${WORK}/check/root-link" "${RT}/a/sub/f" "${WORK}/check/missing" root ''; do
+    rrun "${d}"; printf -v QD '%q' "${d}"
+    equals "check: [${d}] (a link, a file, missing, relative or empty) refuses and counts nothing" "${OUT}" \
+        "REFUSED: root_owned_check: ${QD} is not a plain absolute directory, so not one path was counted"$'\nRC=1'
+done
+for d in "${WORK}/check/root-link/" "${WORK}/check/root-link//"; do
+    rrun "${d}"
+    equals "check: [${d}] refuses as the link it is" "${OUT}" \
+        "REFUSED: root_owned_check: ${WORK}/check/root-link is not a plain absolute directory, so not one path was counted"$'\nRC=1'
+done
+ln -s "${WORK}/check" "${WORK}/check-link"
+for d in "${WORK}/check-link/root" "${RT}/a/.."; do
+    rrun "${d}"
+    equals "check: [${d}] (a linked parent, a .. part) refuses" "${OUT}" \
+        "REFUSED: root_owned_check: ${d} is not its own real path (a link above it, or a . .. or // part), so not one path was counted"$'\nRC=1'
+done
+R_UID='no-such-user-c660'; rrun "${RT}"
+contains 'check: a find that fails refuses' "${OUT}" "REFUSED: root_owned_check: find failed under ${RT}, so a count nobody took is not a clean tree"
+absent 'check: and never reads as clean' "${OUT}" 'no root-owned path'
+contains 'check: and returns 1' "${OUT}" 'RC=1'
+OUT="$(env -i PATH=/usr/bin:/bin OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID=4242 bash "${LIB_DIR}/ownership.sh" "${RT}" 2>&1; printf 'RC=%s' "$?")"
+equals 'check: run as a command, the lib file runs the check' "${OUT}" "no root-owned path under ${RT}"$'\nRC=0'
+# Without the seam DEPLOY_ROOT_UID is ignored and uid 0 is judged: as root a uid nobody holds, as nobody its own.
+if [ "${ME}" = 0 ]; then G_UID=4242 G_WANT='REFUSED: root_owned_check: 6 path(s)'; else G_UID=${ME} G_WANT="no root-owned path under ${RT}"; fi
+OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID="${G_UID}" bash "${LIB_DIR}/ownership.sh" "${RT}" 2>&1)"
+contains "check: DEPLOY_ROOT_UID=${G_UID} without OWNERSHIP_TEST_ROOT_UID=1 still judges uid 0" "${OUT}" "${G_WANT}"
+GL="${WORK}/check-glob"
+mkdir -p "${GL}/real-x/t" "${GL}/star*/t"; ln -s "${GL}/real-x" "${GL}/real-*"
+rrun "${GL}/real-*/t"
+equals 'check: a linked parent whose name is a glob matching the real path still refuses (a literal compare)' "${OUT}" \
+    "REFUSED: root_owned_check: ${GL}/real-\\*/t is not its own real path (a link above it, or a . .. or // part), so not one path was counted"$'\nRC=1'
+R_UID=4242; rrun "${GL}/star*/t"
+equals 'check: a real path holding * is its own real path' "${OUT}" "no root-owned path under ${GL}/star*/t"$'\nRC=0'
+SP="${WORK}/check space/root"; mkdir -p "${SP}"
+rrun "${SP}"
+printf -v SPQ '%q' "${SP}"
+contains 'check: a tree with a space gives a pasteable chown' "${OUT}" "chown -R $(id -un):$(id -gn) ${SPQ}, then"
+contains 'check: quoted with a backslash' "${OUT}" 'check\ space/root'
+NL="${WORK}/check-nl"; mkdir -p "${NL}"; : >"${NL}/new"$'\n'"line"
+rrun "${NL}"
+contains 'check: a name holding a newline counts once' "${OUT}" "REFUSED: root_owned_check: 2 path(s) under ${NL} are owned by root:"
+printf -v NLQ '%q' "${NL}/new"$'\n'"line"
+contains 'check: a name holding a newline is printed %q-quoted, as one line' "${OUT}" $'\n'"${NLQ}"$'\n'
+absent 'check: so its second half never stands alone as a forged line' "${OUT}" $'\n'"line"$'\n'
+# The list stops at 50 paths and says how many more; the count stays exact and the remedy stays last.
+listed() { printf '%s\n' "${OUT}" | awk '/ are owned by root:$/ { f = 1; next } f && /^$/ { exit } f'; }
+CP="${WORK}/check-cap"; mkdir -p "${CP}"; for i in $(seq 1 52); do : >"${CP}/f${i}"; done
+rrun "${CP}"
+contains 'cap: 53 paths are counted exactly' "${OUT}" "REFUSED: root_owned_check: 53 path(s) under ${CP} are owned by root:"
+equals 'cap: 50 paths are listed, then one more line' "$(listed | wc -l)" 51
+equals 'cap: which says how many more' "$(listed | tail -n 1)" '… and 3 more'
+contains 'cap: the remedy is still at the tail' "$(printf '%s\n' "${OUT}" | tail -n 3)" "chown -R"
+rm -f "${CP}/f50" "${CP}/f51" "${CP}/f52"
+rrun "${CP}"
+contains 'cap: 50 paths are counted' "${OUT}" "REFUSED: root_owned_check: 50 path(s) under ${CP} are owned by root:"
+equals 'cap: 50 paths are all listed' "$(listed | wc -l)" 50
+absent 'cap: with no more line' "${OUT}" '… and '
+R_TMP="${WORK}/no-such-tmp"; rrun "${RT}"
+contains 'check: a mktemp that fails refuses' "${OUT}" "REFUSED: root_owned_check: mktemp failed, so not one path under ${RT} was counted"$'\nRC=1'
+absent 'check: and names no path' "${OUT}" "${RT}/a"
+if root_only_case 'check: the remedy names the owner of the tree'; then
+    chown -hR nobody:nogroup "${RT}"; chown -h root "${RT}/a/sub/f"
+    rrun "${RT}"
+    contains 'check: one root-owned file refuses as one path' "${OUT}" "REFUSED: root_owned_check: 1 path(s) under ${RT} are owned by root:"$'\n'"${RT}/a/sub/f"$'\n'
+    contains 'check: the remedy names the owner to write as' "${OUT}" 'runuser -u nobody -- '
+    contains 'check: and the owner to hand the tree back to' "${OUT}" "chown -R nobody:nogroup ${RT}, then"
+    absent 'check: and a top the owner holds has no note' "${OUT}" 'Root owns the tree'
+fi
+# A mount needs CAP_SYS_ADMIN, so only a throwaway container that grants it sets OWNERSHIP_TEST_MOUNT=1.
+if ! root_only_case 'check: a filesystem mounted inside is not crossed'; then
+    :
+elif [ "${OWNERSHIP_TEST_MOUNT:-}" != 1 ]; then
+    printf 'skip check: a filesystem mounted inside is not crossed (OWNERSHIP_TEST_MOUNT=1 only)\n'
+else
+    RX="${WORK}/check-xdev"; mkdir -p "${RX}/mnt"
+    if mount -t tmpfs tmpfs "${RX}/mnt" && : >"${RX}/mnt/f"; then
+        chown -h nobody:nogroup "${RX}"
+        rrun "${RX}"
+        umount "${RX}/mnt"
+        contains 'check: the mount point itself is named' "${OUT}" "1 path(s) under ${RX} are owned by root:"$'\n'"${RX}/mnt"$'\n'
+        absent 'check: but nothing on the mounted filesystem is' "${OUT}" "${RX}/mnt/f"
+    else
+        fail 'check: OWNERSHIP_TEST_MOUNT=1 but a tmpfs could not be mounted'
+    fi
+fi
 
 equals '/dev/null keeps its mode and owner across the suite (rule 26)' "$(stat -c '%a %u %g %F' /dev/null)" "${DEVNULL_BEFORE}"
 if [ "${fails}" -eq 0 ]; then printf '\nownership-test: all checks passed\n'; exit 0; fi
