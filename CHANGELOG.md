@@ -38,6 +38,58 @@ which holds the join open; and, for that join's comment reading, a comment after
 inside `$( )`, the contents of `${...}`, `<`/`>` as word starts, and a backslash-newline before `#`.
 87 new cases (one added at the merge with cards 928 and 929); 55 new mutant rows, 5 reworded, and `hb-dollar-quote` retired for `hb-qstep-dollar`.
 
+## 2026-11-06 — one gate root-owned check in the deploy lib (deploy-lib VERSION 2026-11-06.3; the standard is unchanged and VERSION is not bumped)
+**Card 660.** Seven apps carried their own `scripts/root-owned-check.sh`, all different. The check is
+now `root_owned_check <dir>` in `scripts/lib/deploy/ownership.sh`, beside `root_owned_count`, and the
+file runs it when called as a command; apps call the box copy through `DEPLOY_LIB`, never a vendored
+one. It is a subshell, so a refusal never ends the gate that sourced it. One walk of `<dir>/` with
+`-xdev` and the deploy's predicate lists each root-owned path and counts it by a dot, so a newline in
+a name miscounts nothing; `.claude` is counted. It judges uid 0 unless the test seam
+`OWNERSHIP_TEST_ROOT_UID=1` lets `DEPLOY_ROOT_UID` stand in. It refuses a link, a non-directory, a
+path that is not its own real path (compared literally) and a failing `mktemp` or `find`, names the tree and
+the first 50 paths quoted with `%q` (a newline in a name cannot forge a line), then how many more, the count
+exact, and prints a remedy last, naming the tree's owner, its `chown` quoted with `%q`. All three ownership
+functions refuse through one `refuse_unless_own_dir`, which also refuses `/` (and `//`, which trims to it), so
+not one of them can walk or chown the whole filesystem. One loosening and
+two tightenings: Memento and Scribly stop counting across mounts; Fineprint's latent linked-tree pass
+closes; and a tree reached through a linked parent now refuses, so callers pass a `pwd -P` path. The
+mount case runs only with CAP_SYS_ADMIN and `OWNERSHIP_TEST_MOUNT=1`, so the gate skips it and the
+mutant run proves `-xdev`. `ownership-test.sh` holds every case and
+`scripts/deploy-lib-ownership-mutants.txt` the T5 sweep; every header is re-stamped for 2026-11-06.3.
+`README.md`'s vendored-scripts section and `ROLLOUT.md`'s root-owned and exit-75 rows no longer say apps vendor the lib. No app calls it yet; each switches in
+its own pull request (`ROLLOUT.md`). Why: decision: gate-root-owned-check-lives-in-the-deploy-lib.
+
+## 2026-11-06 — the deploy lib's `deploy_app_env_value` stops quitting its pipe early (deploy-lib VERSION 2026-11-06.2; the standard is unchanged and VERSION is not bumped)
+**Card 934.** The last line of `deploy_app_env_value` in `scripts/lib/deploy/compose.sh` piped the
+`.env` into `grep -m1`. grep quits at its first match, so with the key on line 1 of a `.env` past
+64 KiB, `printf` took SIGPIPE, and under `set -o pipefail` the read failed with 141 although the
+value was printed right. The pipe stays and every stage now reads to the end:
+`grep "^KEY=" | sed -n 1p | cut -d= -f2-`. A here-string would fail open there: with the temp dir
+full it reads as an empty value, the same as a missing key. The output is the same as before, a
+missing key still gives no value (status 1 under pipefail, 0 without), and the REFUSED path is
+unchanged. New cases in `compose-test.sh`: a key on line 1 of a big `.env` under pipefail (red on
+the old line) and a missing key in the same file. No mutant list covers this file. VERSION rises
+to 2026-11-06.2, above card 745's 2026-11-06.1, and every header is re-stamped. Why:
+decision: grep-q-reads-a-here-string-not-a-pipe.
+
+## 2026-11-06 — the deploy lib's `matches` and the dialog check stop piping into grep -q (deploy-lib VERSION 2026-11-06.1; the standard is unchanged and VERSION is not bumped)
+**Card 745.** The two files ES #72 left on the piped form. Under `set -o pipefail` a piped
+`grep -q` that quits at an early match SIGPIPEs its writer and reads as a miss. In
+`scripts/lib/deploy/test.sh`, `matches` takes a here-string, as #72's helpers do: if bash cannot
+make one, the case is a FAIL. In `scripts/lib/dialog-lib.sh`, the five checks keep the pipe and drop
+`-q` (`| grep -aE ... >/dev/null`), so grep reads the whole screen. A here-string would fail open
+there: bash 5.2 keeps a big one in a temp file, and with the temp dir full grep reads nothing, so a
+pane over 64 KiB read as no dialog and a tick
+would type into it. grep sees the same bytes as before. In `matches` an empty input is now one
+empty line, which no caller's pattern can match. New cases: a big-output `matches` in `test.sh`,
+three big-screen verdicts in `scripts/queue-start-test.sh` (red on the old lib), and the same three
+with a full temp dir, opt-in through `QS_TEST_FULL_DIR` and skip-printed without it (red on the
+here-string lib, run in a throwaway container). `scripts/dialog-lib-mutants.txt` puts each `-q` pipe
+back; the new `scripts/dialog-lib-fulldisk-mutants.txt` puts each here-string back, container only.
+VERSION rises because `deploy-lib-version.sh` counts `test.sh`; the lib headers are re-stamped,
+their hashes unchanged. Re-copy `dialog-lib.sh` to both boxes and to the Pi's vendored copy. Why:
+decision: grep-q-reads-a-here-string-not-a-pipe.
+
 ## 2026-11-06 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Cards 928 and 929.** `scripts/hook-bypass-scan.sh` no longer reads `--no-verbose` (or `--no-verb`, or
 merge's `--no-verify-signatures`) as the long flag: the rule is now each prefix git takes for

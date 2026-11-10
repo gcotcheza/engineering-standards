@@ -44,7 +44,7 @@ equals() {
 }
 
 matches() {
-    if printf '%s' "$2" | grep -qE "$3"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi
+    if grep -qE "$3" <<<"$2"; then pass "$1"; else fail "$1 — [$2] does not match /$3/"; fi
 }
 
 WORK="$(mktemp -d -p /srv/worker-scratch deploy-lib-test.XXXXXXXX)" || { printf 'cannot make a work directory under /srv/worker-scratch\n' >&2; exit 1; }
@@ -89,6 +89,10 @@ matches 'a bypass on a backslash-ended last line is caught' "${BYPASSES}" '^2:HO
 printf 'echo ok\ngit status \\\n' >"${WORK}/scan-last-line-clean"
 scan_bypasses "${WORK}/scan-last-line-clean" "${HOOK_BYPASS}" "${HOOK_BYPASS_ANY_CASE}"
 absent 'a clean backslash-ended last line passes the bypass scan' "${BYPASSES}" ':'
+# Line 1 matches, then ~1.4 MB more: a piped grep -q would quit early and SIGPIPE the
+# writer (card 745). The helper runs in a subshell; only its verdict word is counted.
+BIG="needle$(printf '\nfiller%.0s' {1..200000})"
+equals 'matches sees a match on line 1 of a big output' "$( (matches x "${BIG}" 'needle') 2>/dev/null | grep -c '^ok ')" 1
 
 write_driver() {
     mkdir -p "${CASE}/lib"
