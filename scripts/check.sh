@@ -20,8 +20,9 @@
 #      this tree, then from a copy owned by nobody, as an app's ci.sh runs it
 #  10) scripts/decisions-check-test.sh and decisions-rollup-test.sh, W7's fixtures
 #  11) scripts/gate-run-test.sh, gate-run.sh's planted attacks, against a throwaway repo and a fake docker
+#  12) scripts/vendor-perms-check-test.sh and dockerfile-unzip-check-test.sh, under bash and busybox sh
 #
-#   scripts/check.sh            all eleven steps; records a FULL run to the fleet ledger
+#   scripts/check.sh            all twelve steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
 #                                so nothing is recorded (the ledger only hears
 #                                about a full gate run)
@@ -61,6 +62,7 @@ step_name() {
         9) printf 'deploy-lib test.sh' ;;
         10) printf 'decisions tests' ;;
         11) printf 'gate-run-test.sh' ;;
+        12) printf 'vendor perms tests' ;;
     esac
 }
 
@@ -69,8 +71,8 @@ ONLY=0
 case "${1:-}" in
     "") ;;
     --only)
-        case "${2:-}" in 1|2|3|4|5|6|7|8|9|10|11) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 11)" >&2; exit 2 ;; esac ;;
-    *) echo "usage: check.sh [--only N]  (N is 1 to 11)" >&2; exit 2 ;;
+        case "${2:-}" in 1|2|3|4|5|6|7|8|9|10|11|12) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 12)" >&2; exit 2 ;; esac ;;
+    *) echo "usage: check.sh [--only N]  (N is 1 to 12)" >&2; exit 2 ;;
 esac
 
 # Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
@@ -95,7 +97,7 @@ fail_step() {
 run_step() {
     [ "${FULL_RUN}" -eq 1 ] || [ "${ONLY}" -eq "$1" ] || return 0
     printf -- '--- step %s: %s ---\n' "$1" "$(step_name "$1")"
-    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; 10) step_10 ;; 11) step_11 ;; esac
+    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; 10) step_10 ;; 11) step_11 ;; 12) step_12 ;; esac
 }
 
 step_1() {
@@ -200,7 +202,12 @@ step_11() {
     bash "${REPO_ROOT}/scripts/gate-run-test.sh" || fail_step 11
 }
 
-for n in 1 2 3 4 5 6 7 8 9 10 11; do run_step "${n}"; done
+step_12() {
+    bash "${REPO_ROOT}/scripts/vendor-perms-check-test.sh" || fail_step 12
+    bash "${REPO_ROOT}/scripts/dockerfile-unzip-check-test.sh" || fail_step 12
+}
+
+for n in 1 2 3 4 5 6 7 8 9 10 11 12; do run_step "${n}"; done
 
 # shellcheck disable=SC2034  # the EXIT trap's gate_ledger_record reads it
 GATE_SUITE_PASSED=1

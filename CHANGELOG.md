@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-10 — two shared checks keep composer's vendor/ from being world-writable (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 1014.** `scripts/vendor-perms-check.sh <vendor-dir>` fails closed unless `find` judges vendor/ itself and
+everything under it and prints `world-writable paths under vendor/: 0 of N` with N above 1; it refuses a symlinked
+vendor/, a missing `autoload.php` and a failing `find`, and names the first five world-writable paths.
+`scripts/dockerfile-unzip-check.sh <Dockerfile>` fails each stage whose last apk change follows its last removal of
+`/usr/bin/unzip`, because that change relinks busybox unzip. Both are POSIX sh; their tests run every case under bash
+and busybox sh, in new gate step 12. They replace the per-app copies card 797 added; the apps switch in their own
+pull requests. Decision: vendor-is-never-world-writable.
+
 ## 2026-11-06 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Cards 928 and 929.** `scripts/hook-bypass-scan.sh` no longer reads `--no-verbose` (or `--no-verb`, or
 merge's `--no-verify-signatures`) as the long flag: the rule is now each prefix git takes for

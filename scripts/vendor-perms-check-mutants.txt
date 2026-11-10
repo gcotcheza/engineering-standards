@@ -1,0 +1,13 @@
+# T5 guard-deletion mutants for scripts/vendor-perms-check.sh (card 1014), for scripts/guard-mutants.sh.
+#   VP_TEST=$PWD/scripts/vendor-perms-check-test.sh scripts/guard-mutants.sh scripts/vendor-perms-check.sh scripts/vendor-perms-check-mutants.txt
+vp-argc@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@[ "$#" -eq 1 ] || usage@@
+vp-strip-slash@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@while :; do case ${VENDOR} in */) VENDOR=${VENDOR%/} ;; *) break ;; esac; done@@
+vp-empty@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@[ -n "${VENDOR}" ] || usage@@
+vp-symlink@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@[ -L "${VENDOR}" ] && die "${VENDOR} is a symlink, so what it points at is not the vendor/ composer installed here."@@
+vp-autoload@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@[ -f "${VENDOR}/autoload.php" ] || die "no ${VENDOR}/autoload.php, so there is no installed vendor/ to judge."@@
+vp-list-find@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@ALL_PATHS=$(find "${VENDOR}/" ! -type l) || die "find could not list every path under ${VENDOR}/, so a world-writable one could hide there."@@ALL_PATHS=$(find "${VENDOR}/" ! -type l)
+vp-total@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@[ "${ALL}" -gt 1 ] || die "find saw no path under ${VENDOR}/ but vendor/ itself, so there is nothing to judge."@@
+vp-mode-find@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@WRITABLE=$(find "${VENDOR}/" ! -type l -perm -0002) || die "find could not judge every mode under ${VENDOR}/, so a world-writable path could hide there."@@WRITABLE=$(find "${VENDOR}/" ! -type l -perm -0002)
+vp-mindepth@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@WRITABLE=$(find "${VENDOR}/" ! -type l -perm -0002) || die "find could not judge every mode under ${VENDOR}/, so a world-writable path could hide there."@@WRITABLE=$(find "${VENDOR}/" -mindepth 1 ! -type l -perm -0002) || die "find could not judge every mode under ${VENDOR}/, so a world-writable path could hide there."
+vp-skip-links@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@WRITABLE=$(find "${VENDOR}/" ! -type l -perm -0002) || die "find could not judge every mode under ${VENDOR}/, so a world-writable path could hide there."@@WRITABLE=$(find "${VENDOR}/" -perm -0002) || die "find could not judge every mode under ${VENDOR}/, so a world-writable path could hide there."
+vp-verdict@@VENDOR_PERMS_CHECK_SH="$MUTANT_TARGET" bash "$VP_TEST"@@[ "${W}" -eq 0 ] || die "${W} of ${ALL} paths under vendor/ are world-writable, first five:@@true || die "${W} of ${ALL} paths under vendor/ are world-writable, first five:

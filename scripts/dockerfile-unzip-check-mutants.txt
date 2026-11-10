@@ -1,0 +1,19 @@
+# T5 guard-deletion mutants for scripts/dockerfile-unzip-check.sh (card 1014), for scripts/guard-mutants.sh.
+#   DU_TEST=$PWD/scripts/dockerfile-unzip-check-test.sh scripts/guard-mutants.sh scripts/dockerfile-unzip-check.sh scripts/dockerfile-unzip-check-mutants.txt
+du-argc@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@[ "$#" -eq 1 ] || usage@@
+du-empty@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@[ -n "$1" ] || usage@@
+du-is-file@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@[ -f "${DOCKERFILE}" ] || die "${DOCKERFILE} is not a file, so nothing was judged."@@
+du-last-match@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@    while ((p = match(s, re)) > 0) { r = off + p; off += p; s = substr(s, p + 1) }@@    if ((p = match(s, re)) > 0) { r = off + p }
+du-no-change@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@    if (!change) return@@
+du-order@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@    if (removal < change) { left++; print "stage leaves /usr/bin/unzip after its last apk change: " stage }@@    if (0) { left++; print "stage leaves /usr/bin/unzip after its last apk change: " stage }
+du-apk-flags@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@    APK = "(^|[^[:alnum:]_])apk([[:space:]]+-[^[:space:]]+)*[[:space:]]+(add|del|upgrade|fix)([^[:alnum:]_]|$)"@@    APK = "(^|[^[:alnum:]_])apk[[:space:]]+(add|del|upgrade|fix)([^[:alnum:]_]|$)"
+du-apk-verbs@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@    APK = "(^|[^[:alnum:]_])apk([[:space:]]+-[^[:space:]]+)*[[:space:]]+(add|del|upgrade|fix)([^[:alnum:]_]|$)"@@    APK = "(^|[^[:alnum:]_])apk([[:space:]]+-[^[:space:]]+)*[[:space:]]+(add)([^[:alnum:]_]|$)"
+du-apk-word@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@    APK = "(^|[^[:alnum:]_])apk([[:space:]]+-[^[:space:]]+)*[[:space:]]+(add|del|upgrade|fix)([^[:alnum:]_]|$)"@@    APK = "apk([[:space:]]+-[^[:space:]]+)*[[:space:]]+(add|del|upgrade|fix)([^[:alnum:]_]|$)"
+du-rm-word@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@    RM = "(^|[^[:alnum:]_])rm([[:space:]]+[^[:space:];&|]+)*[[:space:]]+/usr/bin/unzip([[:space:];&|]|$)"@@    RM = "(^|[^[:alnum:]_])rm([[:space:]]+[^[:space:];&|]+)*[[:space:]]+/usr/bin/unzip"
+du-stage-split@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]/ { close_stage(); froms++; stage = trim($0); change = 0; removal = 0; next }@@/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]/ { froms++; stage = trim($0); change = 0; removal = 0; next }
+du-stage-reset@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]/ { close_stage(); froms++; stage = trim($0); change = 0; removal = 0; next }@@/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]/ { close_stage(); froms++; stage = trim($0); next }
+du-comment@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@/^[[:space:]]*#/ { next }@@
+du-no-from@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@    if (!froms) exit 3@@
+du-no-from-msg@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@[ "${RC}" -ne 3 ] || die "${DOCKERFILE} has no FROM line, so nothing was judged."@@
+du-verdict-seen@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@case ${OUT} in *'stages that change apk packages: '*) ;; *) die "awk exited ${RC} without a verdict on ${DOCKERFILE}." ;; esac@@
+du-verdict@@DOCKERFILE_UNZIP_CHECK_SH="$MUTANT_TARGET" bash "$DU_TEST"@@[ "${RC}" -eq 0 ] || die "a stage of ${DOCKERFILE} can relink busybox unzip after removing it; remove /usr/bin/unzip again after its last apk change."@@
