@@ -1,3 +1,8 @@
 # T5 guard-deletion mutants for scripts/lib/dialog-lib.sh (card 595), for scripts/guard-mutants.sh.
 #   QUEUE_START_TEST=$PWD/scripts/queue-start-test.sh scripts/guard-mutants.sh scripts/lib/dialog-lib.sh scripts/dialog-lib-mutants.txt
+# dl-*-pipe-q put the piped grep -q back (card 745): the big-screen verdicts go red under pipefail.
 dl-locale-pin@@DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  local -x LC_ALL="$DIALOG_LOCALE" 2>/dev/null; local s out re='Do you want to proceed\?' c='❯'@@  local s out re='Do you want to proceed\?' c='❯'
+dl-chrome-pipe-q@@DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  printf '%s\n' "$s" | grep -aE '^[[:space:]]*❯'"$w"'*[0-9]+\.|^[[:space:]]*│('"$w"'|❯)*[0-9]+\.|Esc to cancel' >/dev/null \@@  printf '%s\n' "$s" | grep -aqE '^[[:space:]]*❯'"$w"'*[0-9]+\.|^[[:space:]]*│('"$w"'|❯)*[0-9]+\.|Esc to cancel' \
+dl-block-pipe-q@@DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  if [ -z "$out" ] && printf '%s\n' "$s" | grep -aE '^[[:space:]]*(│'"$w"'*)?❯'"$w"'*[0-9]+\.[[:space:]]*[^[:space:]]' >/dev/null; then@@  if [ -z "$out" ] && printf '%s\n' "$s" | grep -aqE '^[[:space:]]*(│'"$w"'*)?❯'"$w"'*[0-9]+\.[[:space:]]*[^[:space:]]'; then
+dl-enter-pipe-q@@DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@  if [ -z "$out" ] && printf '%s\n' "$s" | grep -aE 'Enter to (confirm|select)' >/dev/null \@@  if [ -z "$out" ] && printf '%s\n' "$s" | grep -aqE 'Enter to (confirm|select)' \
+dl-esc-pipe-q@@DIALOG_LIB_SH="$MUTANT_TARGET" bash "$QUEUE_START_TEST"@@     && printf '%s\n' "$s" | grep -aE 'Esc to (cancel|close)' >/dev/null; then@@     && printf '%s\n' "$s" | grep -aqE 'Esc to (cancel|close)'; then

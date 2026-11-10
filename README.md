@@ -119,8 +119,9 @@ everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (whic
 request number means), `ledger.sh` (the gate ledger), `preflight.sh`, `cleanup.sh` (the
 after-deploy worktree reaper), `compose.sh` (root's compose, from `fleet-deploy`'s export only),
 `literal.sh` (a gate's literal guard, below), `ownership.sh` (root's ownership repair, which follows
-no link) and `base.sh` (a gate's `--base` vetting, held by `base-test.sh`). A project copies those files and `VERSION` into its own `scripts/lib/deploy/`,
-byte-identical, and sources them. Four of root's reads in the app tree go through the app user:
+no link, and the gate's root-owned check) and `base.sh` (a gate's `--base` vetting, held by `base-test.sh`). Nothing vendors them: a
+project's gate and deploy source the one copy on the box, `/srv/engineering-standards/scripts/lib/deploy`, through the `DEPLOY_LIB`
+pin in its own `scripts/lib/gate/deploy-lib.sh` (decision: t9-follows-the-deploy-lib). Four of root's reads in the app tree go through the app user:
 `deploy_head_file` and the pre-build tracked-file check through `git-as`, `deploy_app_env_value` and
 `deploy_build_hash` through `sudo -u`; `deploy_compose_buildcheck`'s `cmp` still reads as root (card 320).
 Before any git call in `ROOT` the lib refuses a `.git` that is not a plain directory, or a link, FIFO
@@ -132,11 +133,12 @@ instead of hanging it. A project's own `deploy.sh` git calls are not bounded unl
 through `deploy_git_or_refuse` (`docs/DECISIONS.md`, card 441).
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
-project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After
+lib's `test.sh` recomputes it, so an edit without a re-stamp is a failing test. After
 changing a file here, raise `VERSION` first (gate step 2 checks it), then re-stamp it: `h=$(tail -n +2 f.sh | sha256sum | cut -d' ' -f1); sed -i
 "1s|.*|# fleet-deploy-lib $(cat VERSION) sha256:$h|" f.sh`
 
-Taking an update is: copy the files, run the project's own deploy test, open the PR.
+Taking an update is merging here: the box copy is what every project reads next, so a project's own PR
+only changes how it calls the lib.
 `scripts/lib/deploy/test.sh` proves the library against fakes alone — no checkout, no docker.
 The standards `VERSION` is **not** bumped for a library change: the library carries its own.
 
