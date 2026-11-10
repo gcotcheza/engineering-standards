@@ -757,6 +757,10 @@ line_skip 'a spliced line that expands to a skipped one is still a finding' 1 "$
     "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
 line_skip 'a quoted line that de-quotes to a skipped one is still a finding' 1 "$(fixture scripts/a.sh 'git commit --no-"@verify" -m x')" '' \
     "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
+line_skip "a c''ommit line is still a finding under the plain line's skip" 1 "$(fixture scripts/a.sh "git c''ommit --no-@verify -m x")" '' \
+    "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
+line_skip "a c\"\"ommit line is still a finding under the plain line's skip" 1 "$(fixture scripts/a.sh 'git c""ommit --no-@verify -m x')" '' \
+    "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
 RJ='git commit --no-@verify -m x; y="a'
 line_skip 'a quoted-newline join finding is never skipped by its first line' 1 "$(fixture scripts/a.sh "${RJ}" 'b"')" \
     "skipped scripts/a.sh:1 sha256 $(sha "${RJ}")" "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:$(sha "${RJ}")"

@@ -10,6 +10,7 @@ is a finding. Every applied skip prints, in argument order, its path, line numbe
 line of the statement; a skip given more times than statements hash to it is stale, exit 1. Gate step 2 now skips the deploy lib's `test.sh` by its one `env -u HOME` line,
 not whole. Why: decision: the-hook-bypass-scan-skips-one-line-by-its-hash. Merged after card 991: the hash is of the statement as read, never of its de-quoted or expanded copy, so a
 line that only expands to a skipped one is still a finding, and a quoted-newline join finding is never skipped; 4 new cases and mutant row `hb-line-stmt-normalised`.
+Merge review: a `c''ommit` or `c""ommit` line is still a finding under the plain line's skip, since the hash is of the line before its empty pairs drop; 2 new cases (660) and mutant row `hb-line-stmt-emptypair`.
 
 ## 2026-11-07 — the hook-bypass scan finds --no-verify built by brace expansion or an empty splice (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 991.** Each line is judged a third time, for the long flag only, as bash would build it: an unset
