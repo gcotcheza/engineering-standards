@@ -130,17 +130,18 @@ equals   'case 10e: ; rm -rf and a bare rm after && both count' "${OUT}" 'stages
 equals   'case 10e: exit code' "${RC}" 0
 
 # --- 11. continuations are joined: a verb on the next line, a from on a continuation, a comment line inside ------------
-df 'FROM app AS gate' 'RUN apk add zip && rm -f /usr/bin/unzip' 'RUN apk \' '    add git'; run "${F}"
+BS=\\
+df 'FROM app AS gate' 'RUN apk add zip && rm -f /usr/bin/unzip' "RUN apk ${BS}" '    add git'; run "${F}"
 contains 'case 11a: apk \ then its verb is a change' "${OUT}" "${LEAVES}FROM app AS gate"
 equals   'case 11a: exit code' "${RC}" 1
-df 'FROM app AS gate' 'RUN apk add zip && rm -f /usr/bin/unzip && cp /a \' '    from /b && apk add git'; run "${F}"
+df 'FROM app AS gate' "RUN apk add zip && rm -f /usr/bin/unzip && cp /a ${BS}" '    from /b && apk add git'; run "${F}"
 contains 'case 11b: a continued from is no stage' "${OUT}" "${LEAVES}FROM app AS gate"
 contains 'case 11b: one stage is counted' "${OUT}" 'stages that change apk packages: 1, leaving unzip: 1'
 equals   'case 11b: exit code' "${RC}" 1
-df 'FROM app AS gate' 'RUN apk add git && \' '    # a note' '    rm -f /usr/bin/unzip'; run "${F}"
+df 'FROM app AS gate' "RUN apk add git && ${BS}" '    # a note' '    rm -f /usr/bin/unzip'; run "${F}"
 equals   'case 11c: a comment line inside a continuation is dropped' "${OUT}" 'stages that change apk packages: 1, leaving unzip: 0'
 equals   'case 11c: exit code' "${RC}" 0
-df 'FROM app AS gate' 'RUN apk add zip && rm -f /usr/bin/unzip' 'RUN apk add git \'; run "${F}"
+df 'FROM app AS gate' 'RUN apk add zip && rm -f /usr/bin/unzip' "RUN apk add git ${BS}"; run "${F}"
 contains 'case 11d: a continuation at the end of the file is judged' "${OUT}" "${LEAVES}FROM app AS gate"
 equals   'case 11d: exit code' "${RC}" 1
 df $'FROM app AS gate\r' $'RUN apk add zip && rm -f /usr/bin/unzip\r' $'RUN apk \\\r' $'    add git\r'; run "${F}"
