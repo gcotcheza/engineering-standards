@@ -32,18 +32,27 @@ with `scripts/guard-mutants.sh`.
 ## The gate
 
 `scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script and
-`fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then the one
-step that judges this repo's own tree — VERSION and ENGINEERING-STANDARDS.md moved together,
-or neither moved, W7's decisions check passes on this tree and W4's closing line still matches its
-word-count `sed` — the six fixture-only tests and shellcheck (the pinned image, style
+`fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then the vendor/
+and Dockerfile checks' fixtures, then the one step that judges this repo's own tree — VERSION and
+ENGINEERING-STANDARDS.md moved together, or neither moved, W7's decisions check passes on this tree
+and W4's closing line still matches its word-count `sed` — then the other fixture-only tests and shellcheck (the pinned image, style
 severity — a missing image is a loud failure, never a skip) in measured cost order, cheapest
 first. The order is a measurement, not a list to keep in your head; `scripts/check.sh` prints each step
 with its number and name as it runs. A full run records to the fleet gate ledger
 (`scripts/lib/deploy/ledger.sh`); `scripts/check.sh --only N` runs one step alone and
 records nothing, so debugging a step never pollutes the ledger. The long-form why —
 including the measurement behind the step order — is in `docs/DECISIONS.md`, because
-W7 applies to this repository too: new decisions are files in `docs/decisions/`. The last step,
-W7's two fixture suites, is placed last unmeasured.
+W7 applies to this repository too: new decisions are files in `docs/decisions/`. The last two steps,
+W7's two fixture suites and gate-run's planted attacks, are the dearest: 39s and 107s, measured 2026-11-10.
+
+`scripts/vendor-perms-check.sh <vendor-dir>` fails a composer vendor/ that any uid could write to. It
+passes only on `world-writable paths under vendor/: 0 of N` with N above 1, names the first five hits,
+and refuses a symlinked vendor/, a missing `autoload.php` and a `find` that fails.
+`scripts/dockerfile-unzip-check.sh [--stages N] <Dockerfile>` fails each stage whose last apk change
+comes after its last removal of `/usr/bin/unzip`, a Dockerfile where no stage changes apk packages,
+and, with `--stages N`, any count of such stages but N. Both are POSIX sh, run from this checkout
+against an app's tree, and are not vendored. What each counts and refuses is in its own header;
+why: decision: vendor-is-never-world-writable.
 
 `scripts/decisions-check.sh <project-root>` is W7's check and `scripts/decisions-rollup.sh
 <project-root>` its roll-up; both run from this checkout against an app root and are not vendored.
@@ -119,8 +128,9 @@ everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (whic
 request number means), `ledger.sh` (the gate ledger), `preflight.sh`, `cleanup.sh` (the
 after-deploy worktree reaper), `compose.sh` (root's compose, from `fleet-deploy`'s export only),
 `literal.sh` (a gate's literal guard, below), `ownership.sh` (root's ownership repair, which follows
-no link) and `base.sh` (a gate's `--base` vetting, held by `base-test.sh`). A project copies those files and `VERSION` into its own `scripts/lib/deploy/`,
-byte-identical, and sources them. Four of root's reads in the app tree go through the app user:
+no link, and the gate's root-owned check) and `base.sh` (a gate's `--base` vetting, held by `base-test.sh`). Nothing vendors them: a
+project's gate and deploy source the one copy on the box, `/srv/engineering-standards/scripts/lib/deploy`, through the `DEPLOY_LIB`
+pin in its own `scripts/lib/gate/deploy-lib.sh` (decision: t9-follows-the-deploy-lib). Four of root's reads in the app tree go through the app user:
 `deploy_head_file` and the pre-build tracked-file check through `git-as`, `deploy_app_env_value` and
 `deploy_build_hash` through `sudo -u`; `deploy_compose_buildcheck`'s `cmp` still reads as root (card 320).
 Before any git call in `ROOT` the lib refuses a `.git` that is not a plain directory, or a link, FIFO
@@ -132,11 +142,12 @@ instead of hanging it. A project's own `deploy.sh` git calls are not bounded unl
 through `deploy_git_or_refuse` (`docs/DECISIONS.md`, card 441).
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
-project's own gate recomputes it, so a local edit to a vendored copy is a failing test. After
-changing a file here, raise `VERSION` first (gate step 2 checks it), then re-stamp it: `h=$(tail -n +2 f.sh | sha256sum | cut -d' ' -f1); sed -i
+lib's `test.sh` recomputes it, so an edit without a re-stamp is a failing test. After
+changing a file here, raise `VERSION` first (gate step 3 checks it), then re-stamp it: `h=$(tail -n +2 f.sh | sha256sum | cut -d' ' -f1); sed -i
 "1s|.*|# fleet-deploy-lib $(cat VERSION) sha256:$h|" f.sh`
 
-Taking an update is: copy the files, run the project's own deploy test, open the PR.
+Taking an update is merging here: the box copy is what every project reads next, so a project's own PR
+only changes how it calls the lib.
 `scripts/lib/deploy/test.sh` proves the library against fakes alone — no checkout, no docker.
 The standards `VERSION` is **not** bumped for a library change: the library carries its own.
 
