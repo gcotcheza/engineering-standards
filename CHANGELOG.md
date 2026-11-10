@@ -10,6 +10,34 @@ because that change relinks busybox unzip; it fails when no stage was judged, an
 are POSIX sh; their tests run every case under bash and busybox sh, in new gate step 2 (old steps 2–11 are now 3–12). They replace the per-app copies card 797 added; the apps switch in their own
 pull requests. Decision: vendor-is-never-world-writable.
 
+## 2026-11-07 — the hook-bypass scan finds --no-verify built by brace expansion or an empty splice (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 991.** Each line is judged a third time, for the long flag only, as bash would build it: an unset
+`$x`, `${x}`, `$1`-`$9`, `$@`, `$*` or `$!`, any `$( )` or backticks, and an empty `$""` or `$''`, are
+dropped, the line is de-quoted, one-character `{a..c}` ranges become lists, and brace groups are expanded
+word by word (`--no-{verify,}`, `--{no-verify,x}`, `-{-,}no-verify`, nested groups). It is expanded twice,
+once more with quoted or escaped blanks, braces, commas and operators made literal, as bash keeps them.
+Past 4096 chars the range and brace expansion stops and fails closed, but only for a word holding a
+brace group whose characters, in order, could still spell `--no-v` (a letter range may give any letter),
+since expansion never reorders them; minified CSS, JS or one-line JSON with `--` in it passes unless its
+characters spell `--no-v` in order. Lines are joined while a quote is open, for the long flag only, so
+`--no-{"x<newline>y",verify}` is read as bash builds it. One shared quote step tells all three quote
+readers which quote ends where and where a backslash escapes (inside `"..."` and `$'...'` too, never
+inside `'...'`); for that join a `#` opens a comment only at the start of a line or after an unquoted
+blank, never after an escaped one or after `;`, `&`, `|`, `(` or `)`, where the quote is held. Past 20
+lines or 4096 chars that join fails open (decision: hook-bypass-scan-join-fails-open), and each line is still judged
+alone. Only the long flag reads this
+copy: an expanded JS `{HOME,x}=` would be a false HOME= deny. Every case's scan is bounded at 10 s, so a
+hang is a failed case. Empty quote pairs and backslashes were already dropped, and this copy reads the long flag by
+the whole-prefix rule of cards 928 and 929 below, so it also passes `--no-verbose`. The de-quote step is now one function used by both copies. Still
+open, for a follow-up card: ANSI-C escapes inside a flag built by braces or splices (`$'\x2d'-no-{verify,}`); a `$( )`
+or a variable that prints part of the flag (`-$(printf -)`, `${x:--}`); a nested `$( $( ) )`; stepped
+ranges (`{m..o..1}`), and multi-character or mixed-class sequence braces; a quote left open past the
+join's cap; a stray unbalanced quote outside a comment up to 20 lines before a quoted-newline route,
+which holds the join open; and, for that join's comment reading, a comment after `;`, `&`, `|`, `(` or
+`)` (held as a quote, so a stray quote in it can hide a route on the next lines), `$(echo "(")`, case arms
+inside `$( )`, the contents of `${...}`, `<`/`>` as word starts, and a backslash-newline before `#`.
+87 new cases (one added at the merge with cards 928 and 929); 55 new mutant rows, 5 reworded, and `hb-dollar-quote` retired for `hb-qstep-dollar`.
+
 ## 2026-11-06 — the hook-bypass scan passes --no-verbose and a mirror's read-only git, and judges ANSI-C strings decoded as well as written (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Cards 928 and 929.** `scripts/hook-bypass-scan.sh` no longer reads `--no-verbose` (or `--no-verb`, or
 merge's `--no-verify-signatures`) as the long flag: the rule is now each prefix git takes for
