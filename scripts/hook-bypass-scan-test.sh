@@ -32,7 +32,7 @@ fixture() { # <file> <line>... -> repo path
 expect() {
     local label="$1" want="$2" at="${AT:-1}" repo rc out
     repo="$(fixture "${@:3}")"
-    rc=0; out="$(bash "${SCAN}" "${repo}" 2>&1)" || rc=$?
+    rc=0; out="$(timeout 10 bash "${SCAN}" "${repo}" 2>&1)" || rc=$?
     if [[ "${rc}" -ne "${want}" ]]; then
         bad "${label}: exit ${rc}, wanted ${want}: ${out}"
     elif [[ "${want}" -eq 1 && "${out}" != *"hook-bypass-scan: $3:${at}:"* ]]; then
@@ -188,6 +188,110 @@ expect "r2 near miss: a quoted n glued into -m's value" 0 scripts/a.sh 'git comm
 expect "r2 near miss: a message holding a quoted n" 0 scripts/a.sh "git commit -m \"run 'lint -@n' first\""
 expect 'r2 near miss: a quoted pathspec holding a spaced n' 0 scripts/a.sh 'git commit -q -- "my -@n notes.txt"'
 expect 'r2 near miss: a container home before a $(' 0 scripts/e2e.sh 'docker run --rm -e HOM@E=/tmp node npm ci $(x)'
+
+# --- r4: bash expands braces and drops an empty splice, so the long flag is judged as bash would build it --
+expect 'r4: the long flag braced with an empty alternative' 1 scripts/a.sh 'git commit --no-{@verify,} -m x'
+expect 'r4: the long flag as one alternative of a brace' 1 scripts/a.sh 'git commit --{no-@verify,x} -m x'
+expect 'r4: the long flag with its first dash braced' 1 scripts/a.sh 'git commit -{-,}no-@verify -m x'
+expect 'r4: the long flag with its head braced' 1 scripts/a.sh 'git commit --no-{@ver,}ify -m x'
+expect 'r4: the long flag in a nested brace' 1 scripts/a.sh 'git commit --no-{@v{e,}rify,x} -m x'
+expect 'r4: the long flag quoted inside a brace' 1 scripts/a.sh 'git commit --no-{"@verify",} -m x'
+expect 'r4: the long flag split by ${x}' 1 scripts/a.sh 'git commit --no-${x}@verify -m x'
+expect 'r4: the long flag split by $x, its tail quoted' 1 scripts/a.sh 'git commit --no-$x"@verify" -m x'
+expect 'r4: the long flag split by $*' 1 scripts/a.sh 'git commit --no-$*@verify -m x'
+expect 'r4: the long flag split by an empty $( )' 1 scripts/a.sh 'git commit --no-$()@verify -m x'
+expect 'r4: the long flag split by empty backticks' 1 scripts/a.sh 'git commit --no-``@verify -m x'
+expect 'r4: the long flag inside a $( ) is still judged' 1 scripts/a.sh 'x=$(git commit --no-@verify -m x)'
+expect 'r4 near miss: prose that mentions verify' 0 scripts/a.sh 'echo "verify the build, then commit with --no-edit"'
+expect 'r4 near miss: --no-edit' 0 scripts/a.sh 'git commit --amend --no-edit'
+expect 'r4 near miss: --no-ff' 0 scripts/a.sh 'git merge --no-ff topic'
+expect 'r4 near miss: log --no-merges' 0 scripts/a.sh 'git log --no-merges'
+expect 'r4 near miss: a plain brace' 0 scripts/a.sh 'cp notes.{txt,bak} && echo {a,b}'
+expect 'r4 near miss: a brace of other --no- flags' 0 scripts/a.sh 'git merge --no-{edit,ff} topic'
+expect 'r4 near miss: a splice before another --no- flag' 0 scripts/a.sh 'git commit --no-${x}edit --no-$(true)ff'
+expect 'r4 near miss: a JS destructuring of HOME' 0 e2e/a.js 'const {HOM@E,x}=process.env'
+expect 'r5: the long flag split by an empty $""' 1 scripts/a.sh 'git commit --no-$""@verify -m x'
+expect "r5: the long flag split by an empty \$''" 1 scripts/a.sh "git commit --no-\$''@verify -m x"
+expect 'r5: the long flag split by $!' 1 scripts/a.sh 'git commit --no-$!@verify -m x'
+expect 'r5: a brace alternative holding a quoted blank' 1 scripts/a.sh 'git commit --no-{"x y",@verify} -m x'
+expect 'r5: a brace alternative holding an escaped blank' 1 scripts/a.sh 'git commit --no-{\ ,@verify} -m x'
+expect 'r5: a brace alternative holding a quoted brace' 1 scripts/a.sh 'git commit --no-{"}",@verify} -m x'
+expect 'r5: a brace inside bash -c' 1 scripts/a.sh 'bash -c "git commit --no-{@verify,} -m x"'
+expect 'r5: a one-letter sequence brace' 1 scripts/a.sh 'git commit --{n..n}o-@verify -m x'
+expect 'r5: a sequence brace of two letters' 1 scripts/a.sh 'git commit --n{o..p}-@verify -m x'
+expect 'r5 near miss: rsync --no- flags in a brace' 0 scripts/a.sh 'rsync -a --no-{perms,owner,group} src/ dst/'
+expect 'r5 near miss: splices before other --no- flags' 0 scripts/a.sh 'git log --no-${x}merges --no-$(echo)walk'
+expect 'r5 near miss: --no- inside a ${x:+}' 0 scripts/a.sh 'git commit "${x:+--no-}edit"'
+expect 'r5 near miss: a JS object named verify' 0 e2e/a.js 'const o = {verify,x}'
+expect 'r5 near miss: find -exec' 0 scripts/a.sh 'find . -name x -exec rm {} \;'
+expect 'r5 near miss: a printf brace' 0 scripts/a.sh "printf '{%s,%s}\\n' a b"
+timed() { # <label> <want rc> <line>: scripts/a.sh holding <line> is judged within 20 s
+    local repo rc=0
+    repo="$(fixture scripts/a.sh "$3")"
+    timeout 20 bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+    if [[ "${rc}" -eq "$2" ]]; then ok "$1"; else bad "$1: exited ${rc}, wanted $2"; fi
+}
+# Past the cap a word holding a brace and two dashes expansion could join fails closed: the flag may be any alternative.
+long="$(printf 'a%.0s' {1..4200})"
+timed 'r5: past the cap, the flag in a second alternative' 1 "echo ${long}; git commit --{x,no-@verify} -m x"
+timed 'r6: past the cap, the flag tail in a brace' 1 "echo ${long}; git commit --no-{x,@verify} -m x"
+timed 'r6: past the cap, the flag built by a sequence brace' 1 "echo ${long}; git commit --{n..n}o-@verify -m x"
+timed 'r6: past the cap, a group between two letters' 1 "echo ${long}; git commit --n{x,}o-@verify -m x"
+timed 'r6: past the cap, a dash inside the group' 1 "echo ${long}; git commit -{-,x}no-@verify -m x"
+timed 'r7: past the cap, an empty first alternative after a dash' 1 "echo ${long}; git commit -{,x}-no-@verify -m x"
+timed 'r7: past the cap, a group opening the word' 1 "echo ${long}; git commit {-,x}-no-@verify -m x"
+timed 'r7: past the cap, two groups building the flag' 1 "echo ${long}; git commit -{-,}{n,}o-@verify -m x"
+timed 'r7: past the cap, an empty quote between the dashes' 1 "echo ${long}; git commit -\"\"-no-{@verify,x} -m x"
+timed 'r7: past the cap, a splice between the dashes' 1 "echo ${long}; git commit "'-$x-no-{@verify,x}'" -m x"
+timed 'r7: past the cap, a quoted dash' 1 "echo ${long}; git commit -'-'no-{@verify,x} -m x"
+timed 'r7: past the cap, a one-letter sequence brace' 1 "echo ${long}; git commit --n{o..o}-@verify -m x"
+timed 'r7: past the cap, a sequence brace naming no letter of the flag' 1 "echo ${long}; git commit --{m..p}o-@verify -m x"
+timed 'r7: past the cap, an escaped dash' 1 "echo ${long}; git commit -\\-no-{@verify,x} -m x"
+timed 'r7: past the cap, two groups of empty alternatives' 1 "echo ${long}; git commit --{n,}{o,}-@verify -m x"
+timed 'r7: past the cap, the whole flag in a group' 1 "echo ${long}; git commit {--no-@verify,x} -m x"
+timed 'r7: past the cap, a splice in the group' 1 "echo ${long}; git commit "'-{$x,y}-no-@verify'" -m x"
+# 30 groups in one word are 2^30 words: the cap stops expansion in time, and the line is still judged.
+timed 'r4: a brace-padded line is judged in time' 1 "x$(printf '{a,b}%.0s' {1..30}) && git commit --no-{@verify,} -m x"
+timed 'r6: 25000 sequence braces are judged in time' 0 "echo $(printf '{a..z}%.0s' {1..25000})"
+# --- r6: past the cap, a word whose dashes no expansion could join passes --
+json="[$(for i in $(seq 150); do printf '{"id":%d,"date":"2026-11-02","ok":true},' "${i}"; done)0]"
+expect 'r6 near miss: one-line JSON past the cap, dashes in its dates' 0 data/a.json "${json}"
+expect 'r6 near miss: minified JS past the cap' 0 e2e/a.js "var c=[$(printf '{a:1,b:"x-y"},%.0s' {1..400})0];"
+# A group word with -- passes when no in-order pick of its characters spells the long flag's prefix.
+expect 'r7 near miss: minified CSS custom properties past the cap' 0 web/a.css "$(printf ':root{--font:Inter,Arial}.b{color:red}%.0s' {1..200})"
+expect 'r7 near miss: minified JS decrements past the cap' 0 e2e/a.js "$(printf 'function f(e,t){for(;e--;)g(e,t);return{a:e,b:t--}}%.0s' {1..300})"
+expect 'r7 near miss: one-line JSON holding a long option past the cap' 0 data/a.json "[$(printf '{"cmd":"ls --all","x":[1,2]},%.0s' {1..300})0]"
+expect 'r7 near miss: minified JS objects with a decrement past the cap' 0 e2e/a.js "$(printf 'f({a:-1,b:x--},{c:y-1});%.0s' {1..300})"
+# --- r6: a quoted newline is literal to bash, so the lines it joins are read as one for the long flag --
+expect 'r6: a quoted newline inside a brace group' 1 scripts/a.sh 'git commit --no-{"x' 'y",@verify} -m x'
+expect 'r6: a quoted newline whose next line opens with #' 1 scripts/a.sh 'git commit --no-{"x' '# y",@verify} -m x'
+expect 'r6: a quote open over three lines' 1 scripts/a.sh 'git commit --no-{"x' y 'z",@verify} -m x'
+expect 'r6: an escaped quote inside the open quote' 1 scripts/a.sh 'git commit --no-{"x\"' 'y",@verify} -m x'
+expect 'r7: an escaped quote inside an ANSI-C quote' 1 scripts/a.sh "git commit --no-{\$'\\'x" "y',@verify} -m x"
+expect 'r7: a # after an escaped blank opens no comment' 1 scripts/a.sh 'git commit --no-{\ #"x' 'y",@verify} -m x'
+AT=2 expect 'r6: a comment apostrophe before the route' 1 scripts/a.sh "# it's" 'git commit --no-{"x' 'y",@verify} -m x'
+expect 'r8: an escaped quote inside an ANSI-C quote, on one line' 1 scripts/a.sh "git commit --no-{\$'\\' ',@verify} -m x"
+expect 'r8: a backslash escapes nothing inside single quotes' 1 scripts/a.sh "git commit --no-{'a b\\',@verify} -m x"
+expect 'r8: the short flag after an escaped ;' 1 scripts/a.sh 'git commit a\; -@n'
+AT=2 expect 'r8: a comment after a blank' 1 scripts/a.sh "true # it's" 'git commit --no-{"x' 'y",@verify} -m x'
+expect 'r9: a # after the ) of $( ) opens no comment' 1 scripts/a.sh 'git commit --no-{$(true)#"x' 'y",@verify} -m x'
+expect 'r9: a # after the )) of $(( )) opens no comment' 1 scripts/a.sh 'git commit --no-{$((1))#"x' 'y",@verify} -m x'
+expect 'r9: a # after the ) of <( ) opens no comment' 1 scripts/a.sh 'git commit --no-{<(true)#"x' 'y",@verify} -m x'
+expect 'r9: a # after the ) of >( ) opens no comment' 1 scripts/a.sh 'git commit --no-{>(true)#"x' 'y",@verify} -m x'
+expect 'r10: a # after a ) inside ${...} opens no comment' 1 scripts/a.sh '(git commit --no-{$(echo ${u/)/})#"x' 'y",verify} -m x)'
+AT=2 expect 'r10: a # after the ) of an extglob @( ) opens no comment' 1 scripts/a.sh 'shopt -s extglob' '(git commit --no-{@(a)#"x' 'y",verify} -m x)'
+expect 'r9: a quoted ) inside $( ) closes nothing' 1 scripts/a.sh '(git commit --no-{$(echo ")")#"x' 'y",@verify} -m x)'
+expect 'r10: a quoted blank then # opens no comment' 1 scripts/a.sh 'git commit -m "a #b" --no-{"x' 'y",@verify} -m x'
+expect 'r8: a quoted ; opens no comment' 1 scripts/a.sh 'git commit -m "a;#b" --no-{"x' 'y",@verify} -m x'
+expect 'r8 near miss: a quoted ;# then a quoted message over two lines' 0 scripts/a.sh 'echo "a;#b"' 'git commit -m "fix it' 'with --no-{edit,ff}"'
+AT=3 expect 'r6: a closed quote, then the route' 1 scripts/a.sh 'echo "a' 'b"' 'git commit --no-{"x' 'y",@verify} -m x'
+expect 'r6 near miss: a quoted message over two lines' 0 scripts/a.sh 'git commit -m "fix it' 'with --no-{edit,ff}"'
+expect 'r6 fails open: a quote open for 20 lines' 0 scripts/a.sh 'git commit --no-{"x' y y y y y y y y y y y y y y y y y y y 'y",@verify} -m x'
+expect 'r6 fails open: a quote open past 4096 chars' 0 scripts/a.sh 'git commit --no-{"x' "${long}" 'y",@verify} -m x'
+repo="$(fixture scripts/a.sh 'git commit --no-{"x')"
+printf '%s\n' 'y",@verify} -m x' | tr -d '@' >"${repo}/scripts/b.sh"
+rc=0; bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+if [[ "${rc}" -eq 0 ]]; then ok 'r6 near miss: a quote left open at the end of a file'; else bad "r6 near miss: a quote left open at the end of a file exited ${rc}, wanted 0"; fi
 
 # --- one root-home pass: env -i, the root home among its assignments, then any git, in one command --
 expect 'root home: env -i with only the root home, then git' 0 scripts/a.sh 'en@v -i HOM@E=/root git -C / status'
@@ -372,6 +476,7 @@ expect 'tilde: a revision that walks back' 0 scripts/a.sh "${R} log -1 --format=
 # F4: the line as written is judged beside its decoded copy, so a stray $' opens no fake ANSI-C string.
 expect "f4: the long flag with a backslash, after a '^ok\$' pattern" 1 scripts/a.sh 'grep -q '\''^ok$'\'' f && git commit --no-@\verify -m x'
 expect "f4: a backslashed short flag, after a '^ok\$' pattern" 1 scripts/a.sh 'grep -q '\''^ok$'\'' f && git com@mit -@\n -m x'
+expect "f4: a backslashed hooksPath, after a '^ok\$' pattern" 1 scripts/a.sh 'grep -q '\''^ok$'\'' f && git -c core.hoo@ks\path=/x commit -m x'
 expect 'f4: the long flag after a quoted dollar-quote' 1 scripts/a.sh 'echo "$'\''"; git commit --no-@verify -m x'
 expect 'f4: the short flag after a quoted dollar-quote' 1 scripts/a.sh 'echo "$'\''"; git com@mit -@n -m x'
 expect 'f4: the backslashed long flag after a quoted dollar-quote' 1 scripts/a.sh 'echo "$'\''"; git commit --no-@\verify -m x'
@@ -644,6 +749,17 @@ R3="${R//verify/verif}"
 repo="$(fixture scripts/a.sh "${R}" 'true' "${R3}")"
 line_skip 'skips print in argument order' 0 "${repo}" \
     "skipped scripts/a.sh:3 sha256 $(sha "${R3}") (1 finding statement(s) hash to it): ${R3//@/}"$'\n'"hook-bypass-scan: skipped scripts/a.sh:1 sha256 ${H}" '' "scripts/a.sh:$(sha "${R3}")" "scripts/a.sh:${H}"
+# A skip keys on the statement as written, never its de-quoted or expanded copy, which card 991's passes judge.
+RB='git commit --no-{@verify,} -m x' RS='git commit --no-${x}@verify -m x'
+line_skip 'a line skip applies to a brace-built or spliced flag, hashed as written' 0 "$(fixture scripts/a.sh "${RB}" "${RS}")" \
+    "skipped scripts/a.sh:1 sha256 $(sha "${RB}")" '' "scripts/a.sh:$(sha "${RB}")" "scripts/a.sh:$(sha "${RS}")"
+line_skip 'a spliced line that expands to a skipped one is still a finding' 1 "$(fixture scripts/a.sh "${RS}")" '' \
+    "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
+line_skip 'a quoted line that de-quotes to a skipped one is still a finding' 1 "$(fixture scripts/a.sh 'git commit --no-"@verify" -m x')" '' \
+    "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
+RJ='git commit --no-@verify -m x; y="a'
+line_skip 'a quoted-newline join finding is never skipped by its first line' 1 "$(fixture scripts/a.sh "${RJ}" 'b"')" \
+    "skipped scripts/a.sh:1 sha256 $(sha "${RJ}")" "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:$(sha "${RJ}")"
 mkdir -p "${WORK}/nosha" && printf '#!/bin/sh\nexit 127\n' >"${WORK}/nosha/sha256sum" && chmod 755 "${WORK}/nosha/sha256sum"
 out="$(PATH="${WORK}/nosha:${PATH}" bash "${SCAN}" "$(fixture scripts/a.sh "${R}")" "scripts/a.sh:${H}" 2>&1)"; rc=$?
 if [[ "${rc}" -eq 2 && "${out}" == *'sha256sum gave no hash'* && "${out}" != *stale* ]]; then ok 'a sha256sum that gives no hash exits 2, naming it'
