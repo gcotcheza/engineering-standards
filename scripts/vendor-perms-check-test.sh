@@ -117,5 +117,25 @@ fresh; chmod 0777 "${D}/vendor/acme" "${D}/vendor/acme/pkg"; run "${D}/vendor"
 contains 'case 9b: two 0777 dirs are counted' "${OUT}" 'world-writable paths under vendor/: 2 of 6'
 equals   'case 9b: exit code' "${RC}" 1
 
+# --- 10. seven hits: all counted, five named ----------------------------------------------------------------
+fresh; for i in 1 2 3 4 5 6 7; do mkdir "${D}/vendor/acme/d${i}"; chmod 0777 "${D}/vendor/acme/d${i}"; done; run "${D}/vendor"
+contains 'case 10: seven are counted' "${OUT}" 'world-writable paths under vendor/: 7 of 13'
+equals   'case 10: five are named' "$(grep -c "^${D}/vendor/acme/d[1-7]$" <<<"${OUT}")" 5
+equals   'case 10: exit code' "${RC}" 1
+
+# --- 11. a relative vendor/, with and without ./ and a slash ---------------------------------------------------
+fresh; cd -- "${D}" || exit 1
+run vendor
+equals   'case 11a: vendor, the verdict line' "${OUT}" 'world-writable paths under vendor/: 0 of 6'
+run ./vendor/
+equals   'case 11b: ./vendor/, the verdict line' "${OUT}" 'world-writable paths under vendor/: 0 of 6'
+cd -- "${WORK}" || exit 1
+
+# --- 12. a path with a space ------------------------------------------------------------------------------------
+fresh; mv -- "${D}" "${D} sp"; D="${D} sp"; chmod 0666 "${D}/vendor/acme/pkg/src.php"; run "${D}/vendor"
+contains 'case 12: a hit under a spaced path is counted' "${OUT}" 'world-writable paths under vendor/: 1 of 6'
+contains 'case 12: and named whole' "${OUT}" "${D}/vendor/acme/pkg/src.php"
+equals   'case 12: exit code' "${RC}" 1
+
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'vendor-perms-check-test: all cases passed\n'

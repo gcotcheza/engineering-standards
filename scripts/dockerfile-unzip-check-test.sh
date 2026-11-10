@@ -89,7 +89,9 @@ equals   'case 8a: upgrade after the rm, exit code' "${RC}" 1
 df 'FROM app AS gate' "${RM}" 'RUN apk fix'; run "${F}"
 equals   'case 8b: fix after the rm, exit code' "${RC}" 1
 df 'FROM app AS gate' 'RUN echo myapk add x'; run "${F}"
-equals   'case 8c: myapk is no change' "${OUT}" 'stages that change apk packages: 0, leaving unzip: 0'
+contains 'case 8c: myapk is no change' "${OUT}" 'stages that change apk packages: 0, leaving unzip: 0'
+contains 'case 8c: so nothing was judged' "${OUT}" "no stage of ${F} changes apk packages, so nothing was judged."
+equals   'case 8c: exit code' "${RC}" 1
 df 'FROM app AS gate' 'RUN apk add git && rm -f /usr/bin/unzip.bak'; run "${F}"
 equals   'case 8d: removing unzip.bak removes no unzip, exit code' "${RC}" 1
 
@@ -104,12 +106,62 @@ df 'FROM app AS gate' 'RUN apk add git' "${RM}"; run --fake-awk "${F}"
 contains 'case 9c: an awk with no verdict is refused' "${OUT}" "awk exited 0 without a verdict on ${F}."
 equals   'case 9c: exit code' "${RC}" 1
 run
-contains 'case 9d: no argument is usage' "${OUT}" 'usage: dockerfile-unzip-check.sh <Dockerfile>'
+contains 'case 9d: no argument is usage' "${OUT}" 'usage: dockerfile-unzip-check.sh [--stages N] <Dockerfile>'
 equals   'case 9d: exit code' "${RC}" 2
 run ''
 equals   'case 9e: an empty argument, exit code' "${RC}" 2
 run "${F}" "${F}"
 equals   'case 9f: two arguments, exit code' "${RC}" 2
+
+# --- 10. an rm counts only in command position, before any comment ---------------------------------------------
+df 'FROM app AS gate' 'RUN apk add --no-cache git' 'RUN echo rm /usr/bin/unzip'; run "${F}"
+contains 'case 10a: echo rm removes nothing' "${OUT}" "${LEAVES}FROM app AS gate"
+equals   'case 10a: exit code' "${RC}" 1
+df 'FROM app AS gate' 'RUN apk add --no-cache git # then rm -f /usr/bin/unzip'; run "${F}"
+equals   'case 10b: an rm in a trailing comment, exit code' "${RC}" 1
+df 'FROM app AS gate' 'RUN apk add --no-cache git # ; rm -f /usr/bin/unzip'; run "${F}"
+contains 'case 10c: a commented ; rm removes nothing' "${OUT}" "${LEAVES}FROM app AS gate"
+equals   'case 10c: exit code' "${RC}" 1
+df 'FROM app AS gate' 'RUN apk add --no-cache git' 'RUN [ -e /usr/bin/zip ] || rm -f /usr/bin/unzip'; run "${F}"
+contains 'case 10d: || rm removes nothing' "${OUT}" "${LEAVES}FROM app AS gate"
+equals   'case 10d: exit code' "${RC}" 1
+df 'FROM app AS gate' 'RUN apk add git;rm -rf /usr/bin/unzip' 'from gate as e2e' 'run apk add curl && rm /usr/bin/unzip'; run "${F}"
+equals   'case 10e: ; rm -rf and a bare rm after && both count' "${OUT}" 'stages that change apk packages: 2, leaving unzip: 0'
+equals   'case 10e: exit code' "${RC}" 0
+
+# --- 11. continuations are joined: a verb on the next line, a from on a continuation, a comment line inside ------------
+df 'FROM app AS gate' 'RUN apk add zip && rm -f /usr/bin/unzip' 'RUN apk \' '    add git'; run "${F}"
+contains 'case 11a: apk \ then its verb is a change' "${OUT}" "${LEAVES}FROM app AS gate"
+equals   'case 11a: exit code' "${RC}" 1
+df 'FROM app AS gate' 'RUN apk add zip && rm -f /usr/bin/unzip && cp /a \' '    from /b && apk add git'; run "${F}"
+contains 'case 11b: a continued from is no stage' "${OUT}" "${LEAVES}FROM app AS gate"
+contains 'case 11b: one stage is counted' "${OUT}" 'stages that change apk packages: 1, leaving unzip: 1'
+equals   'case 11b: exit code' "${RC}" 1
+df 'FROM app AS gate' 'RUN apk add git && \' '    # a note' '    rm -f /usr/bin/unzip'; run "${F}"
+equals   'case 11c: a comment line inside a continuation is dropped' "${OUT}" 'stages that change apk packages: 1, leaving unzip: 0'
+equals   'case 11c: exit code' "${RC}" 0
+df 'FROM app AS gate' 'RUN apk add zip && rm -f /usr/bin/unzip' 'RUN apk add git \'; run "${F}"
+contains 'case 11d: a continuation at the end of the file is judged' "${OUT}" "${LEAVES}FROM app AS gate"
+equals   'case 11d: exit code' "${RC}" 1
+df $'FROM app AS gate\r' $'RUN apk add zip && rm -f /usr/bin/unzip\r' $'RUN apk \\\r' $'    add git\r'; run "${F}"
+contains 'case 11e: a CRLF continuation is joined' "${OUT}" 'stages that change apk packages: 1, leaving unzip: 1'
+equals   'case 11e: exit code' "${RC}" 1
+
+# --- 12. no apk change anywhere, and --stages N ----------------------------------------------------------------------
+df 'FROM alpine:3.20' 'RUN echo hi'; run "${F}"
+contains 'case 12a: no apk change is refused' "${OUT}" "no stage of ${F} changes apk packages, so nothing was judged."
+equals   'case 12a: exit code' "${RC}" 1
+df 'FROM php AS app' 'RUN apk add git' "${RM}" 'FROM app AS gate' 'RUN apk add curl' "${RM}"; run --stages 2 "${F}"
+equals   'case 12b: --stages 2 on two stages, exit code' "${RC}" 0
+run --stages 3 "${F}"
+contains 'case 12c: --stages 3 on two stages is refused' "${OUT}" "--stages 3 was given, but that is not how many stages of ${F} change apk packages."
+equals   'case 12c: exit code' "${RC}" 1
+run --stages x "${F}"
+equals   'case 12d: --stages x, exit code' "${RC}" 2
+run --stages 0 "${F}"
+equals   'case 12e: --stages 0, exit code' "${RC}" 2
+run --stages
+equals   'case 12f: --stages with no N, exit code' "${RC}" 2
 
 if [ "${fails}" -gt 0 ]; then printf '%s failure(s)\n' "${fails}" >&2; exit 1; fi
 printf 'dockerfile-unzip-check-test: all cases passed\n'
