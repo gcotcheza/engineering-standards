@@ -32,18 +32,27 @@ with `scripts/guard-mutants.sh`.
 ## The gate
 
 `scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script and
-`fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then the one
-step that judges this repo's own tree — VERSION and ENGINEERING-STANDARDS.md moved together,
-or neither moved, W7's decisions check passes on this tree and W4's closing line still matches its
-word-count `sed` — the six fixture-only tests and shellcheck (the pinned image, style
+`fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then the vendor/
+and Dockerfile checks' fixtures, then the one step that judges this repo's own tree — VERSION and
+ENGINEERING-STANDARDS.md moved together, or neither moved, W7's decisions check passes on this tree
+and W4's closing line still matches its word-count `sed` — then the other fixture-only tests and shellcheck (the pinned image, style
 severity — a missing image is a loud failure, never a skip) in measured cost order, cheapest
 first. The order is a measurement, not a list to keep in your head; `scripts/check.sh` prints each step
 with its number and name as it runs. A full run records to the fleet gate ledger
 (`scripts/lib/deploy/ledger.sh`); `scripts/check.sh --only N` runs one step alone and
 records nothing, so debugging a step never pollutes the ledger. The long-form why —
 including the measurement behind the step order — is in `docs/DECISIONS.md`, because
-W7 applies to this repository too: new decisions are files in `docs/decisions/`. The last step,
-W7's two fixture suites, is placed last unmeasured.
+W7 applies to this repository too: new decisions are files in `docs/decisions/`. The last two steps,
+W7's two fixture suites and gate-run's planted attacks, are the dearest: 39s and 107s, measured 2026-11-10.
+
+`scripts/vendor-perms-check.sh <vendor-dir>` fails a composer vendor/ that any uid could write to. It
+passes only on `world-writable paths under vendor/: 0 of N` with N above 1, names the first five hits,
+and refuses a symlinked vendor/, a missing `autoload.php` and a `find` that fails.
+`scripts/dockerfile-unzip-check.sh [--stages N] <Dockerfile>` fails each stage whose last apk change
+comes after its last removal of `/usr/bin/unzip`, a Dockerfile where no stage changes apk packages,
+and, with `--stages N`, any count of such stages but N. Both are POSIX sh, run from this checkout
+against an app's tree, and are not vendored. What each counts and refuses is in its own header;
+why: decision: vendor-is-never-world-writable.
 
 `scripts/decisions-check.sh <project-root>` is W7's check and `scripts/decisions-rollup.sh
 <project-root>` its roll-up; both run from this checkout against an app root and are not vendored.
@@ -134,7 +143,7 @@ through `deploy_git_or_refuse` (`docs/DECISIONS.md`, card 441).
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
 lib's `test.sh` recomputes it, so an edit without a re-stamp is a failing test. After
-changing a file here, raise `VERSION` first (gate step 2 checks it), then re-stamp it: `h=$(tail -n +2 f.sh | sha256sum | cut -d' ' -f1); sed -i
+changing a file here, raise `VERSION` first (gate step 3 checks it), then re-stamp it: `h=$(tail -n +2 f.sh | sha256sum | cut -d' ' -f1); sed -i
 "1s|.*|# fleet-deploy-lib $(cat VERSION) sha256:$h|" f.sh`
 
 Taking an update is merging here: the box copy is what every project reads next, so a project's own PR

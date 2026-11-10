@@ -4,24 +4,25 @@
 # are in docs/DECISIONS.md. Re-measure before reordering.
 #   1) bash -n on every tracked .sh file, then fleet-lint-guard-diff over scripts/ and a
 #      canary it must flag — a missing lint is a loud failure, never a skip (C9)
-#   2) scripts/version-text-pair.sh and its own test — VERSION and
+#   2) scripts/vendor-perms-check-test.sh and dockerfile-unzip-check-test.sh, under bash and busybox sh
+#   3) scripts/version-text-pair.sh and its own test — VERSION and
 #      ENGINEERING-STANDARDS.md move together, or neither moves — then
 #      scripts/deploy-lib-version.sh and its test (a lib change raises the lib's
 #      VERSION), W7's decisions-check.sh on this tree, the W4 closing-line test, and
 #      S1's scripts/hook-bypass-scan.sh on this tree and its own test
-#   3) scripts/guard-mutants-test.sh and mutant-sane-test.sh, the T5 mutant tools' own tests
-#   4) scripts/fleet-versions-test.sh, the fleet check's own test
-#   5) scripts/fleet-budget-test.sh, the budget gate's own test
-#   6) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
-#   7) shellcheck, style severity, in the pinned image — a missing image is a
+#   4) scripts/guard-mutants-test.sh and mutant-sane-test.sh, the T5 mutant tools' own tests
+#   5) scripts/fleet-versions-test.sh, the fleet check's own test
+#   6) scripts/fleet-budget-test.sh, the budget gate's own test
+#   7) scripts/queue-start-test.sh, the queue tick's and the owners lint's test
+#   8) shellcheck, style severity, in the pinned image — a missing image is a
 #      loud failure here, never a silent skip (C9)
-#   8) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
-#   9) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh), twice: from
+#   9) scripts/gate-image-tags-test.sh, the T9 image-tag check's own test
+#  10) the vendored deploy library's own test.sh (scripts/lib/deploy/test.sh), twice: from
 #      this tree, then from a copy owned by nobody, as an app's ci.sh runs it
-#  10) scripts/decisions-check-test.sh and decisions-rollup-test.sh, W7's fixtures
-#  11) scripts/gate-run-test.sh, gate-run.sh's planted attacks, against a throwaway repo and a fake docker
+#  11) scripts/decisions-check-test.sh and decisions-rollup-test.sh, W7's fixtures
+#  12) scripts/gate-run-test.sh, gate-run.sh's planted attacks, against a throwaway repo and a fake docker
 #
-#   scripts/check.sh            all eleven steps; records a FULL run to the fleet ledger
+#   scripts/check.sh            all twelve steps; records a FULL run to the fleet ledger
 #   scripts/check.sh --only N   step N alone, for debugging — a partial run,
 #                                so nothing is recorded (the ledger only hears
 #                                about a full gate run)
@@ -51,16 +52,17 @@ gate_ledger_arm
 step_name() {
     case "$1" in
         1) printf 'bash -n, guard-diff lint' ;;
-        2) printf 'version-text-pair' ;;
-        3) printf 'T5 mutant tool tests' ;;
-        4) printf 'fleet-versions-test.sh' ;;
-        5) printf 'fleet-budget-test.sh' ;;
-        6) printf 'queue-start-test.sh' ;;
-        7) printf 'shellcheck' ;;
-        8) printf 'gate-image-tags-test.sh' ;;
-        9) printf 'deploy-lib test.sh' ;;
-        10) printf 'decisions tests' ;;
-        11) printf 'gate-run-test.sh' ;;
+        2) printf 'vendor perms tests' ;;
+        3) printf 'version-text-pair' ;;
+        4) printf 'T5 mutant tool tests' ;;
+        5) printf 'fleet-versions-test.sh' ;;
+        6) printf 'fleet-budget-test.sh' ;;
+        7) printf 'queue-start-test.sh' ;;
+        8) printf 'shellcheck' ;;
+        9) printf 'gate-image-tags-test.sh' ;;
+        10) printf 'deploy-lib test.sh' ;;
+        11) printf 'decisions tests' ;;
+        12) printf 'gate-run-test.sh' ;;
     esac
 }
 
@@ -69,8 +71,8 @@ ONLY=0
 case "${1:-}" in
     "") ;;
     --only)
-        case "${2:-}" in 1|2|3|4|5|6|7|8|9|10|11) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 11)" >&2; exit 2 ;; esac ;;
-    *) echo "usage: check.sh [--only N]  (N is 1 to 11)" >&2; exit 2 ;;
+        case "${2:-}" in 1|2|3|4|5|6|7|8|9|10|11|12) ONLY=$2; FULL_RUN=0 ;; *) echo "usage: check.sh [--only N]  (N is 1 to 12)" >&2; exit 2 ;; esac ;;
+    *) echo "usage: check.sh [--only N]  (N is 1 to 12)" >&2; exit 2 ;;
 esac
 
 # Invoked by the EXIT trap only, which shellcheck cannot follow (SC2317).
@@ -95,7 +97,7 @@ fail_step() {
 run_step() {
     [ "${FULL_RUN}" -eq 1 ] || [ "${ONLY}" -eq "$1" ] || return 0
     printf -- '--- step %s: %s ---\n' "$1" "$(step_name "$1")"
-    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; 10) step_10 ;; 11) step_11 ;; esac
+    case "$1" in 1) step_1 ;; 2) step_2 ;; 3) step_3 ;; 4) step_4 ;; 5) step_5 ;; 6) step_6 ;; 7) step_7 ;; 8) step_8 ;; 9) step_9 ;; 10) step_10 ;; 11) step_11 ;; 12) step_12 ;; esac
 }
 
 step_1() {
@@ -121,86 +123,91 @@ step_1() {
 }
 
 step_2() {
-    VERSION_PAIR_GIT="${GIT}" "${REPO_ROOT}/scripts/version-text-pair.sh" "${REPO_ROOT}" || fail_step 2
-    "${REPO_ROOT}/scripts/version-text-pair-test.sh" || fail_step 2
-    DEPLOY_LIB_VERSION_GIT="${GIT}" "${REPO_ROOT}/scripts/deploy-lib-version.sh" "${REPO_ROOT}" || fail_step 2
-    "${REPO_ROOT}/scripts/deploy-lib-version-test.sh" || fail_step 2
-    DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 2
-    bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 2
-    # The prose names the routes; the mutant tables are test data that rewrite the root gate's env -i lines or the scanner's;
-    # the deploy lib's test.sh has a git-as shim that drops HOME on purpose until card 759 (deferred past lib 2026-11-02).
-    HOOK_BYPASS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
-        scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/hook-bypass-scan-mutants.txt scripts/lib/deploy/test.sh || fail_step 2
-    bash "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 2
+    bash "${REPO_ROOT}/scripts/vendor-perms-check-test.sh" || fail_step 2
+    bash "${REPO_ROOT}/scripts/dockerfile-unzip-check-test.sh" || fail_step 2
 }
 
 step_3() {
-    bash "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 3
-    bash "${REPO_ROOT}/scripts/mutant-sane-test.sh" || fail_step 3
+    VERSION_PAIR_GIT="${GIT}" "${REPO_ROOT}/scripts/version-text-pair.sh" "${REPO_ROOT}" || fail_step 3
+    "${REPO_ROOT}/scripts/version-text-pair-test.sh" || fail_step 3
+    DEPLOY_LIB_VERSION_GIT="${GIT}" "${REPO_ROOT}/scripts/deploy-lib-version.sh" "${REPO_ROOT}" || fail_step 3
+    "${REPO_ROOT}/scripts/deploy-lib-version-test.sh" || fail_step 3
+    DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 3
+    bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 3
+    # The prose names the routes; the mutant tables are test data that rewrite the root gate's env -i lines or the scanner's;
+    # the deploy lib's test.sh has a git-as shim that drops HOME on purpose until card 759 (deferred past lib 2026-11-02).
+    HOOK_BYPASS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
+        scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/hook-bypass-scan-mutants.txt scripts/lib/deploy/test.sh || fail_step 3
+    bash "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 3
 }
 
 step_4() {
-    "${REPO_ROOT}/scripts/fleet-versions-test.sh" || fail_step 4
+    bash "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 4
+    bash "${REPO_ROOT}/scripts/mutant-sane-test.sh" || fail_step 4
 }
 
 step_5() {
-    "${REPO_ROOT}/scripts/fleet-budget-test.sh" || fail_step 5
+    "${REPO_ROOT}/scripts/fleet-versions-test.sh" || fail_step 5
 }
 
 step_6() {
-    "${REPO_ROOT}/scripts/queue-start-test.sh" || fail_step 6
+    "${REPO_ROOT}/scripts/fleet-budget-test.sh" || fail_step 6
 }
 
 step_7() {
+    "${REPO_ROOT}/scripts/queue-start-test.sh" || fail_step 7
+}
+
+step_8() {
     if ! docker image inspect "${SHELLCHECK_IMAGE}" >/dev/null 2>&1; then
         printf 'shellcheck image %s is not present on this box — refusing to treat a missing image as a pass (C9).\n' \
             "${SHELLCHECK_IMAGE}" >&2
-        fail_step 7
+        fail_step 8
     fi
     local files
     files=$("${GIT}" ls-files '*.sh')
     [ -n "${files}" ] || return 0
     # shellcheck disable=SC2086
     docker run --rm --network none -v "${REPO_ROOT}:/mnt:ro" -w /mnt \
-        "${SHELLCHECK_IMAGE}" --severity=style ${files} || fail_step 7
-}
-
-step_8() {
-    "${REPO_ROOT}/scripts/gate-image-tags-test.sh" || fail_step 8
+        "${SHELLCHECK_IMAGE}" --severity=style ${files} || fail_step 8
 }
 
 step_9() {
-    "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 9
-    # An app vendors the lib into a tree it owns; a case that sources it in place is refused there.
-    APP_OWNED_LIB=$(mktemp -d -p /srv/worker-scratch deploy-lib-app-owned.XXXXXXXX) || fail_step 9
-    chmod 755 -- "${APP_OWNED_LIB}" || fail_step 9
-    # A lane with no PR carries the label form the scratch lint accepts (card 537).
-    printf 'kind=lane\ncard=537\nowner=%s\n' "${FLEET_SCRATCH_OWNER:-pv}" >"${APP_OWNED_LIB}/.fleet-scratch" || fail_step 9
-    if [ "$(cat -- "${APP_OWNED_LIB}/.fleet-scratch" 2>&1)" != $'kind=lane\ncard=537\nowner='"${FLEET_SCRATCH_OWNER:-pv}" ]; then
-        printf 'the app-owned copy of the deploy lib does not carry the kind=lane label, so the scratch lint would refuse it.\n' >&2
-        fail_step 9
-    fi
-    cp -r -- "${REPO_ROOT}/scripts/lib/deploy" "${APP_OWNED_LIB}/deploy" || fail_step 9
-    chown -R nobody: -- "${APP_OWNED_LIB}/deploy" || fail_step 9
-    chmod -R a-w -- "${APP_OWNED_LIB}/deploy" || fail_step 9
-    if [ "$(stat -c %U "${APP_OWNED_LIB}/deploy/summary.sh")" != nobody ]; then
-        printf 'the app-owned copy of the deploy lib is not owned by nobody, so its run proves nothing.\n' >&2
-        fail_step 9
-    fi
-    printf -- '--- step 9: deploy-lib test.sh again, from %s/deploy (owner nobody, DEPLOY_LIB_DIR unset) ---\n' "${APP_OWNED_LIB}"
-    env -u DEPLOY_LIB_DIR bash "${APP_OWNED_LIB}/deploy/test.sh" || fail_step 9
+    "${REPO_ROOT}/scripts/gate-image-tags-test.sh" || fail_step 9
 }
 
 step_10() {
-    bash "${REPO_ROOT}/scripts/decisions-check-test.sh" || fail_step 10
-    bash "${REPO_ROOT}/scripts/decisions-rollup-test.sh" || fail_step 10
+    "${REPO_ROOT}/scripts/lib/deploy/test.sh" || fail_step 10
+    # An app vendors the lib into a tree it owns; a case that sources it in place is refused there.
+    APP_OWNED_LIB=$(mktemp -d -p /srv/worker-scratch deploy-lib-app-owned.XXXXXXXX) || fail_step 10
+    chmod 755 -- "${APP_OWNED_LIB}" || fail_step 10
+    # A lane with no PR carries the label form the scratch lint accepts (card 537).
+    printf 'kind=lane\ncard=537\nowner=%s\n' "${FLEET_SCRATCH_OWNER:-pv}" >"${APP_OWNED_LIB}/.fleet-scratch" || fail_step 10
+    if [ "$(cat -- "${APP_OWNED_LIB}/.fleet-scratch" 2>&1)" != $'kind=lane\ncard=537\nowner='"${FLEET_SCRATCH_OWNER:-pv}" ]; then
+        printf 'the app-owned copy of the deploy lib does not carry the kind=lane label, so the scratch lint would refuse it.\n' >&2
+        fail_step 10
+    fi
+    cp -r -- "${REPO_ROOT}/scripts/lib/deploy" "${APP_OWNED_LIB}/deploy" || fail_step 10
+    chown -R nobody: -- "${APP_OWNED_LIB}/deploy" || fail_step 10
+    chmod -R a-w -- "${APP_OWNED_LIB}/deploy" || fail_step 10
+    if [ "$(stat -c %U "${APP_OWNED_LIB}/deploy/summary.sh")" != nobody ]; then
+        printf 'the app-owned copy of the deploy lib is not owned by nobody, so its run proves nothing.\n' >&2
+        fail_step 10
+    fi
+    printf -- '--- step 10: deploy-lib test.sh again, from %s/deploy (owner nobody, DEPLOY_LIB_DIR unset) ---\n' "${APP_OWNED_LIB}"
+    env -u DEPLOY_LIB_DIR bash "${APP_OWNED_LIB}/deploy/test.sh" || fail_step 10
 }
 
 step_11() {
-    bash "${REPO_ROOT}/scripts/gate-run-test.sh" || fail_step 11
+    bash "${REPO_ROOT}/scripts/decisions-check-test.sh" || fail_step 11
+    bash "${REPO_ROOT}/scripts/decisions-rollup-test.sh" || fail_step 11
 }
 
-for n in 1 2 3 4 5 6 7 8 9 10 11; do run_step "${n}"; done
+step_12() {
+    bash "${REPO_ROOT}/scripts/gate-run-test.sh" || fail_step 12
+}
+
+for n in 1 2 3 4 5 6 7 8 9 10 11 12; do run_step "${n}"; done
 
 # shellcheck disable=SC2034  # the EXIT trap's gate_ledger_record reads it
 GATE_SUITE_PASSED=1

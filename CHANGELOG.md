@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-10 — two shared checks keep composer's vendor/ from being world-writable (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 1014.** `scripts/vendor-perms-check.sh <vendor-dir>` fails closed unless `find` judges vendor/ itself and
+everything under it and prints `world-writable paths under vendor/: 0 of N` with N above 1; it refuses a symlinked
+vendor/, a missing `autoload.php` and a failing `find`, and names the first five world-writable paths.
+`scripts/dockerfile-unzip-check.sh [--stages N] <Dockerfile>` joins `\` continuations, then fails each stage whose
+last apk change follows its last removal of `/usr/bin/unzip` (an rm counts only at a RUN start or after `&&`/`;`),
+because that change relinks busybox unzip; it fails when no stage was judged, and `--stages N` pins the count. Both
+are POSIX sh; their tests run every case under bash and busybox sh, in new gate step 2 (old steps 2–11 are now 3–12). They replace the per-app copies card 797 added; the apps switch in their own
+pull requests. Decision: vendor-is-never-world-writable.
+
 ## 2026-11-07 — the hook-bypass scan finds --no-verify built by brace expansion or an empty splice (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 991.** Each line is judged a third time, for the long flag only, as bash would build it: an unset
 `$x`, `${x}`, `$1`-`$9`, `$@`, `$*` or `$!`, any `$( )` or backticks, and an empty `$""` or `$''`, are
