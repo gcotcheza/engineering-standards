@@ -683,6 +683,92 @@ if [[ "${rc}" -eq 0 ]]; then ok 'the scanner does not judge itself'; else bad "t
 rc=0; bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 1 ]]; then ok "an app's own copy of the scanner is judged"; else bad "an app's own copy of the scanner exited ${rc}, wanted 1"; fi
 
+# --- a line skip, <path>:<sha256 of the line>, permits that one line and nothing else (card 946) --
+# <label> <want rc> <repo> <stdout must hold> <stderr must hold> <skip>...
+line_skip() {
+    local rc=0 out err
+    out="$(bash "${SCAN}" "$3" "${@:6}" 2>"${WORK}/stderr")" || rc=$?
+    err="$(cat "${WORK}/stderr")"
+    if [[ "${rc}" -ne "$2" ]]; then bad "$1: exit ${rc}, wanted $2: ${out} ${err}"
+    elif [[ "${out}" != *"$4"* || "${err}" != *"$5"* ]]; then bad "$1: wanted '$4' out and '$5' err: ${out} ${err}"
+    else ok "$1"; fi
+}
+sha() { printf '%s' "${1//@/}" | sha256sum | cut -c1-64; } # the line as written, its @ dropped as in fixture
+R='git commit --no-@verify -m x'
+H="$(sha "${R}")"
+repo="$(fixture scripts/a.sh 'true' "${R}")"
+line_skip 'a line skip is applied and printed with its hash, count and text' 0 "${repo}" \
+    "hook-bypass-scan: skipped scripts/a.sh:2 sha256 ${H} (1 finding statement(s) hash to it): ${R//@/}" '' "scripts/a.sh:${H}"
+line_skip 'a line skip is printed on every run' 0 "${repo}" "skipped scripts/a.sh:2 sha256 ${H}" '' "scripts/a.sh:${H}"
+line_skip 'a line skip splits at its first colon only' 2 "${repo}" '' 'needs the sha256 of the line' "scripts/a.sh:x:${H}"
+line_skip 'a listed path holding a line skip path and a colon is refused' 2 "$(fixture 'scripts/a:b.sh' "${R}")" '' 'scripts/a:b.sh holds a colon' "scripts/a:${H}"
+line_skip 'a line skip naming a path with a colon is refused' 2 "$(fixture 'scripts/a:b.sh' "${R}")" '' 'needs the sha256 of the line' "scripts/a:b.sh:${H}"
+line_skip 'a line skip with no hash is refused' 2 "${repo}" '' 'needs the sha256 of the line' 'scripts/a.sh:'
+line_skip 'a line skip with no path is refused' 2 "${repo}" '' 'needs a path of one line' ":${H}"
+line_skip 'a newline in a line skip path is refused' 2 "${repo}" '' 'needs a path of one line' "x"$'\n'"scripts/a.sh:${H}"
+line_skip 'a line skip holding text, not a hash, is refused' 2 "${repo}" '' 'needs the sha256 of the line' "scripts/a.sh:${R//@/}"
+line_skip 'an uppercase hash is refused' 2 "${repo}" '' 'needs the sha256 of the line' "scripts/a.sh:${H^^}"
+line_skip 'a short hash is refused' 2 "${repo}" '' 'needs the sha256 of the line' "scripts/a.sh:${H:0:63}"
+line_skip 'a long hash is refused' 2 "${repo}" '' 'needs the sha256 of the line' "scripts/a.sh:${H}0"
+line_skip 'a hash with a non-hex char is refused' 2 "${repo}" '' 'needs the sha256 of the line' "scripts/a.sh:g${H:1}"
+line_skip 'a hash of the line with a newline does not match' 1 "${repo}" '' 'stale line skip scripts/a.sh:' \
+    "scripts/a.sh:$(printf '%s\n' "${R//@/}" | sha256sum | cut -c1-64)"
+line_skip 'a line skip must hash the whole line' 1 "$(fixture scripts/a.sh "    ${R}")" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${H}"
+line_skip 'a leading-blank line matches its own hash' 0 "$(fixture scripts/a.sh "    ${R}")" 'skipped scripts/a.sh:1' '' "scripts/a.sh:$(sha "    ${R}")"
+line_skip 'trailing spaces in the file do not match' 1 "$(fixture scripts/a.sh "${R}  ")" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${H}"
+line_skip 'a CRLF line does not match the LF hash' 1 "$(fixture scripts/a.sh "${R}"$'\r')" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${H}"
+line_skip 'a CRLF line matches the hash with its CR' 0 "$(fixture scripts/a.sh "${R}"$'\r')" 'skipped scripts/a.sh:1' '' "scripts/a.sh:$(sha "${R}"$'\r')"
+repo="$(fixture scripts/a.sh "${R}" 'true' "${R}")"
+line_skip 'one line skip permits one line: the second with its hash is a finding' 1 "${repo}" \
+    "hook-bypass-scan: skipped scripts/a.sh:1 sha256 ${H} (2 finding statement(s) hash to it)" 'hook-bypass-scan: scripts/a.sh:3:' "scripts/a.sh:${H}"
+line_skip 'the same line skip given twice permits two lines' 0 "${repo}" \
+    "skipped scripts/a.sh:1 sha256 ${H} (2 finding statement(s) hash to it): ${R//@/}"$'\n'"hook-bypass-scan: skipped scripts/a.sh:3 sha256 ${H} (2" '' "scripts/a.sh:${H}" "scripts/a.sh:${H}"
+repo="$(fixture scripts/a.sh 'true' 'echo x')"
+line_skip 'a line skip whose line is gone is stale' 1 "${repo}" '' "stale line skip scripts/a.sh:${H}, given 1 time(s) but 0 finding statement(s) hash to it" "scripts/a.sh:${H}"
+line_skip 'a line skip whose file is gone is stale' 1 "${repo}" '' "stale line skip scripts/gone.sh:${H}" "scripts/gone.sh:${H}"
+line_skip 'a line skip whose line is no finding is stale' 1 "${repo}" '' "stale line skip scripts/a.sh:$(sha 'echo x')" "scripts/a.sh:$(sha 'echo x')"
+line_skip 'a whole-path skip with no line skip reports nothing stale' 0 "${repo}" '' '' scripts/a.sh
+repo="$(fixture scripts/a.sh "${R}" 'git commit -@n -m y')"
+line_skip 'a new route in a file with a line skip still goes red' 1 "${repo}" 'skipped scripts/a.sh:1' 'hook-bypass-scan: scripts/a.sh:2:' "scripts/a.sh:${H}"
+repo="$(fixture scripts/a.sh "${R}")"
+cp -- "${repo}/scripts/a.sh" "${repo}/scripts/b.sh"
+line_skip 'a line skip never permits another route in its file' 1 "$(fixture scripts/a.sh 'git commit -@n -m y')" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${H}"
+line_skip 'the same line in another file still goes red' 1 "${repo}" 'skipped scripts/a.sh:1' 'hook-bypass-scan: scripts/b.sh:1:' "scripts/a.sh:${H}"
+line_skip 'a whole-path skip and a line skip work together' 0 "${repo}" 'skipped scripts/b.sh:1' '' scripts/a.sh "scripts/b.sh:${H}"
+repo="$(fixture scripts/a.sh "${R}")"
+line_skip 'a line skip given twice for one statement is stale' 1 "${repo}" 'skipped scripts/a.sh:1' \
+    "stale line skip scripts/a.sh:${H}, given 2 time(s) but 1 finding statement(s) hash to it" "scripts/a.sh:${H}" "scripts/a.sh:${H}"
+C1='git commit \' C2='  --no-@verify -m x' CM='  -c core.hooks@Path=/dev/null \'
+repo="$(fixture scripts/a.sh "${C1}" "${C2}")"
+HC="$(sha "${C1}"$'\n'"${C2}")"
+line_skip 'a continued statement is hashed whole, its lines joined by a newline' 0 "${repo}" \
+    "skipped scripts/a.sh:1 sha256 ${HC} (1 finding statement(s) hash to it): ${C1}"$'\n'"${C2//@/}" '' "scripts/a.sh:${HC}"
+line_skip 'the hash of the first line alone does not skip a continued statement' 1 "${repo}" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:$(sha "${C1}")"
+line_skip 'a line inserted into a skipped statement goes red' 1 "$(fixture scripts/a.sh "${C1}" "${CM}" "${C2}")" '' 'hook-bypass-scan: scripts/a.sh:1:' "scripts/a.sh:${HC}"
+R3="${R//verify/verif}"
+repo="$(fixture scripts/a.sh "${R}" 'true' "${R3}")"
+line_skip 'skips print in argument order' 0 "${repo}" \
+    "skipped scripts/a.sh:3 sha256 $(sha "${R3}") (1 finding statement(s) hash to it): ${R3//@/}"$'\n'"hook-bypass-scan: skipped scripts/a.sh:1 sha256 ${H}" '' "scripts/a.sh:$(sha "${R3}")" "scripts/a.sh:${H}"
+# A skip keys on the statement as written, never its de-quoted or expanded copy, which card 991's passes judge.
+RB='git commit --no-{@verify,} -m x' RS='git commit --no-${x}@verify -m x'
+line_skip 'a line skip applies to a brace-built or spliced flag, hashed as written' 0 "$(fixture scripts/a.sh "${RB}" "${RS}")" \
+    "skipped scripts/a.sh:1 sha256 $(sha "${RB}")" '' "scripts/a.sh:$(sha "${RB}")" "scripts/a.sh:$(sha "${RS}")"
+line_skip 'a spliced line that expands to a skipped one is still a finding' 1 "$(fixture scripts/a.sh "${RS}")" '' \
+    "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
+line_skip 'a quoted line that de-quotes to a skipped one is still a finding' 1 "$(fixture scripts/a.sh 'git commit --no-"@verify" -m x')" '' \
+    "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
+line_skip "a c''ommit line is still a finding under the plain line's skip" 1 "$(fixture scripts/a.sh "git c''ommit --no-@verify -m x")" '' \
+    "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
+line_skip "a c\"\"ommit line is still a finding under the plain line's skip" 1 "$(fixture scripts/a.sh 'git c""ommit --no-@verify -m x')" '' \
+    "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:${H}"
+RJ='git commit --no-@verify -m x; y="a'
+line_skip 'a quoted-newline join finding is never skipped by its first line' 1 "$(fixture scripts/a.sh "${RJ}" 'b"')" \
+    "skipped scripts/a.sh:1 sha256 $(sha "${RJ}")" "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:$(sha "${RJ}")"
+mkdir -p "${WORK}/nosha" && printf '#!/bin/sh\nexit 127\n' >"${WORK}/nosha/sha256sum" && chmod 755 "${WORK}/nosha/sha256sum"
+out="$(PATH="${WORK}/nosha:${PATH}" bash "${SCAN}" "$(fixture scripts/a.sh "${R}")" "scripts/a.sh:${H}" 2>&1)"; rc=$?
+if [[ "${rc}" -eq 2 && "${out}" == *'sha256sum gave no hash'* && "${out}" != *stale* ]]; then ok 'a sha256sum that gives no hash exits 2, naming it'
+else bad "a sha256sum that gives no hash exited ${rc}: ${out}"; fi
+
 # --- nothing judged is never a pass ----------------------------------------
 repo="$(mktemp -d "${WORK}/empty.XXXXXX")"
 git -C "${repo}" init -q

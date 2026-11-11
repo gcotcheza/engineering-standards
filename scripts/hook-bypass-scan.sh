@@ -1,23 +1,34 @@
 #!/usr/bin/env bash
 # S1: no file git lists outside docs/ stands a commit up past the fleet hook. Exit 0 clean, 1 per finding, 2 if nothing was judged.
-# hook-bypass-scan.sh <app-root> [<skipped path>...], run from this checkout; HOOK_BYPASS_GIT is the git seam.
-# decision: the-hook-bypass-scan-has-one-copy
+# hook-bypass-scan.sh <app-root> [<path> | <path>:<sha256 of the line>...], run from this checkout; HOOK_BYPASS_GIT is the git seam.
+# decision: the-hook-bypass-scan-has-one-copy, the-hook-bypass-scan-skips-one-line-by-its-hash
 set -uo pipefail
 
-[ "$#" -ge 1 ] || { printf 'usage: hook-bypass-scan.sh <app-root> [<skipped path>...]\n' >&2; exit 2; }
+[ "$#" -ge 1 ] || { printf 'usage: hook-bypass-scan.sh <app-root> [<path> | <path>:<sha256 of the line>...]\n' >&2; exit 2; }
 SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/${BASH_SOURCE[0]##*/}"
 cd -- "$1" || exit 2
 shift
 HERE=$(pwd -P)
 declare -A skip=()
+tmp=$(mktemp -d) || exit 2
+trap 'rm -rf -- "${tmp:?}"' EXIT
+lines="${tmp}/lines" list="${tmp}/list" skipped="${tmp}/skipped" stale="${tmp}/stale" raw="${tmp}/raw"
+: >"${lines}" && : >"${skipped}" && : >"${stale}" || exit 2
+lpaths=()
+nl=$'\n'
 for p in "$@"; do
     [ -n "${p}" ] || { printf 'hook-bypass-scan: an empty skipped path, so nothing was judged.\n' >&2; exit 2; }
-    skip["${p}"]=1
+    if [[ "${p}" == *:* ]]; then
+        [[ -n "${p%%:*}" && "${p}" != *"${nl}"* ]] || { printf 'hook-bypass-scan: the line skip %s needs a path of one line before its colon, so nothing was judged.\n' "${p}" >&2; exit 2; }
+        [[ "${p#*:}" =~ ^[0123456789abcdef]{64}$ ]] || { printf 'hook-bypass-scan: the line skip %s needs the sha256 of the line after its colon, 64 lowercase hex, so nothing was judged.\n' "${p}" >&2; exit 2; }
+        printf '%s\n%s\n' "${p%%:*}" "${p#*:}" >>"${lines}"
+        lpaths+=("${p%%:*}")
+    else
+        skip["${p}"]=1
+    fi
 done
 read -ra GIT <<<"${HOOK_BYPASS_GIT:-git}"
 
-list=$(mktemp) || exit 2
-trap 'rm -f "${list}"' EXIT
 if ! "${GIT[@]}" ls-files -z --cached --others --exclude-standard >"${list}"; then
     printf 'hook-bypass-scan: git ls-files failed, so nothing was judged.\n' >&2
     exit 2
@@ -27,6 +38,9 @@ while IFS= read -r -d '' f; do
     # A listed path that is not here means git listed another tree.
     [ -e "${f}" ] || [ -L "${f}" ] || { printf 'hook-bypass-scan: git listed %s, which is not under %s, so nothing was judged.\n' "${f}" "${HERE}" >&2; exit 2; }
     case "${f}" in docs/*) continue ;; esac
+    for lp in "${lpaths[@]}"; do
+        [[ "${f}" != "${lp}:"* ]] || { printf 'hook-bypass-scan: %s holds a colon, so no line skip can name it and nothing was judged.\n' "${f}" >&2; exit 2; }
+    done
     # The scanner never judges itself, since it names every route; a path the caller names is skipped whole.
     [ "${HERE}/${f}" != "${SELF}" ] || continue
     [ -z "${skip["${f}"]:-}" ] || continue
@@ -37,7 +51,7 @@ done <"${list}"
 
 # Lines joined across a trailing backslash with nothing put between, as bash joins them, judged lowercased: git keys and
 # long flags take any case. A comment line is judged alone; `*` opens one only in a C-style file, so a shell `*)` arm is code.
-findings=$(LC_ALL=C awk -v q="'" '
+findings=$(HBS_LINES="${lines}" HBS_RAW="${raw}" HBS_SKIPPED="${skipped}" HBS_STALE="${stale}" LC_ALL=C awk -v q="'" '
 function comment(file, s) {
     if (s ~ /^[ \t]*#/) return 1
     return file ~ /\.(php|js|mjs|cjs|ts|vue|css|scss)$/ && s ~ /^[ \t]*(\/\/|\/\*|\*)/
@@ -126,6 +140,16 @@ function elements(file, t,    u, m, b, fresh, opens, closes, closed, w, hit) {
     }
     if (closed) { incommit = 0; inrun = 0 }
     return hit
+}
+# The sha256 of a statement as read, its lines joined by a newline, CR kept and no newline added, as a caller hashes it.
+function sha256(s,    h, cmd, got) {
+    printf "%s", s > ENVIRON["HBS_RAW"]
+    close(ENVIRON["HBS_RAW"])
+    cmd = "sha256sum < \"$HBS_RAW\""
+    got = (cmd | getline h)
+    close(cmd)
+    if (got <= 0 || length(h) < 64 || substr(h, 1, 64) !~ /^[0-9a-f]+$/) { print "hook-bypass-scan: sha256sum gave no hash, so nothing was judged." > "/dev/stderr"; hashfail = 1; exit 2 }
+    return substr(h, 1, 64)
 }
 # Bash drops a quote or backslash inside a word, so a de-quoted copy is judged too: --no-"verify" is the long flag.
 function dequote(d) {
@@ -344,7 +368,7 @@ function both(p,    d) {
 }
 # The -n rule reads quotes as bash does, so a -m message is no flag: as written, and with the quotes in each word joined.
 function nrule(s) { return tolower(s) ~ ARGV_N || shortn(tolower(s)) || shortn(shellwords(tolower(s), 1)) }
-function judge(file, n, s, argvn,    p, e) {
+function judge(file, n, s, argvn,    p, e, k) {
     found = ""
     split("", seen)
     # The mirror pass: env -i, a HOME from one quoted variable, git -C <dir>, at most -c gpg.program="$X", then fetch,
@@ -359,7 +383,11 @@ function judge(file, n, s, argvn,    p, e) {
     if (bashflag(s)) hit("--no-verify (or a prefix of it)")
     if (argvn || nrule(s) || nrule(ansic(s))) hit("commit or merge -n (a short --no-verify)")
     sub(/^\.\//, "", file)
-    if (found != "") printf "%s:%d:%s\n", file, n, found
+    if (found == "") return
+    # The key is the statement as read, never a de-quoted or expanded copy: another spelling must not share a skip.
+    k = (file in lpath) ? file SUBSEP sha256(stmt) : ""
+    if ((k in allowed) && ++count[k] <= allowed[k]) { at[k] = at[k] " " n; text[k] = stmt; return }
+    printf "%s:%d:%s\n", file, n, found
 }
 BEGIN {
     Q = "[\"" q "]"
@@ -428,12 +456,14 @@ BEGIN {
     OPEN = "^[^\"" q "]*[[(]"
     if ((q "x" q ",") !~ ELEMS || "x" !~ ELEMS) { print "hook-bypass-scan: this awk misreads the argv-element pattern." > "/dev/stderr"; exit 2 }
     if ((q "x" q ", " q "x" q ",") !~ ELEMS) { print "hook-bypass-scan: this awk misreads repeated argv elements." > "/dev/stderr"; exit 2 }
+    while ((getline lp < ENVIRON["HBS_LINES"]) > 0 && (getline lt < ENVIRON["HBS_LINES"]) > 0) { if (!((lp, lt) in allowed)) order[++nk] = lp SUBSEP lt; allowed[lp, lt]++; lpath[lp] = 1 }
 }
 FNR == 1 { if (held != "") judge(prev, start, held, 0); held = ""; qheld = ""; incommit = 0; inrun = 0; prev = FILENAME }
 {
     # An empty '' or "" splits a word for nothing (c''ommit is commit), so each pair is dropped first, even inside quotes.
     line = $0
     gsub(EMPTY, "", line)
+    stmt = held == "" ? $0 : stmt "\n" $0
     multiline(FILENAME, FNR, line)
     if (held == "") {
         if (comment(FILENAME, tolower(line))) { judge(FILENAME, FNR, line, 0); next }
@@ -444,9 +474,22 @@ FNR == 1 { if (held != "") judge(prev, start, held, 0); held = ""; qheld = ""; i
     held = ""
     judge(FILENAME, start, s, elements(FILENAME, tolower(s)))
 }
-END { if (held != "") judge(prev, start, held, 0) }
+END {
+    if (hashfail) exit 2
+    if (held != "") judge(prev, start, held, 0)
+    # One skip permits one statement; each applied one is printed with its lines and how many hash to it, in argument order.
+    for (j = 1; j <= nk; j++) {
+        k = order[j]
+        split(k, a, SUBSEP)
+        if (count[k] < allowed[k]) { printf "hook-bypass-scan: stale line skip %s:%s, given %d time(s) but %d finding statement(s) hash to it; drop it.\n", a[1], a[2], allowed[k], count[k] > ENVIRON["HBS_STALE"] }
+        m = split(substr(at[k], 2), ns, " ")
+        for (i = 1; i <= m; i++) printf "hook-bypass-scan: skipped %s:%d sha256 %s (%d finding statement(s) hash to it): %s\n", a[1], ns[i], a[2], count[k], text[k] > ENVIRON["HBS_SKIPPED"]
+    }
+}
 ' "${files[@]}") || { printf 'hook-bypass-scan: awk could not read the tree, so nothing was judged.\n' >&2; exit 2; }
 
-[ -n "${findings}" ] || { printf 'hook-bypass-scan: ok (%d files)\n' "${#files[@]}"; exit 0; }
-while IFS= read -r f; do printf 'hook-bypass-scan: %s — a commit here would skip the fleet hook (S1); report a blocked commit, never route around it.\n' "${f}" >&2; done <<<"${findings}"
+cat -- "${skipped}"
+if [ -z "${findings}" ] && [ ! -s "${stale}" ]; then printf 'hook-bypass-scan: ok (%d files)\n' "${#files[@]}"; exit 0; fi
+[ -z "${findings}" ] || while IFS= read -r f; do printf 'hook-bypass-scan: %s — a commit here would skip the fleet hook (S1); report a blocked commit, never route around it.\n' "${f}" >&2; done <<<"${findings}"
+cat -- "${stale}" >&2
 exit 1
