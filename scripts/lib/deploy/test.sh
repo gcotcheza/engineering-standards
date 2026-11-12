@@ -1777,6 +1777,36 @@ equals 'and deploy_refuse_if_tracked_dirty did not run it either' "$(ran_or_not 
 git -C "${ROOT}" --no-optional-locks status --porcelain --untracked-files=no >/dev/null 2>&1
 equals 'and a plain tracked-only status does run it, so the fixture is live' "$(ran_or_not "${CASE}/fsmonitor-ran")" 'ran'
 
+# Card 753: an edit under skip-worktree (S) or assume-unchanged (h) is one git status never shows.
+for flag in skip-worktree:S assume-unchanged:h; do
+    tag=${flag#*:} flag=${flag%%:*}
+    fixture "preflight-${flag}"
+    printf 'HIDDEN-EDIT-753\n' >>"${ROOT}/app/base.txt"
+    git_at update-index "--${flag}" app/base.txt
+    equals "the ${flag} fixture sets the flag" "$(git_at ls-files -v app/base.txt)" "${tag} app/base.txt"
+    equals "and git status shows nothing (${flag})" "$(git_at status --porcelain)" ''
+    for fn in refuse_if_dirty deploy_refuse_if_tracked_dirty; do
+        run_lib "${fn}; printf 'PAST THE CHECK\n' >&3"
+        contains "${fn} refuses a file flagged ${flag}, naming it" "${OUT}" \
+            "REFUSED: ${ROOT} marks app/base.txt ${flag}, so git status never read it and a deploy never runs over it."
+        absent "and never prints its edit (${fn}, ${flag})" "${OUT}" 'HIDDEN-EDIT-753'
+        absent "and nothing after it runs (${fn}, ${flag})" "${OUT}" 'PAST THE CHECK'
+    done
+done
+
+fixture preflight-ls-files-fails
+mkdir -p "${CASE}/shim"
+printf '#!/bin/sh\ncase " $* " in *" ls-files "*) exit 3 ;; esac\nexec git "$@"\n' >"${CASE}/shim/git"
+chmod 0755 "${CASE}/shim/git"
+for fn in refuse_if_dirty deploy_refuse_if_tracked_dirty; do
+    run_lib "GIT='${CASE}/shim/git -C ${ROOT}'; ${fn}; printf 'PAST THE CHECK\n' >&3"
+    contains "${fn} refuses a git ls-files that fails, never reading it as no flag set" "${OUT}" \
+        "REFUSED: git ls-files exited 3 in ${ROOT}, so no tracked file is known to be read by git status; a deploy never runs over it."
+    absent "and nothing after it runs (${fn}, ls-files failed)" "${OUT}" 'PAST THE CHECK'
+    run_lib "${fn}; printf 'PAST THE CHECK\n' >&3"
+    contains "and with the real git the same clean checkout passes ${fn}" "${OUT}" 'PAST THE CHECK'
+done
+
 # --- 6. the summary ----------------------------------------------------------------
 fixture summary
 run_lib 'say "A SUMMARY LINE"; detail "a detail line"; printf "LOG %s\n" "$LOG" >&3'
