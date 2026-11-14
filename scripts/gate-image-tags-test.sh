@@ -1283,8 +1283,54 @@ gate_script arrpre ci.sh 'docker compose -f docker-compose.yml "${A[@]}" up -d a
 run arrpre
 matches 'case 84c: the -f read before the array word is blamed' "${OUT}" \
     '^FAIL .*: the gate run at scripts/ci\.sh:1 runs image tag mem/app:latest, which production is recreated from$'
-lacks   'case 84c: and not the array word' "${OUT}" 'an array word'
+lacks   'case 84c: and not the default-fallback array line' "${OUT}" 'so no -f after it was read'
 equals  'case 84c: exit code' "${RC}" 1
+
+# --- 85. an array word after a read -f holding the production file -> FAIL -----
+service arrafter docker-compose.yml    'mem/app:latest' build
+service arrafter docker-compose.ci.yml 'mem/app:ci' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script arrafter ci.sh 'A=(--env-file .env.arrvalue -f docker-compose.yml)
+docker compose -f docker-compose.ci.yml "${A[@]}" build app'
+run arrafter
+matches 'case 85: the unread array word is named by file and line' "${OUT}" \
+    '^FAIL .*: an array word among the compose options at scripts/ci\.sh:2 is not read \(decision why-the-guard-reads-no-arrays\), so the files it may name are not judged$'
+matches 'case 85: and counted' "${OUT}" '^gate-image-tags: 1 unread array word\(s\) among compose options'
+lacks   "case 85: and the array's value is never printed" "${OUT}" 'arrvalue|env-file'
+equals  'case 85: exit code' "${RC}" 1
+
+# --- 85b. the same array word holding only harmless options -> FAIL too ---------
+service arrharm docker-compose.yml    'mem/app:latest' build
+service arrharm docker-compose.ci.yml 'mem/app:ci' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script arrharm ci.sh 'A=(--env-file .env.arrvalue)
+docker compose -f docker-compose.ci.yml "${A[*]}" build app'
+run arrharm
+matches 'case 85b: an array word is refused, not read' "${OUT}" \
+    '^FAIL .*: an array word among the compose options at scripts/ci\.sh:2 is not read'
+lacks   "case 85b: and the array's value is never printed" "${OUT}" 'arrvalue|env-file'
+equals  'case 85b: exit code' "${RC}" 1
+
+# --- 85c. the bare ${A[@]} form after a read -f -> FAIL --------------------------
+service arrbare docker-compose.yml    'mem/app:latest' build
+service arrbare docker-compose.ci.yml 'mem/app:ci' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script arrbare ci.sh 'A=(-f docker-compose.yml)
+docker compose -f docker-compose.ci.yml ${A[@]} build app'
+run arrbare
+matches 'case 85c: the bare array word is refused too' "${OUT}" \
+    '^FAIL .*: an array word among the compose options at scripts/ci\.sh:2 is not read'
+equals  'case 85c: exit code' "${RC}" 1
+
+# --- 85d. an array that is the whole command is read as before -> PASS ----------
+service arrcmd docker-compose.yml    'mem/app:latest' build
+service arrcmd docker-compose.ci.yml 'mem/app:ci' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script arrcmd ci.sh 'COMPOSE=(docker compose -f docker-compose.ci.yml)
+"${COMPOSE[@]}" build app'
+run arrcmd
+lacks   'case 85d: a whole-command array is not an unread option' "${OUT}" 'array word'
+equals  'case 85d: exit code' "${RC}" 0
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
