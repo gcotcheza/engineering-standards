@@ -442,6 +442,10 @@ read_gate_sets() {
         # A record is held back until the end: a file set defined for a wrapper
         # is judged where the wrapper is used, so its own line says nothing.
         function out(t, d) { nout++; OUTT[nout] = t; OUTD[nout] = d }
+        function arrayword(p,   a) {
+            a = "[!#]?[A-Za-z_][A-Za-z0-9_]*\\[[@*]\\]"
+            return (T[p] ~ ("\\$\\{" a) || (T[p] ~ /\$$/ && T[p + 1] == "{" && T[p + 2] ~ ("^" a)))
+        }
         # A wrapper is read the way a variable is: the definitions above the use,
         # an unconditional one replacing what is possible and one inside a branch
         # adding to it. Two possible file sets are not a file set.
@@ -573,13 +577,17 @@ read_gate_sets() {
                         if (t ~ /^[;()}|&<>]$/) break
                         if (t == "-f" || t == "--file") { named = 1; addfile(T[++p]); continue }
                         if (t ~ /^--file=/) { named = 1; addfile(substr(t, 8)); continue }
+                        # decision: why-the-guard-reads-no-arrays
+                        valslot = (t == "-p" || t == "--project-name" || t == "--env-file" || t == "--profile" ||
+                            t == "--project-directory" || t == "--progress" || t == "--ansi" ||
+                            t == "--parallel" || t == "-c" || t == "--context")
+                        if (named && (arrayword(p) || (valslot && arrayword(p + 1))))
+                            out(sprintf("arrword\t%s\t%d\n", script, i), 0)
                         if (t ~ /^-f./) {
                             vv = substr(t, 3); sub(/^=/, "", vv)
                             named = 1; addfile(vv); continue
                         }
-                        if (t == "-p" || t == "--project-name" || t == "--env-file" || t == "--profile" ||
-                            t == "--project-directory" || t == "--progress" || t == "--ansi" ||
-                            t == "--parallel" || t == "-c" || t == "--context") { p++; continue }
+                        if (valslot) { p++; continue }
                         if (t ~ /^-/) continue
                         if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue
                         subc = t; break
@@ -916,8 +924,13 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         for (i = 1; i <= ntag; i++) {
             tag = TORD[i]
             nrun++
-            runs[nrun] = sprintf("FAIL %s: the gate run at %s %s image tag %s, which production is recreated from\n", \
-                root, SETSRC[k], ((SETBUILDS[k] == 1 && TBUILT[tag]) ? "builds" : "runs"), tag)
+            # decision: why-the-guard-reads-no-arrays
+            if (SETORIGIN[k] == "default" && SETSUB[k] ~ /^"\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}"$/)
+                runs[nrun] = sprintf("FAIL %s: an array word among the compose options at %s is not read (decision why-the-guard-reads-no-arrays), so no -f after it was read and the run %s image tag %s, which production is recreated from\n", \
+                    root, SETSRC[k], ((SETBUILDS[k] == 1 && TBUILT[tag]) ? "builds" : "runs"), tag)
+            else
+                runs[nrun] = sprintf("FAIL %s: the gate run at %s %s image tag %s, which production is recreated from\n", \
+                    root, SETSRC[k], ((SETBUILDS[k] == 1 && TBUILT[tag]) ? "builds" : "runs"), tag)
             runs[nrun] = runs[nrun] sprintf("  gate run:   %s over %s (%s)\n", \
                 (SETSUB[k] == "-" ? "docker compose" : "docker compose " SETSUB[k]), pretty(k), SETORIGIN[k])
             runs[nrun] = runs[nrun] sprintf("  services:   %s\n", TSVC[tag])
@@ -959,6 +972,11 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
     $1 == "setbad" {
         nsetbad++
         sblist = sblist (sblist ? "; " : "") sprintf("%s in %s:%d", $4, $2, $3)
+        next
+    }
+    $1 == "arrword" {
+        narr++
+        arrfail = arrfail sprintf("FAIL %s: an array word among the compose options at %s:%d is not read (decision why-the-guard-reads-no-arrays), so the files it may name are not judged\n", root, $2, $3)
         next
     }
     $1 == "unres" {
@@ -1023,7 +1041,7 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         if (loose) printf "  overlay tags:     %s — in no gate run read here\n", loose
         n = 0
         for (t in tags) if (built[t] && gn[t] && pn[t]) bad[++n] = t
-        if (n == 0 && noddfiles == 0 && nrun == 0 && nsetbad == 0) {
+        if (n == 0 && noddfiles == 0 && nrun == 0 && nsetbad == 0 && narr == 0) {
             if (nbuilt == 0) {
                 printf "ok %s: no built image tag resolved here — nothing a gate run could overwrite\n", root
                 exit 0
@@ -1044,6 +1062,7 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
             printf "%s%s", g[t], p[t]
         }
         for (i = 1; i <= nrun; i++) printf "%s", runs[i]
+        printf "%s", arrfail
         if (nsetbad)
             printf "FAIL %s: %d compose call(s) here name files this check could not read, so what they build is not judged\n", \
                 root, nsetbad
@@ -1055,5 +1074,6 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         if (nrun) printf "gate-image-tags: %d gate run(s) reach a tag production is recreated from (T9)\n", nrun
         if (noddfiles) printf "gate-image-tags: %d unrecognised compose file(s) build a tag — which side builds it is a guess (T9)\n", noddfiles
         if (nsetbad) printf "gate-image-tags: %d unread compose call(s) — a set this check cannot read is a set it cannot clear (T9)\n", nsetbad
+        if (narr) printf "gate-image-tags: %d unread array word(s) among compose options — a set this check cannot read is a set it cannot clear (T9)\n", narr
         exit 1
     }' "${RECORDS}"
