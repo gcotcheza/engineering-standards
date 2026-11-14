@@ -916,8 +916,13 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
         for (i = 1; i <= ntag; i++) {
             tag = TORD[i]
             nrun++
-            runs[nrun] = sprintf("FAIL %s: the gate run at %s %s image tag %s, which production is recreated from\n", \
-                root, SETSRC[k], ((SETBUILDS[k] == 1 && TBUILT[tag]) ? "builds" : "runs"), tag)
+            # decision: why-the-guard-reads-no-arrays
+            if (SETSUB[k] ~ /^"\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}"$/)
+                runs[nrun] = sprintf("FAIL %s: an array word among the compose options at %s is not read (decision why-the-guard-reads-no-arrays), so no -f after it was read and the run reaches image tag %s, which production is recreated from\n", \
+                    root, SETSRC[k], tag)
+            else
+                runs[nrun] = sprintf("FAIL %s: the gate run at %s %s image tag %s, which production is recreated from\n", \
+                    root, SETSRC[k], ((SETBUILDS[k] == 1 && TBUILT[tag]) ? "builds" : "runs"), tag)
             runs[nrun] = runs[nrun] sprintf("  gate run:   %s over %s (%s)\n", \
                 (SETSUB[k] == "-" ? "docker compose" : "docker compose " SETSUB[k]), pretty(k), SETORIGIN[k])
             runs[nrun] = runs[nrun] sprintf("  services:   %s\n", TSVC[tag])

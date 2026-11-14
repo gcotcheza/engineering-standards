@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-14 — gate-image-tags says why an array word among compose options fails (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 1112.** A gate call such as `docker compose "${A[@]}" -f … up` still goes red exactly as before, exit 1, because
+the word after the options is taken as the subcommand and no `-f` after it is read. Only its FAIL line changes: it names
+the call's file and line, says arrays among compose options are not read, and points to the decision; it never prints
+the array's value. The bare `${A[@]}` form keeps the generic line. New case 84. Why: decision: why-the-guard-reads-no-arrays.
+
 ## 2026-11-06 — the hook-bypass scan skips one line by its hash (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 946.** `scripts/hook-bypass-scan.sh` takes a line skip as `<path>:<sha256>`, beside the bare paths it
 skips whole: the sha256 of one statement (all its physical lines) exactly as the file holds it, lines

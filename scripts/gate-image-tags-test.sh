@@ -1251,6 +1251,18 @@ run hdocq
 lacks   'case 83: a <<- heredoc body is not a call' "${OUT}" 'builds image tag|unjudged calls'
 equals  'case 83: exit code' "${RC}" 0
 
+# --- 84. an array word among the compose options -> still FAIL, and says why --
+service arropt docker-compose.yml    'mem/app:latest' build
+service arropt docker-compose.ci.yml 'mem/app:ci' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script arropt ci.sh 'A=(--env-file .env.arrvalue)
+docker compose --project-directory . "${A[@]}" -f docker-compose.yml -f docker-compose.ci.yml up -d app'
+run arropt
+matches 'case 84: the array word is named by file and line, and why it is not read' "${OUT}" \
+    '^FAIL .*: an array word among the compose options at scripts/ci\.sh:2 is not read \(decision why-the-guard-reads-no-arrays\), so no -f after it was read and the run reaches image tag mem/app:latest, which production is recreated from$'
+lacks   "case 84: and the array's value is never printed" "${OUT}" 'arrvalue|env-file'
+equals  'case 84: exit code' "${RC}" 1
+
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
     exit 0
