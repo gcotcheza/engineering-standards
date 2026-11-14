@@ -917,9 +917,9 @@ awk -F'\t' -v root="${ROOT}" -v odd="${ODD_LIST}" -v base="${BASE}" '
             tag = TORD[i]
             nrun++
             # decision: why-the-guard-reads-no-arrays
-            if (SETSUB[k] ~ /^"\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}"$/)
-                runs[nrun] = sprintf("FAIL %s: an array word among the compose options at %s is not read (decision why-the-guard-reads-no-arrays), so no -f after it was read and the run reaches image tag %s, which production is recreated from\n", \
-                    root, SETSRC[k], tag)
+            if (SETORIGIN[k] == "default" && SETSUB[k] ~ /^"\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}"$/)
+                runs[nrun] = sprintf("FAIL %s: an array word among the compose options at %s is not read (decision why-the-guard-reads-no-arrays), so no -f after it was read and the run %s image tag %s, which production is recreated from\n", \
+                    root, SETSRC[k], ((SETBUILDS[k] == 1 && TBUILT[tag]) ? "builds" : "runs"), tag)
             else
                 runs[nrun] = sprintf("FAIL %s: the gate run at %s %s image tag %s, which production is recreated from\n", \
                     root, SETSRC[k], ((SETBUILDS[k] == 1 && TBUILT[tag]) ? "builds" : "runs"), tag)

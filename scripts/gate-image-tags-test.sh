@@ -1259,9 +1259,32 @@ gate_script arropt ci.sh 'A=(--env-file .env.arrvalue)
 docker compose --project-directory . "${A[@]}" -f docker-compose.yml -f docker-compose.ci.yml up -d app'
 run arropt
 matches 'case 84: the array word is named by file and line, and why it is not read' "${OUT}" \
-    '^FAIL .*: an array word among the compose options at scripts/ci\.sh:2 is not read \(decision why-the-guard-reads-no-arrays\), so no -f after it was read and the run reaches image tag mem/app:latest, which production is recreated from$'
+    '^FAIL .*: an array word among the compose options at scripts/ci\.sh:2 is not read \(decision why-the-guard-reads-no-arrays\), so no -f after it was read and the run runs image tag mem/app:latest, which production is recreated from$'
 lacks   "case 84: and the array's value is never printed" "${OUT}" 'arrvalue|env-file'
 equals  'case 84: exit code' "${RC}" 1
+
+# --- 84b. the same with "${A[*]}" -> the same line ----------------------------
+service arrstar docker-compose.yml    'mem/app:latest' build
+service arrstar docker-compose.ci.yml 'mem/app:ci' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script arrstar ci.sh 'A=(--env-file .env.arrvalue)
+docker compose "${A[*]}" -f docker-compose.yml -f docker-compose.ci.yml up -d app'
+run arrstar
+matches 'case 84b: a [*] array word gets the same line' "${OUT}" \
+    '^FAIL .*: an array word among the compose options at scripts/ci\.sh:2 is not read \(decision why-the-guard-reads-no-arrays\)'
+lacks   "case 84b: and the array's value is never printed" "${OUT}" 'arrvalue|env-file'
+equals  'case 84b: exit code' "${RC}" 1
+
+# --- 84c. a production -f before the array word is the cause -> generic line --
+service arrpre docker-compose.yml    'mem/app:latest' build
+service arrpre docker-compose.ci.yml 'mem/app:ci' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script arrpre ci.sh 'docker compose -f docker-compose.yml "${A[@]}" up -d app'
+run arrpre
+matches 'case 84c: the -f read before the array word is blamed' "${OUT}" \
+    '^FAIL .*: the gate run at scripts/ci\.sh:1 runs image tag mem/app:latest, which production is recreated from$'
+lacks   'case 84c: and not the array word' "${OUT}" 'an array word'
+equals  'case 84c: exit code' "${RC}" 1
 
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
