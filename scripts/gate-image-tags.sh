@@ -442,6 +442,10 @@ read_gate_sets() {
         # A record is held back until the end: a file set defined for a wrapper
         # is judged where the wrapper is used, so its own line says nothing.
         function out(t, d) { nout++; OUTT[nout] = t; OUTD[nout] = d }
+        function arrayword(p,   a) {
+            a = "[!#]?[A-Za-z_][A-Za-z0-9_]*\\[[@*]\\]"
+            return (T[p] ~ ("\\$\\{" a) || (T[p] ~ /\$$/ && T[p + 1] == "{" && T[p + 2] ~ ("^" a)))
+        }
         # A wrapper is read the way a variable is: the definitions above the use,
         # an unconditional one replacing what is possible and one inside a branch
         # adding to it. Two possible file sets are not a file set.
@@ -574,16 +578,16 @@ read_gate_sets() {
                         if (t == "-f" || t == "--file") { named = 1; addfile(T[++p]); continue }
                         if (t ~ /^--file=/) { named = 1; addfile(substr(t, 8)); continue }
                         # decision: why-the-guard-reads-no-arrays
-                        if (named && (t ~ /^"\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}"$/ || (t == "$" && T[p + 1] == "{" &&
-                            T[p + 2] ~ /^[A-Za-z_][A-Za-z0-9_]*\[[@*]\]$/ && T[p + 3] == "}")))
+                        valslot = (t == "-p" || t == "--project-name" || t == "--env-file" || t == "--profile" ||
+                            t == "--project-directory" || t == "--progress" || t == "--ansi" ||
+                            t == "--parallel" || t == "-c" || t == "--context")
+                        if (named && (arrayword(p) || (valslot && arrayword(p + 1))))
                             out(sprintf("arrword\t%s\t%d\n", script, i), 0)
                         if (t ~ /^-f./) {
                             vv = substr(t, 3); sub(/^=/, "", vv)
                             named = 1; addfile(vv); continue
                         }
-                        if (t == "-p" || t == "--project-name" || t == "--env-file" || t == "--profile" ||
-                            t == "--project-directory" || t == "--progress" || t == "--ansi" ||
-                            t == "--parallel" || t == "-c" || t == "--context") { p++; continue }
+                        if (valslot) { p++; continue }
                         if (t ~ /^-/) continue
                         if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue
                         subc = t; break

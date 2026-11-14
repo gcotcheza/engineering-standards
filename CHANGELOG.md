@@ -4,10 +4,12 @@
 **Card 1112.** A gate call such as `docker compose "${A[@]}" -f … up` still goes red as before, exit 1, because the
 word after the options is taken as the subcommand and no `-f` after it is read. Its FAIL line now names the call's file
 and line, says arrays among compose options are not read, and points to the decision, never printing the array's value
-(default-fallback runs, quoted form only). It also tightens: an array word among the options after a read `-f`, quoted
-or bare and whatever it holds, is now red with its own FAIL line and an "unread array word(s)" trailer, closing a false
-green where `-f docker-compose.ci.yml "${A[@]}" build` passed with the production file inside `A`. Whole-command arrays
-are read as before. Merges after memento card 1114. Cases 84–84c and 85–85d. Why: decision: why-the-guard-reads-no-arrays.
+(default-fallback runs, quoted form only). It also tightens: every array expansion among the options after a read `-f`
+(quoted or bare, with any operator, prefix or suffix, `${!A[@]}` and `${#A[@]}` included, and in the value slot of
+options such as `--profile` and `-p`), whatever it holds, is now red with its own FAIL line and an "unread array word(s)"
+trailer, closing a false green where `-f docker-compose.ci.yml "${A[@]}" build` passed with the production file inside
+`A`. Whole-command arrays are read as before; a word-split scalar and a `COMPOSE_FILE` file set are not covered. Merges
+after memento card 1114. Cases 84–84c and 85–85i. Why: decision: why-the-guard-reads-no-arrays.
 
 ## 2026-11-06 — the hook-bypass scan skips one line by its hash (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 946.** `scripts/hook-bypass-scan.sh` takes a line skip as `<path>:<sha256>`, beside the bare paths it
