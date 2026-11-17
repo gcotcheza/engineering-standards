@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-12 — the deploy lib's dirty checks refuse a file the index hides from git status (deploy-lib VERSION 2026-11-12; the standard is unchanged and VERSION is not bumped)
+**Card 753.** `preflight.sh`'s `refuse_if_dirty` and `deploy_refuse_if_tracked_dirty` now end in the new
+`deploy_refuse_if_index_hides_edits`, which runs `ls-files -v` through the bounded git (fsmonitor off) and refuses
+a file flagged skip-worktree (`S`) or assume-unchanged (lowercase), naming the file and the flag and never its
+contents, as `compose.sh`'s `deploy_compose_tracked` already did. An `ls-files` that fails is a refusal, never a clean
+tree (C9). `test.sh` section 5 adds a case per flag and per function, a failing-`ls-files` case and a clean pass for
+each; every header is re-stamped for 2026-11-12.
+
 ## 2026-11-06 — the hook-bypass scan skips one line by its hash (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Card 946.** `scripts/hook-bypass-scan.sh` takes a line skip as `<path>:<sha256>`, beside the bare paths it
 skips whole: the sha256 of one statement (all its physical lines) exactly as the file holds it, lines
