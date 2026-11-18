@@ -75,4 +75,4 @@ for f in "${files[@]}"; do
 done
 "${GIT[@]}" add -- "${LOG}" || { printf 'decisions-rollup: git add %s failed.\n' "${LOG}" >&2; exit 1; }
 printf 'decisions-rollup: rolled %s decision(s) into %s\n' "${#files[@]}" "${LOG}"
-bash "${CHECK}" "${PWD}"
+bash -- "${CHECK}" "${PWD}"

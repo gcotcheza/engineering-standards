@@ -105,4 +105,4 @@ exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8 \
     GATE_RUN_T_URL_PREFIX="${GATE_RUN_T_URL_PREFIX:-}" GATE_RUN_T_SRC="${GATE_RUN_T_SRC:-}" GATE_RUN_T_LEDGER="${GATE_RUN_T_LEDGER:-}" \
     GATE_RUN_T_BUILD_BASE="${GATE_RUN_T_BUILD_BASE:-}" GATE_RUN_T_ENV_DIR="${GATE_RUN_T_ENV_DIR:-}" GATE_RUN_T_PATH="${GATE_RUN_T_PATH:-}" \
     GATE_RUN_T_APP_USER="${GATE_RUN_T_APP_USER:-}" GATE_RUN_T_UID="${GATE_RUN_T_UID:-}" GATE_RUN_T_DF="${GATE_RUN_T_DF:-}" \
-    /bin/bash "$run/lib/scripts/lib/gate/run.sh" "$app" "$sha" "$script" "$@"
+    /bin/bash -- "$run/lib/scripts/lib/gate/run.sh" "$app" "$sha" "$script" "$@"

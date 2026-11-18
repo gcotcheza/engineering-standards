@@ -1,0 +1,22 @@
+# T5 guard-deletion mutants for scripts/bash-dashdash-scan.sh (card 1138), for scripts/guard-mutants.sh.
+#   BD_TEST=$PWD/scripts/bash-dashdash-scan-test.sh scripts/guard-mutants.sh scripts/bash-dashdash-scan.sh scripts/bash-dashdash-scan-mutants.txt
+bd-usage@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@[ -n "${1:-}" ] || { printf 'usage: bash-dashdash-scan.sh <repo-root>\n' >&2; exit 2; }@@
+bd-no-scripts@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@[ -d "$1/scripts" ] || { printf 'bash-dashdash-scan: no scripts/ under %s\n' "$1" >&2; exit 2; }@@
+bd-heredoc-body@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@    doc != "" { t = $0; sub(/^\t+/, "", t); if (t == doc) doc = ""; next }@@
+bd-sq-body@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            if (k == "s") { if (ch == "\047") top--; prev = ch; i++; continue }@@
+bd-escape@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            if (ch == "\\") { prev = "x"; i += 2; continue }@@
+bd-dq-close@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@                if (ch == "\"") top--@@                if (0) top--
+bd-dq-subst@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@                else if (substr(line, i, 2) == "$(") { ctx[++top] = "c"; depth[top] = 0; i++; ch = "(" }@@
+bd-comment@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            if (ch == "#" && (prev == "" || prev ~ /[[:space:];&|(]/)) break@@
+bd-sq-open@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            if (ch == "\047") { ctx[++top] = "s" }@@            if (0) { ctx[++top] = "s" }
+bd-dq-open@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            else if (ch == "\"") { ctx[++top] = "d" }@@
+bd-herestring@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            else if (substr(line, i, 3) == "<<<") { i += 3; prev = "x"; continue }@@
+bd-paren-open@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            else if (ch == "(") { depth[top]++ }@@
+bd-paren-close@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            else if (ch == ")") { if (depth[top] > 0) depth[top]--; else if (top > 0) top-- }@@
+bd-heredoc-quote@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@            else if (substr(line, i, 2) == "<<" && match(substr(line, i), /^<<-?[[:space:]]*[\047"]?[A-Za-z_][A-Za-z0-9_]*[\047"]?/)) {@@            else if (substr(line, i, 2) == "<<" && match(substr(line, i), /^<<-?[[:space:]]*[\047"]?[A-Za-z_][A-Za-z0-9_]*/)) {
+bd-heredoc-start@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@                d = substr(line, i, RLENGTH); sub(/^<<-?[[:space:]]*[\047"]?/, "", d); sub(/[\047"]$/, "", d); pend = d@@
+bd-heredoc-arm@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@        if (pend != "") { doc = pend; pend = "" }@@
+bd-dash-c@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@                     && substr(line, i + 4) ~ /^([[:space:]]+-[abd-zA-Z]+)*[[:space:]]+"?\$/) {@@                     && substr(line, i + 4) ~ /^([[:space:]]+-[a-zA-Z]+)*[[:space:]]+"?\$/) {
+bd-finding@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@                printf "%s:%d: bash runs a script operand without -- before it\n", file, FNR; hit = 1@@
+bd-file-fails@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@    END { exit hit }' "$f" || found=1@@    END { exit hit }' "$f"
+bd-exit@@BASH_DASHDASH_SCAN_SH="$MUTANT_TARGET" bash -- "$BD_TEST"@@exit "${found}"@@

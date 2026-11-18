@@ -33,7 +33,7 @@ n=0
 run() {
     local second=("${BUSYBOX}" sh) second_path=${WORK}/bb path=${PATH}
     [ "${1-}" != --fake-awk ] || { shift; second=(dash); path=${WORK}/fake:${PATH}; second_path=${path}; }
-    OUT="$(env PATH="${path}" bash "${CHECK}" "$@" 2>&1)"; RC=$?
+    OUT="$(env PATH="${path}" bash -- "${CHECK}" "$@" 2>&1)"; RC=$?
     SECOND_OUT="$(env PATH="${second_path}" "${second[@]}" "${CHECK}" "$@" 2>&1)"; SECOND_RC=$?
     equals "case ${n}: ${second[*]##*/} exit code" "${SECOND_RC}" "${RC}"
     equals "case ${n}: ${second[*]##*/} output" "${SECOND_OUT}" "${OUT}"

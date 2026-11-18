@@ -128,7 +128,7 @@ gr() { # app sha script [args] -> OUT, RC; the ledger is $S/ledger
     OUT=$(env GATE_RUN_T_RUN_BASE="$RB" GATE_RUN_T_LIB_CLONE="${LIBC:-$ES}" GATE_RUN_T_UID="$ME" GATE_RUN_T_URL_PREFIX="$S/gh/" \
         GATE_RUN_T_SRC="$S/deploy-src" GATE_RUN_T_LEDGER="$P/ledger" GATE_RUN_T_BUILD_BASE="$VT" GATE_RUN_T_ENV_DIR="$S/gate-env" \
         GATE_RUN_T_PATH="$S/bin:/usr/bin:/bin" GATE_RUN_T_APP_USER="${GR_APPU:-$APPU}" GATE_RUN_T_DF="${DFBIN:-/usr/bin/df}" \
-        "${PRE[@]}" "${RUNAS[@]}" bash "$ENTRY" "$@" 2>&1)
+        "${PRE[@]}" "${RUNAS[@]}" bash -- "$ENTRY" "$@" 2>&1)
     RC=$?
 }
 

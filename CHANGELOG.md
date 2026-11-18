@@ -6,6 +6,10 @@ front of it, so `test.sh`'s six such runs (the driver, its own root probe twice,
 base suites) now read `bash -- "…"`. `bash -- FILE` runs FILE exactly as `bash FILE` does, so nothing the suite
 checks changes; every header is re-stamped for 2026-11-18. The gate's hook-bypass pin is the hash of `test.sh`'s
 git-as shim line, which is unchanged, so the pin stands.
+The rest of `scripts/` follows: every other `bash` run on a script file (the gate's own steps, the test suites, the
+lib's compose and ownership tests, `gate-run.sh` and `lib/gate/run.sh`) reads `bash -- …`, and the gate's step 3
+runs the new `scripts/bash-dashdash-scan.sh`, which names file:line for any new one. Strings, comments, here-doc
+bodies and `bash -c` are not runs and are left as they are.
 
 ## 2026-11-12 — the deploy lib's dirty checks refuse a file the index hides from git status (deploy-lib VERSION 2026-11-12; the standard is unchanged and VERSION is not bumped)
 **Card 753.** `preflight.sh`'s `refuse_if_dirty` and `deploy_refuse_if_tracked_dirty` now end in the new

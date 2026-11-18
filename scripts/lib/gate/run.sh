@@ -55,7 +55,7 @@ cleanup() {
         printf 'gate-run: --keep: left %s and %s\n' "$RUN" "${BUILD:-no build dir}" >&2
         exit "$code"
     fi
-    [ ! -e "$RUN/compose-used" ] || bash "$LIB/compose.sh" down -v --remove-orphans >/dev/null 2>&1 || printf 'gate-run: compose down for %s-gate-%s failed\n' "$APP" "$ID" >&2
+    [ ! -e "$RUN/compose-used" ] || bash -- "$LIB/compose.sh" down -v --remove-orphans >/dev/null 2>&1 || printf 'gate-run: compose down for %s-gate-%s failed\n' "$APP" "$ID" >&2
     if [ -n "$BUILD" ]; then
         [ -z "${GATE_RUN_ARTIFACTS:-}" ] || run_as cp -r -- "$BUILD/artifacts/." "$GATE_RUN_ARTIFACTS/" || printf 'gate-run: %s could not copy the artifacts to %s\n' "$APP_USER" "$GATE_RUN_ARTIFACTS" >&2
         for d in "${BUILD_DIRS[@]}"; do
@@ -124,7 +124,7 @@ tgit="$GIT_BIN --git-dir=$REPO --work-tree=$TREE"
 env -i PATH="$RUN_PATH" HOME=/root LANG=C.UTF-8 TERM=dumb \
     GATE_RUN="$RUN" GATE_EXPORT_SHA="$SHA" GATE_BUILD="$BUILD" GATE_COMPOSE="bash $LIB/compose.sh" \
     CI_GIT="$tgit" CHECK_GIT="$tgit" E2E_GIT="$tgit" GATE_LEDGER_GIT="$tgit" GATE_LEDGER="$RUN/status" \
-    bash "$TREE/$SCRIPT" "$@"
+    bash -- "$TREE/$SCRIPT" "$@"
 rc=$?
 
 intact=1

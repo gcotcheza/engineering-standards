@@ -1,0 +1,7 @@
+# Every bash run on a script file under scripts/ names the file after --
+
+Card 1138. The W52 root-exec guard refuses `bash "<expanded path>"` with no `--` in front of the operand, and the operand is a path the shell expands, so a value that begins with `-` would be read by bash as an option rather than as the file. The advisor's ruling (pv agreed) is `--` everywhere, with no list of exceptions. `bash -- FILE` runs FILE exactly as `bash FILE` does.
+
+`scripts/bash-dashdash-scan.sh` holds the line in gate step 3. It judges code, not text: a `bash` word inside a quoted string, a comment or a here-doc body is data until something runs it, and many of those strings are fixtures a test feeds to a guard on purpose (the hook-bypass scan's mirrored gate lines, the guard-mutant cases, the deploy lib's literal-guard forms), whose exact text is what the test is about. `bash -c` takes a string, not a file, and is left alone. Two string-held commands stay as they are for the same reason: `GATE_COMPOSE="bash $LIB/compose.sh"` in `lib/gate/run.sh`, and `DEPLOY_COMPOSE` in the deploy lib's `compose.sh`, whose body (and so its stamped hash) this change does not touch.
+
+The scan reads `*.sh` files only. The `*-mutants.txt` tables are test data for `guard-mutants.sh`: a row's exact-line field must equal the target's line, so a row moves with its target (the `r-from-tree` row did), but its case commands are not scanned.
