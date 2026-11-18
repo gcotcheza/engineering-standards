@@ -5,8 +5,9 @@
 #   scripts/bash-dashdash-scan.sh <repo-root>
 #
 # Judges every *.sh under <repo-root>/scripts: a bash word in code (not inside a quoted string, a
-# comment or a here-doc body), its options, then a script operand that starts with an expansion.
-# bash -c and bash -- are left alone. Exit 0 clean, 1 with one file:line per finding, 2 on usage.
+# comment or a here-doc body), its options (lines joined at a trailing \), then a script operand that
+# starts with an expansion. bash -c, -s and -- are left alone. Exit 0 clean, 1 with one file:line per
+# finding, 2 on usage.
 set -uo pipefail
 
 [ -n "${1:-}" ] || { printf 'usage: bash-dashdash-scan.sh <repo-root>\n' >&2; exit 2; }
@@ -16,7 +17,13 @@ cd -- "$1" || exit 2
 found=0
 while IFS= read -r -d '' f; do
     awk -v file="${f#./}" '
+    function finding(at) { printf "%s:%d: bash runs a script operand without -- before it\n", file, at; hit = 1 }
+    BEGIN {
+        opts = "([[:space:]]+([-+][abd-np-rt-zA-NP-Z]+|[-+][oO][[:space:]]+[^[:space:]]+|--[a-z][a-z-]*))*"
+        runs = "^" opts "[[:space:]]+\"?[$]"; goes_on = "^" opts "[[:space:]]+[\\\\]$"
+    }
     doc != "" { t = $0; sub(/^\t+/, "", t); if (t == doc) doc = ""; next }
+    held != "" { rest = held $0; held = ""; if (rest ~ runs) finding(heldat); else if (rest ~ goes_on) held = substr(rest, 1, length(rest) - 1) }
     {
         line = $0; n = length(line); prev = ""; i = 1
         while (i <= n) {
@@ -34,13 +41,14 @@ while IFS= read -r -d '' f; do
             else if (substr(line, i, 3) == "<<<") { i += 3; prev = "x"; continue }
             else if (ch == "(") { depth[top]++ }
             else if (ch == ")") { if (depth[top] > 0) depth[top]--; else if (top > 0) top-- }
-            else if (substr(line, i, 2) == "<<" && match(substr(line, i), /^<<-?[[:space:]]*[\047"]?[A-Za-z_][A-Za-z0-9_]*[\047"]?/)) {
-                d = substr(line, i, RLENGTH); sub(/^<<-?[[:space:]]*[\047"]?/, "", d); sub(/[\047"]$/, "", d); pend = d
+            else if (substr(line, i, 2) == "<<" && match(substr(line, i), /^<<-?[[:space:]]*[\\\047"]?[A-Za-z_][A-Za-z0-9_]*[\047"]?/)) {
+                d = substr(line, i, RLENGTH); sub(/^<<-?[[:space:]]*[\\\047"]?/, "", d); sub(/[\047"]$/, "", d); pend = d
                 i += RLENGTH; prev = "x"; continue
             }
-            else if (substr(line, i, 4) == "bash" && (prev == "" || prev ~ /[[:space:];&|(!\/`]/) \
-                     && substr(line, i + 4) ~ /^([[:space:]]+-[abd-zA-Z]+)*[[:space:]]+"?\$/) {
-                printf "%s:%d: bash runs a script operand without -- before it\n", file, FNR; hit = 1
+            else if (substr(line, i, 4) == "bash" && (prev == "" || prev ~ /[[:space:];&|(!\/`]/)) {
+                rest = substr(line, i + 4)
+                if (rest ~ runs) finding(FNR)
+                else if (rest ~ goes_on) { held = substr(rest, 1, length(rest) - 1); heldat = FNR }
             }
             prev = ch; i++
         }

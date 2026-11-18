@@ -122,7 +122,7 @@ printf '%s %s %s %s %s %s\n' "$APP" "$ID" "$BUILD" "$APP_UID:$APP_GID" "$ROOT_UI
 cd / || die "cannot cd to /"
 tgit="$GIT_BIN --git-dir=$REPO --work-tree=$TREE"
 env -i PATH="$RUN_PATH" HOME=/root LANG=C.UTF-8 TERM=dumb \
-    GATE_RUN="$RUN" GATE_EXPORT_SHA="$SHA" GATE_BUILD="$BUILD" GATE_COMPOSE="bash $LIB/compose.sh" \
+    GATE_RUN="$RUN" GATE_EXPORT_SHA="$SHA" GATE_BUILD="$BUILD" GATE_COMPOSE="bash -- $LIB/compose.sh" \
     CI_GIT="$tgit" CHECK_GIT="$tgit" E2E_GIT="$tgit" GATE_LEDGER_GIT="$tgit" GATE_LEDGER="$RUN/status" \
     bash -- "$TREE/$SCRIPT" "$@"
 rc=$?

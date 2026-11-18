@@ -45,9 +45,18 @@ flags 'bash after an assignment' 'A=1 B="b c" bash "$X"'
 flags 'a command substitution in quotes' 'OUT="$(bash "$X" 2>&1)"'
 flags 'a subshell inside a command substitution' 'OUT="$( (true); bash "$X")"'
 flags 'a nested command substitution' 'OUT="$(echo "$(bash "$X")")"'
+flags 'a set -o option and its name' 'bash -o pipefail "$X"'
+flags 'a shopt -O option and its name' 'bash -O extglob "$X"'
+flags 'an option turned off with +' 'bash +x "$X"'
+flags 'a long option' 'bash --norc "$X"'
+flags 'two long options' 'bash --noprofile --norc "$X"'
 
 clean 'operands after --' 'bash -- "$X"' 'bash -x -- "${X}" a' '/bin/bash -- "$X"'
 clean 'bash -c takes a string' 'bash -c "$X"' 'bash -ec "$X" sh' "bash -c 'run \"\$1\"' sh \"\$X\""
+clean 'bash -s reads stdin' 'bash -s "$X"' 'bash -xs "$X" a'
+clean 'an operand that names an option' 'bash -o "$X"' 'bash -xo "$X"'
+clean 'operands after -- on a continued line' 'bash -x \' '    -- "$X"'
+clean 'a line that does not go on' 'bash -x;' '    "$X"'
 clean 'a literal operand' 'bash scripts/run.sh' 'bash ./x.sh'
 clean 'a single-quoted string' 'CASE='"'"'bash "$X"'"'"
 clean 'a double-quoted string' 'CMD="bash $X/compose.sh"'
@@ -66,6 +75,17 @@ tree scripts/a.sh '#!/usr/bin/env bash' 'read -r a <<<"bash"' 'bash "$Y"'; run "
 equals 'the line after a here-string: finding' "${OUT}" 'scripts/a.sh:3: bash runs a script operand without -- before it'
 tree scripts/a.sh '#!/usr/bin/env bash' 'OUT="$(A=1 \' '    bash "$X")"'; run "${R}"
 equals 'a continued command substitution: finding' "${OUT}" 'scripts/a.sh:3: bash runs a script operand without -- before it'
+tree scripts/a.sh '#!/usr/bin/env bash' 'bash \' '    "$X"'; run "${R}"
+equals 'an operand on a continued line: finding' "${OUT}" 'scripts/a.sh:2: bash runs a script operand without -- before it'
+tree scripts/a.sh '#!/usr/bin/env bash' 'bash -x \' '    -o pipefail \' '    "$X"' 'bash "$Y"'; run "${R}"
+equals 'options over several continued lines: findings' "${OUT}" 'scripts/a.sh:2: bash runs a script operand without -- before it
+scripts/a.sh:5: bash runs a script operand without -- before it'
+tree scripts/a.sh '#!/usr/bin/env bash' 'true # a comment ends in \' 'bash "$X"'; run "${R}"
+equals 'a comment that ends in a backslash: finding' "${OUT}" 'scripts/a.sh:3: bash runs a script operand without -- before it'
+tree scripts/a.sh '#!/usr/bin/env bash' 'cat <<\EOF' "it's here" 'EOF' 'bash "$Y"'; run "${R}"
+equals 'a here-doc quoted with a backslash: finding' "${OUT}" 'scripts/a.sh:5: bash runs a script operand without -- before it'
+tree scripts/a.sh '#!/usr/bin/env bash' 'cat <<-\EOF' "	it's here" '	EOF' 'bash "$Y"'; run "${R}"
+equals 'a tab-stripped here-doc quoted with a backslash: finding' "${OUT}" 'scripts/a.sh:5: bash runs a script operand without -- before it'
 
 tree scripts/lib/deep/b.sh 'bash "$X"'; mkdir -p "${R}/scripts/z"; printf 'bash "$X"\n' >"${R}/scripts/z/c.sh"; run "${R}"
 equals 'every *.sh at any depth: exit' "${RC}" 1
