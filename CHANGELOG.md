@@ -14,6 +14,17 @@ bodies, `bash -c` and `bash -s` are not runs and are left as they are, with one 
 says the same. The deploy lib's `DEPLOY_COMPOSE` string is the same kind of run and gets its `--` with the next
 change to that lib's body.
 
+## 2026-11-14 — gate-image-tags refuses an unread array word among compose options, and says why (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 1112.** A gate call such as `docker compose "${A[@]}" -f … up` still goes red as before, exit 1, because the
+word after the options is taken as the subcommand and no `-f` after it is read. Its FAIL line now names the call's file
+and line, says arrays among compose options are not read, and points to the decision, never printing the array's value
+(default-fallback runs, quoted form only). It also tightens: every array expansion among the options after a read `-f`
+(quoted or bare, with any operator, prefix or suffix, `${!A[@]}` and `${#A[@]}` included, and in the value slot of
+options such as `--profile` and `-p`), whatever it holds, is now red with its own FAIL line and an "unread array word(s)"
+trailer, closing a false green where `-f docker-compose.ci.yml "${A[@]}" build` passed with the production file inside
+`A`. Whole-command arrays are read as before; a word-split scalar and a `COMPOSE_FILE` file set are not covered. Merges
+after memento card 1114. Cases 84–84c and 85–85i. Why: decision: why-the-guard-reads-no-arrays.
+
 ## 2026-11-12 — the deploy lib's dirty checks refuse a file the index hides from git status (deploy-lib VERSION 2026-11-12; the standard is unchanged and VERSION is not bumped)
 **Card 753.** `preflight.sh`'s `refuse_if_dirty` and `deploy_refuse_if_tracked_dirty` now end in the new
 `deploy_refuse_if_index_hides_edits`, which runs `ls-files -v` through the bounded git (fsmonitor off) and refuses
