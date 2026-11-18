@@ -46,7 +46,7 @@ run() {
     [ "${1-}" != --as-nobody ] || { shift; [ "$(id -u)" -ne 0 ] || as=(runuser -u nobody --); }
     [ "${1-}" != --fake-find ] || { shift; second=(dash); path=${WORK}/fake:${PATH}; second_path=${path}; }
     RAN_AS=$("${as[@]}" id -u)
-    OUT="$("${as[@]}" env PATH="${path}" bash "${WORK}/check.sh" "$@" 2>&1)"; RC=$?
+    OUT="$("${as[@]}" env PATH="${path}" bash -- "${WORK}/check.sh" "$@" 2>&1)"; RC=$?
     SECOND_OUT="$("${as[@]}" env PATH="${second_path}" "${second[@]}" "${WORK}/check.sh" "$@" 2>&1)"; SECOND_RC=$?
     equals "case ${n}: ${second[*]##*/} exit code" "${SECOND_RC}" "${RC}"
     equals "case ${n}: ${second[*]##*/} output" "$(grep -v '^find: ' <<<"${SECOND_OUT}")" "$(grep -v '^find: ' <<<"${OUT}")"

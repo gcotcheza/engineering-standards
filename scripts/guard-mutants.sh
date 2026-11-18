@@ -98,7 +98,7 @@ for i in "${!ids[@]}"; do
     fi
     sane_args=("${TARGET}" "${d}/${NAME}" "${ats[i]}")
     [ -z "${news[i]}" ] || sane_args+=(--replaced-with "${news[i]}")
-    if ! why=$(bash "${SANE}" "${sane_args[@]}" 2>&1); then
+    if ! why=$(bash -- "${SANE}" "${sane_args[@]}" 2>&1); then
         insane=$((insane + 1)); printf 'MUTANT %s: REFUSED as insane (%s): %s\n' "${ids[i]}" "${why#mutant-sane: REFUSED }" "${olds[i]}"; continue
     fi
     run_case "${d}" "${cases[i]}"

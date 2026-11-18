@@ -817,7 +817,7 @@ cp -- "${CHECK}" "${WORK}/esbare/scripts/gate-image-tags.sh"
 printf 'gate_ledger_arm() { :; }\n' >"${WORK}/es/scripts/lib/deploy/ledger.sh"
 printf 'export COMPOSE_FILE="docker-compose.yml:docker-compose.ci.yml"\n' >"${WORK}/es/scripts/lib/deploy/files.sh"
 printf 'export COMPOSE_FILE="docker-compose.yml"\n' | tee "${WORK}/es/scripts/lib/outside.sh" >"${WORK}/elsewhere/lib.sh"
-run_es() { OUT="$(timeout 60 bash "${WORK}/$2/scripts/gate-image-tags.sh" "${WORK}/$1" 2>&1)"; RC=$?; }
+run_es() { OUT="$(timeout 60 bash -- "${WORK}/$2/scripts/gate-image-tags.sh" "${WORK}/$1" 2>&1)"; RC=$?; }
 
 # The app's pinning helper, in the exact shape the check accepts.
 PIN_HELPER="$(cat <<'HELPER'

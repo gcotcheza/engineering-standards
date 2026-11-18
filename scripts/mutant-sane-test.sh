@@ -26,7 +26,7 @@ printf '%s\n' 'first' 'if [ x ]; then' 'fi' 'last' >"${TEXT}"
 chmod 644 -- "${TEXT}"
 
 # A FIFO with no writer blocks a reader forever; a checker that opens one is cut off, not waited on.
-run() { OUT="$(timeout 10 bash "${CHECKER}" "$@" 2>&1)"; RC=$?; }
+run() { OUT="$(timeout 10 bash -- "${CHECKER}" "$@" 2>&1)"; RC=$?; }
 # mutate <original> <name> <sed script>: a copy saved on disk with the original's mode
 mutate() {
     M=${WORK}/$2

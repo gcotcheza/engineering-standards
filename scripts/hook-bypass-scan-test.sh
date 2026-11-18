@@ -32,7 +32,7 @@ fixture() { # <file> <line>... -> repo path
 expect() {
     local label="$1" want="$2" at="${AT:-1}" repo rc out
     repo="$(fixture "${@:3}")"
-    rc=0; out="$(timeout 10 bash "${SCAN}" "${repo}" 2>&1)" || rc=$?
+    rc=0; out="$(timeout 10 bash -- "${SCAN}" "${repo}" 2>&1)" || rc=$?
     if [[ "${rc}" -ne "${want}" ]]; then
         bad "${label}: exit ${rc}, wanted ${want}: ${out}"
     elif [[ "${want}" -eq 1 && "${out}" != *"hook-bypass-scan: $3:${at}:"* ]]; then
@@ -228,7 +228,7 @@ expect 'r5 near miss: a printf brace' 0 scripts/a.sh "printf '{%s,%s}\\n' a b"
 timed() { # <label> <want rc> <line>: scripts/a.sh holding <line> is judged within 20 s
     local repo rc=0
     repo="$(fixture scripts/a.sh "$3")"
-    timeout 20 bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+    timeout 20 bash -- "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
     if [[ "${rc}" -eq "$2" ]]; then ok "$1"; else bad "$1: exited ${rc}, wanted $2"; fi
 }
 # Past the cap a word holding a brace and two dashes expansion could join fails closed: the flag may be any alternative.
@@ -290,7 +290,7 @@ expect 'r6 fails open: a quote open for 20 lines' 0 scripts/a.sh 'git commit --n
 expect 'r6 fails open: a quote open past 4096 chars' 0 scripts/a.sh 'git commit --no-{"x' "${long}" 'y",@verify} -m x'
 repo="$(fixture scripts/a.sh 'git commit --no-{"x')"
 printf '%s\n' 'y",@verify} -m x' | tr -d '@' >"${repo}/scripts/b.sh"
-rc=0; bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+rc=0; bash -- "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 0 ]]; then ok 'r6 near miss: a quote left open at the end of a file'; else bad "r6 near miss: a quote left open at the end of a file exited ${rc}, wanted 0"; fi
 
 # --- one root-home pass: env -i, the root home among its assignments, then any git, in one command --
@@ -313,8 +313,8 @@ expect 'root home: docker compose next' 0 scripts/a.sh 'en@v -i PATH="$P" HOM@E=
 expect 'root home refused: env -i alone, then git after a separator' 1 scripts/a.sh 'en@v -i HOM@E=/root; git status'
 expect 'root home refused: git after an assignment and a separator' 1 scripts/a.sh 'en@v -i HOM@E=/root X=1; git status'
 expect 'root home: a command named like git' 0 scripts/a.sh 'en@v -i HOM@E=/root gitx status'
-expect "root home: gate-run.sh's exec form" 0 scripts/a.sh 'exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOM@E=/root LANG=C.UTF-8 \' '    GATE_RUN_DIR="$run" GATE_RUN_T_SRC="${GATE_RUN_T_SRC:-}" \' '    /bin/bash "$run/lib/scripts/lib/gate/run.sh" "$app" "$sha" "$script" "$@"'
-expect "root home: gate/run.sh's app-gate form" 0 scripts/a.sh 'env -i PATH="$RUN_PATH" HOM@E=/root LANG=C.UTF-8 TERM=dumb \' '    GATE_COMPOSE="bash $LIB/compose.sh" CI_GIT="$tgit" GATE_LEDGER="$RUN/status" \' '    bash "$TREE/$SCRIPT" "$@"'
+expect "root home: gate-run.sh's exec form as it was before --" 0 scripts/a.sh 'exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOM@E=/root LANG=C.UTF-8 \' '    GATE_RUN_DIR="$run" GATE_RUN_T_SRC="${GATE_RUN_T_SRC:-}" \' '    /bin/bash "$run/lib/scripts/lib/gate/run.sh" "$app" "$sha" "$script" "$@"'
+expect "root home: gate/run.sh's app-gate form as it was before --" 0 scripts/a.sh 'env -i PATH="$RUN_PATH" HOM@E=/root LANG=C.UTF-8 TERM=dumb \' '    GATE_COMPOSE="bash $LIB/compose.sh" CI_GIT="$tgit" GATE_LEDGER="$RUN/status" \' '    bash "$TREE/$SCRIPT" "$@"'
 expect "root home: gate/compose.sh's dc form" 0 scripts/lib/compose.sh 'dc() { env -i PATH="$RUN_PATH" HOM@E=/root docker compose --project-directory "$TREE" "$@"; }'
 expect 'root home refused: env without -i' 1 scripts/a.sh 'env HOM@E=/root git status'
 expect 'root home refused: no env -i at all' 1 scripts/a.sh 'HOM@E=/root git status'
@@ -378,7 +378,7 @@ at_case() { # <label> <line>: must be a finding at scripts/a.sh:1
     local repo rc=0 out
     repo="$(fixture scripts/a.sh "$2")"
     sed -i 's/ATSIGN/@/g' "${repo}/scripts/a.sh"
-    out="$(bash "${SCAN}" "${repo}" 2>&1)" || rc=$?
+    out="$(bash -- "${SCAN}" "${repo}" 2>&1)" || rc=$?
     if [[ "${rc}" -eq 1 && "${out}" == *"hook-bypass-scan: scripts/a.sh:1:"* ]]; then ok "$1"; else bad "$1: exit ${rc}, wanted 1: ${out}"; fi
 }
 at_case 'mirror refused: fetch with "$at"' 'mirror_git_fetch() { en@v -i HOM@E="$H" "$MIRROR_GIT" -C "$M" fetch "$ATSIGN"; }'
@@ -660,14 +660,14 @@ expect 'a help heredoc listing commit, then the dry-run flag' 0 scripts/a.sh 'ca
 repo="$(fixture scripts/a.sh 'args=(' '    git')"
 printf '    commit\n' >"${repo}/scripts/b.sh"
 printf '    -%s) x\n' n >>"${repo}/scripts/b.sh"
-rc=0; out="$(bash "${SCAN}" "${repo}" 2>&1)" || rc=$?
+rc=0; out="$(bash -- "${SCAN}" "${repo}" 2>&1)" || rc=$?
 if [[ "${rc}" -eq 0 ]]; then ok 'a run open at the end of one file ends there'; else bad "a run open at the end of one file carried on: exit ${rc}: ${out}"; fi
 
 # --- the scanner skips itself and each path it is given, and nothing else ---------
 skip_case() { # <label> <want rc> <skipped path>...: the tree holds scripts/a.sh, a route, and clean.txt
     local repo rc=0
     repo="$(fixture scripts/a.sh 'git commit --no-@verify -m x')"
-    bash "${SCAN}" "${repo}" "${@:3}" >/dev/null 2>&1 || rc=$?
+    bash -- "${SCAN}" "${repo}" "${@:3}" >/dev/null 2>&1 || rc=$?
     if [[ "${rc}" -eq "$2" ]]; then ok "$1"; else bad "$1: exit ${rc}, wanted $2"; fi
 }
 skip_case 'a skipped path is not judged' 0 scripts/a.sh
@@ -678,16 +678,16 @@ skip_case 'an empty skipped path exits 2' 2 ''
 
 repo="$(fixture scripts/a.sh 'true')"
 cp -- "${SCAN}" "${repo}/scripts/hook-bypass-scan.sh"
-rc=0; bash "${repo}/scripts/hook-bypass-scan.sh" "${repo}" >/dev/null 2>&1 || rc=$?
+rc=0; bash -- "${repo}/scripts/hook-bypass-scan.sh" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 0 ]]; then ok 'the scanner does not judge itself'; else bad "the scanner judged itself: exit ${rc}"; fi
-rc=0; bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+rc=0; bash -- "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 1 ]]; then ok "an app's own copy of the scanner is judged"; else bad "an app's own copy of the scanner exited ${rc}, wanted 1"; fi
 
 # --- a line skip, <path>:<sha256 of the line>, permits that one line and nothing else (card 946) --
 # <label> <want rc> <repo> <stdout must hold> <stderr must hold> <skip>...
 line_skip() {
     local rc=0 out err
-    out="$(bash "${SCAN}" "$3" "${@:6}" 2>"${WORK}/stderr")" || rc=$?
+    out="$(bash -- "${SCAN}" "$3" "${@:6}" 2>"${WORK}/stderr")" || rc=$?
     err="$(cat "${WORK}/stderr")"
     if [[ "${rc}" -ne "$2" ]]; then bad "$1: exit ${rc}, wanted $2: ${out} ${err}"
     elif [[ "${out}" != *"$4"* || "${err}" != *"$5"* ]]; then bad "$1: wanted '$4' out and '$5' err: ${out} ${err}"
@@ -765,31 +765,31 @@ RJ='git commit --no-@verify -m x; y="a'
 line_skip 'a quoted-newline join finding is never skipped by its first line' 1 "$(fixture scripts/a.sh "${RJ}" 'b"')" \
     "skipped scripts/a.sh:1 sha256 $(sha "${RJ}")" "hook-bypass-scan: scripts/a.sh:1:" "scripts/a.sh:$(sha "${RJ}")"
 mkdir -p "${WORK}/nosha" && printf '#!/bin/sh\nexit 127\n' >"${WORK}/nosha/sha256sum" && chmod 755 "${WORK}/nosha/sha256sum"
-out="$(PATH="${WORK}/nosha:${PATH}" bash "${SCAN}" "$(fixture scripts/a.sh "${R}")" "scripts/a.sh:${H}" 2>&1)"; rc=$?
+out="$(PATH="${WORK}/nosha:${PATH}" bash -- "${SCAN}" "$(fixture scripts/a.sh "${R}")" "scripts/a.sh:${H}" 2>&1)"; rc=$?
 if [[ "${rc}" -eq 2 && "${out}" == *'sha256sum gave no hash'* && "${out}" != *stale* ]]; then ok 'a sha256sum that gives no hash exits 2, naming it'
 else bad "a sha256sum that gives no hash exited ${rc}: ${out}"; fi
 
 # --- nothing judged is never a pass ----------------------------------------
 repo="$(mktemp -d "${WORK}/empty.XXXXXX")"
 git -C "${repo}" init -q
-rc=0; bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+rc=0; bash -- "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 2 ]]; then ok 'an empty listing exits 2'; else bad "an empty listing exited ${rc}, wanted 2"; fi
 
 repo="$(fixture scripts/a.sh 'true')"
-rc=0; HOOK_BYPASS_GIT=false bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+rc=0; HOOK_BYPASS_GIT=false bash -- "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 2 ]]; then ok 'a failing git exits 2'; else bad "a failing git exited ${rc}, wanted 2"; fi
 
 # A git that lists another tree: its paths are not here, so nothing here was judged.
 other="$(fixture scripts/b.sh 'true')"
-rc=0; HOOK_BYPASS_GIT="git -C ${other}" bash "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
+rc=0; HOOK_BYPASS_GIT="git -C ${other}" bash -- "${SCAN}" "${repo}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 2 ]]; then ok 'r2: a git that lists another tree exits 2'; else bad "a git that lists another tree exited ${rc}, wanted 2"; fi
 
-rc=0; bash "${SCAN}" >/dev/null 2>&1 || rc=$?
+rc=0; bash -- "${SCAN}" >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 2 ]]; then ok 'no root exits 2'; else bad "no root exited ${rc}, wanted 2"; fi
 
 # Run from a clean repository, so a scan that ignored the failed cd would judge it and pass.
 clean="$(fixture scripts/a.sh 'true')"
-rc=0; (cd -- "${clean}" && bash "${SCAN}" "${WORK}/no-such-root") >/dev/null 2>&1 || rc=$?
+rc=0; (cd -- "${clean}" && bash -- "${SCAN}" "${WORK}/no-such-root") >/dev/null 2>&1 || rc=$?
 if [[ "${rc}" -eq 2 ]]; then ok 'a root cd cannot enter exits 2'; else bad "a root cd cannot enter exited ${rc}, wanted 2"; fi
 
 # An awk that fails, silent or after a finding: its verdict is not one.
@@ -798,7 +798,7 @@ printf '#!/bin/sh\nexit 2\n' >"${WORK}/awk-silent/awk"
 printf '#!/bin/sh\necho scripts/a.sh:1: x\nexit 2\n' >"${WORK}/awk-loud/awk"
 chmod +x "${WORK}/awk-silent/awk" "${WORK}/awk-loud/awk"
 for how in silent loud; do
-    rc=0; PATH="${WORK}/awk-${how}:${PATH}" bash "${SCAN}" "${clean}" >/dev/null 2>&1 || rc=$?
+    rc=0; PATH="${WORK}/awk-${how}:${PATH}" bash -- "${SCAN}" "${clean}" >/dev/null 2>&1 || rc=$?
     if [[ "${rc}" -eq 2 ]]; then ok "a ${how} failing awk exits 2"; else bad "a ${how} failing awk exited ${rc}, wanted 2"; fi
 done
 
@@ -815,7 +815,7 @@ chmod +x "${WORK}/awk-misreads/awk"
 misread() { # <label> <program text> <what this awk reads instead> <the self-test message it must print>
     local rc=0 err
     err="$(SHIM_FROM="$2" SHIM_TO="$3" REAL_AWK="$(command -v awk)" PATH="${WORK}/awk-misreads:${PATH}" \
-        bash "${SCAN}" "${per_line}" 2>&1 >/dev/null)" || rc=$?
+        bash -- "${SCAN}" "${per_line}" 2>&1 >/dev/null)" || rc=$?
     if [[ "${rc}" -eq 2 && "${err}" == *"$4"* ]]; then ok "$1 exits 2"; else bad "$1 exited ${rc} without '$4', wanted 2 with it"; fi
 }
 misread 'an awk that misreads the element pattern' $'\n    ELEMS = ' $'\n    ELEMS = "\\001" ' 'misreads the argv-element pattern'
@@ -825,7 +825,7 @@ misread 'an awk that misreads the repeated elements' '(" ELEM "[ \t]*,[ \t]*)*" 
 if command -v mawk >/dev/null; then
     mkdir "${WORK}/awk-mawk"
     ln -s "$(command -v mawk)" "${WORK}/awk-mawk/awk"
-    rc=0; PATH="${WORK}/awk-mawk:${PATH}" bash "${SCAN}" "${per_line}" >/dev/null 2>&1 || rc=$?
+    rc=0; PATH="${WORK}/awk-mawk:${PATH}" bash -- "${SCAN}" "${per_line}" >/dev/null 2>&1 || rc=$?
     if [[ "${rc}" -eq 1 ]]; then ok 'mawk finds a one-per-line argv'; else bad "mawk on a one-per-line argv exited ${rc}, wanted 1"; fi
 else
     printf 'skip mawk finds a one-per-line argv: no mawk here\n'

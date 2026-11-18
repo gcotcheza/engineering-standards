@@ -333,7 +333,7 @@ run_lib() {
         ${armedenv} \
         ${succeededenv} \
         "${logenv}" \
-        bash "${DRIVER_DIR:-${CASE}/lib}/driver.sh" 2>&1)"
+        bash -- "${DRIVER_DIR:-${CASE}/lib}/driver.sh" 2>&1)"
     RC=$?
     LOGFILE="$(find "${LOGS}" "${CASE}/logroot" -name '*.log' -printf '%T@ %p\n' 2>/dev/null \
         | sort -rn | head -1 | cut -d' ' -f2-)"
@@ -397,13 +397,13 @@ SUITE_CLEAN_BEFORE="$(clean_lines)"
 mkdir -p "${WORK}/notroot"
 printf '#!/bin/sh\necho 1000\n' >"${WORK}/notroot/id"
 chmod 0755 "${WORK}/notroot/id"
-OUT="$(PATH="${WORK}/notroot:${PATH}" LIB_TEST_ROOT_PROBE=1 bash "${SCRIPT_DIR}/test.sh" 2>&1)"
+OUT="$(PATH="${WORK}/notroot:${PATH}" LIB_TEST_ROOT_PROBE=1 bash -- "${SCRIPT_DIR}/test.sh" 2>&1)"
 RC=$?
 contains 'a run that is not root is refused, naming the ruling' "${OUT}" \
     'lib test.sh commits through the fleet hook: run it as root (advisor ruling 2026-10-03)'
 equals 'and the refusal exits' "RC=${RC}" 'RC=1'
 absent 'and nothing past the check runs' "${OUT}" 'PAST THE ROOT CHECK'
-OUT="$(LIB_TEST_ROOT_PROBE=1 bash "${SCRIPT_DIR}/test.sh" 2>&1)"
+OUT="$(LIB_TEST_ROOT_PROBE=1 bash -- "${SCRIPT_DIR}/test.sh" 2>&1)"
 RC=$?
 equals 'a leaked probe variable can never pass a gate' "RC=${RC}" 'RC=3'
 
@@ -3076,19 +3076,19 @@ contains 'an unreadable pull request removes nothing' "${OUT}" \
 equals 'and the worktree is still on disk' "$(on_disk "${WT}")" 'there'
 
 # --- 8. root's compose (backlog 320): its own suite, which the red proofs also run as nobody ---
-OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" bash "${SCRIPT_DIR}/compose-test.sh" 2>&1)"
+OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" bash -- "${SCRIPT_DIR}/compose-test.sh" 2>&1)"
 RC=$?
 contains 'compose-test.sh passes as root' "${OUT}" 'compose-test: all checks passed'
 equals 'compose-test.sh exits' "${RC}" 0
 
 # --- 8b. root's ownership repair (card 363): its own suite, which the red proofs also run as nobody ---
-OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash "${SCRIPT_DIR}/ownership-test.sh" 2>&1)"
+OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash -- "${SCRIPT_DIR}/ownership-test.sh" 2>&1)"
 RC=$?
 contains 'ownership-test.sh passes as root' "${OUT}" 'ownership-test: all checks passed'
 equals 'ownership-test.sh exits' "${RC}" 0
 
 # --- 8c. a gate's --base vetting (card 863): its own suite, over fixture repos in WORK ---
-OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash "${SCRIPT_DIR}/base-test.sh" 2>&1)"
+OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash -- "${SCRIPT_DIR}/base-test.sh" 2>&1)"
 RC=$?
 contains 'base-test.sh passes' "${OUT}" 'base-test: all checks passed'
 equals 'base-test.sh exits' "${RC}" 0
