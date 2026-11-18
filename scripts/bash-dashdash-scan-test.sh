@@ -4,6 +4,8 @@
 #
 #   scripts/bash-dashdash-scan-test.sh
 #   BASH_DASHDASH_SCAN_SH=/path/mutant.sh scripts/bash-dashdash-scan-test.sh   the red proofs
+# Fixture lines stay single-quoted on purpose: they are the scanned files' text.
+# shellcheck disable=SC2016,SC1003
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
