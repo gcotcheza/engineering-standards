@@ -36,7 +36,7 @@ mkdir -- "${CALLER}"
 
 run() {
     printf '%s\n' "$@" >"${TABLE}"
-    OUT="$(cd -- "${CALLER}" && bash "${RUNNER}" "${TARGET}" "${TABLE}" 2>&1)"
+    OUT="$(cd -- "${CALLER}" && bash -- "${RUNNER}" "${TARGET}" "${TABLE}" 2>&1)"
     RC=$?
 }
 
@@ -94,13 +94,13 @@ equals  'case 7: exit code, empty line' "${RC}" 2
 run '' '# only a comment'
 matches 'case 7: an empty table is refused' "${OUT}" '^guard-mutants: REFUSED the table names no mutant'
 equals  'case 7: exit code, empty table' "${RC}" 2
-OUT="$(bash "${RUNNER}" "${WORK}/absent.sh" "${TABLE}" 2>&1)"; RC=$?
+OUT="$(bash -- "${RUNNER}" "${WORK}/absent.sh" "${TABLE}" 2>&1)"; RC=$?
 matches 'case 7: a missing target is refused' "${OUT}" '^guard-mutants: REFUSED the target is not a regular file'
 equals  'case 7: exit code, target' "${RC}" 2
-OUT="$(bash "${RUNNER}" "${TARGET}" "${WORK}/absent.table" 2>&1)"; RC=$?
+OUT="$(bash -- "${RUNNER}" "${TARGET}" "${WORK}/absent.table" 2>&1)"; RC=$?
 matches 'case 7: a missing table is refused' "${OUT}" '^guard-mutants: REFUSED the table is not a regular file'
 equals  'case 7: exit code, table' "${RC}" 2
-OUT="$(bash "${RUNNER}" "${TARGET}" 2>&1)"; RC=$?
+OUT="$(bash -- "${RUNNER}" "${TARGET}" 2>&1)"; RC=$?
 matches 'case 7: one argument is a usage error' "${OUT}" '^usage: guard-mutants.sh <target> <table>'
 equals  'case 7: exit code, usage' "${RC}" 2
 
@@ -139,7 +139,7 @@ PIDFILE=${WORK}/case.pid
 printf '%s\n' "Z1@@${GREETS}@@${GREET}@@echo \$\$ >${PIDFILE}; sleep 20" >"${TABLE}"
 for sig in TERM HUP; do
     rm -f -- "${PIDFILE:?}"
-    TMPDIR=${WORK}/tmp bash "${RUNNER}" "${TARGET}" "${TABLE}" >/dev/null 2>&1 &
+    TMPDIR=${WORK}/tmp bash -- "${RUNNER}" "${TARGET}" "${TABLE}" >/dev/null 2>&1 &
     pid=$!
     for _ in $(seq 50); do [ -s "${PIDFILE}" ] && break; sleep 0.1; done
     kill -"${sig}" "${pid}"
@@ -155,7 +155,7 @@ done
 NOTRAIL=${WORK}/no-newline.sh
 printf '%s\n%s\n%s' '#!/usr/bin/env bash' "${GUARD}" "${GREET}" >"${NOTRAIL}"
 printf '%s\n' "I1@@${REFUSES}@@${GUARD}@@" >"${TABLE}"
-OUT="$(cd -- "${CALLER}" && bash "${RUNNER}" "${NOTRAIL}" "${TABLE}" 2>&1)"; RC=$?
+OUT="$(cd -- "${CALLER}" && bash -- "${RUNNER}" "${NOTRAIL}" "${TABLE}" 2>&1)"; RC=$?
 matches 'case 13: the mutant that gained a final newline is refused' "${OUT}" '^MUTANT I1: REFUSED as insane \(the mutant is not the original with exactly line\(s\) 2 removed\)'
 lacks   'case 13: it is not counted red' "${OUT}" '^MUTANT I1: red'
 matches 'case 13: the summary counts it' "${OUT}" '^guard mutants: 1, 0 red, 0 survived, 0 do not parse, 0 timed out, 1 refused as insane$'
@@ -163,7 +163,7 @@ equals  'case 13: exit code' "${RC}" 1
 mkdir -- "${WORK}/lone"
 cp -p -- "${RUNNER}" "${WORK}/lone/guard-mutants.sh"
 run "G1@@${REFUSES}@@${GUARD}@@"
-OUT="$(bash "${WORK}/lone/guard-mutants.sh" "${TARGET}" "${TABLE}" 2>&1)"; RC=$?
+OUT="$(bash -- "${WORK}/lone/guard-mutants.sh" "${TARGET}" "${TABLE}" 2>&1)"; RC=$?
 matches 'case 13: no mutant-sane.sh beside the runner is refused' "${OUT}" '^guard-mutants: REFUSED mutant-sane.sh is not beside this script'
 equals  'case 13: exit code, no mutant-sane' "${RC}" 2
 

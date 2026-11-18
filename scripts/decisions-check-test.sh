@@ -43,7 +43,7 @@ fresh() {
 }
 add_decision() { printf '# %s\n\nWhy it is so.\n' "$2" >"${R}/docs/decisions/$1.md"; }
 commit() { git -C "${R}" add -- docs src && git -C "${R}" commit -q -m "$1"; }
-run() { OUT="$(bash "${CHECK}" "${R}" 2>&1)"; RC=$?; }
+run() { OUT="$(bash -- "${CHECK}" "${R}" 2>&1)"; RC=$?; }
 
 # --- 1. a clean fixture passes --------------------------------------------------
 fresh; run
@@ -137,7 +137,7 @@ cat >"${WORK}/bin/git-grep-fails" <<'FAKE'
 exec git "$@"
 FAKE
 chmod +x "${WORK}/bin/git-grep-fails"
-OUT="$(DECISIONS_GIT="${WORK}/bin/git-grep-fails" bash "${CHECK}" "${R}" 2>&1)"; RC=$?
+OUT="$(DECISIONS_GIT="${WORK}/bin/git-grep-fails" bash -- "${CHECK}" "${R}" 2>&1)"; RC=$?
 matches 'case 14: a failing git grep judges nothing' "${OUT}" 'git grep failed, so no pointer was judged'
 equals  'case 14: exit code' "${RC}" 2
 
@@ -155,9 +155,9 @@ matches 'case 16: a subdirectory is refused' "${OUT}" 'is not the top of its wor
 equals  'case 16: exit code' "${RC}" 2
 
 # --- 17. a several-word git seam, and git's own words when it fails -------------------------------------
-fresh; OUT="$(DECISIONS_GIT="git -C ${R}" bash "${CHECK}" "${R}" 2>&1)"; RC=$?
+fresh; OUT="$(DECISIONS_GIT="git -C ${R}" bash -- "${CHECK}" "${R}" 2>&1)"; RC=$?
 matches 'case 17a: git -C <tree> as the seam' "${OUT}" '^decisions-check: ok \(2 unrolled, 1 rolled up\)$'
-OUT="$(DECISIONS_GIT="git -C ${WORK}/no-such-tree" bash "${CHECK}" "${R}" 2>&1)"; RC=$?
+OUT="$(DECISIONS_GIT="git -C ${WORK}/no-such-tree" bash -- "${CHECK}" "${R}" 2>&1)"; RC=$?
 matches 'case 17b: git stderr is kept' "${OUT}" "is not a git work tree, so nothing was judged: fatal: cannot change to"
 equals  'case 17b: exit code' "${RC}" 2
 
@@ -178,10 +178,10 @@ matches 'case 20: the missing base is named' "${OUT}" 'origin/main is not in thi
 equals  'case 20: exit code (1: a finding, not "nothing judged")' "${RC}" 1
 
 # --- 21. no argument is a usage error (2) --------------------------------------------------------------
-OUT="$(bash "${CHECK}" 2>&1)"; RC=$?
+OUT="$(bash -- "${CHECK}" 2>&1)"; RC=$?
 matches 'case 21: usage is printed' "${OUT}" '^usage: decisions-check\.sh <repo-root>$'
 equals  'case 21: exit code' "${RC}" 2
-fresh; OUT="$(cd "${R}" && bash "${CHECK}" '' 2>&1)"; RC=$?
+fresh; OUT="$(cd "${R}" && bash -- "${CHECK}" '' 2>&1)"; RC=$?
 matches 'case 21: an empty argument is usage too' "${OUT}" '^usage: decisions-check\.sh <repo-root>$'
 equals  'case 21: empty argument exit code' "${RC}" 2
 

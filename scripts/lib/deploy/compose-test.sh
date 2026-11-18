@@ -89,7 +89,7 @@ cjson() { local t; t=$(jq --arg r "${CROOT}" "$1" "${CF}/config.json") && printf
 crun() {
     # shellcheck disable=SC2086
     OUT="$(${C_TIMEOUT:+timeout "${C_TIMEOUT}"} env -i PATH=/usr/bin:/bin C_ROOT="${CROOT}" C_DOCKER="${CF}/bin/docker" C_ENV_DIR="${CF}/app-env" C_BINDS_DIR="${CF}/app-binds" C_UID="${C_UID}" \
-        FLEET_DEPLOY_REPO=gcotcheza/demo ${C_EXTRA:-} C_CALLS="$1" bash "${CRUN}/scripts/deploy.sh" 2>&1)"
+        FLEET_DEPLOY_REPO=gcotcheza/demo ${C_EXTRA:-} C_CALLS="$1" bash -- "${CRUN}/scripts/deploy.sh" 2>&1)"
     RC=$?
     ARGV="$(cat "${CF}/bin/argv" 2>/dev/null)"
     C_EXTRA='' C_TIMEOUT=''
@@ -179,7 +179,7 @@ cfx sha-moved
 crun "deploy_compose_init 2222222222222222222222222222222222222222"
 contains 'pieces: compose files exported at another sha refuse' "${OUT}" "REFUSED: the compose files were exported at ${COMPOSE_SHA}, not the merge 2222222222222222222222222222222222222222 this deploy lands."
 cfx run-mode-direct; rm -rf "${CRUN}/compose"
-OUT="$(bash "${CRUN}/scripts/lib/deploy/compose.sh" run "${CROOT}" "${CF}/bin/docker" "${CENV}" docker-compose.yml -- up -d 2>&1)"
+OUT="$(bash -- "${CRUN}/scripts/lib/deploy/compose.sh" run "${CROOT}" "${CF}/bin/docker" "${CENV}" docker-compose.yml -- up -d 2>&1)"
 contains 'pieces: run mode checks the pieces itself' "${OUT}" "REFUSED: ${CRUN}/compose is missing"
 equals 'pieces: and calls no docker' "$(cat "${CF}/bin/argv" 2>/dev/null)" ''
 
@@ -506,7 +506,7 @@ crun "${INIT}; deploy_compose up -d"
 contains 'binds up: the policy at up reads the same list' "${ARGV}" "--env-file ${CENV} up -d"
 
 drun() { # direct run mode, as a job's text calls it
-    OUT="$(${C_TIMEOUT:+timeout "${C_TIMEOUT}"} env -i PATH=/usr/bin:/bin FLEET_DEPLOY_REPO=gcotcheza/demo ${C_UID:+DEPLOY_ROOT_UID=${C_UID}} bash "${CRUN}/scripts/lib/deploy/compose.sh" "$@" 2>&1)"
+    OUT="$(${C_TIMEOUT:+timeout "${C_TIMEOUT}"} env -i PATH=/usr/bin:/bin FLEET_DEPLOY_REPO=gcotcheza/demo ${C_UID:+DEPLOY_ROOT_UID=${C_UID}} bash -- "${CRUN}/scripts/lib/deploy/compose.sh" "$@" 2>&1)"
     ARGV="$(cat "${CF}/bin/argv" 2>/dev/null)"
 }
 cfx direct-ok

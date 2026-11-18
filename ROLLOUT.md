@@ -234,7 +234,7 @@ keeps its own `scripts/root-owned-check.sh` until it switches. Decision: gate-ro
 
 | Open work | What is missing | Owner |
 |---|---|---|
-| fineprint, ghiecode, ghie-writes, health-tracker, memento, reflection and scribly refuse root-owned paths through `root_owned_check` | Each gate's last step runs its own copy; it calls `bash "${DEPLOY_LIB}/ownership.sh" <tree>` instead and deletes the copy and its test. Memento and Scribly stop counting across mounts (`-xdev`); Fineprint's linked-tree pass closes. A tightening: a tree reached through a linked parent now refuses (Memento and Scribly resolved one with `pwd -P`; Fineprint's and Health Tracker's logical `cd .. && pwd` fails loud through a link), so each caller passes a physical, `pwd -P` path. | each project, in its own PR |
+| fineprint, ghiecode, ghie-writes, health-tracker, memento, reflection and scribly refuse root-owned paths through `root_owned_check` | Each gate's last step runs its own copy; it calls `bash -- "${DEPLOY_LIB}/ownership.sh" <tree>` instead and deletes the copy and its test. Memento and Scribly stop counting across mounts (`-xdev`); Fineprint's linked-tree pass closes. A tightening: a tree reached through a linked parent now refuses (Memento and Scribly resolved one with `pwd -P`; Fineprint's and Health Tracker's logical `cd .. && pwd` fails loud through a link), so each caller passes a physical, `pwd -P` path. | each project, in its own PR |
 
 ## Standards-text change — merge order
 

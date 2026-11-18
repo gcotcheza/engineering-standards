@@ -8,7 +8,8 @@
 #   3) scripts/version-text-pair.sh and its own test — VERSION and
 #      ENGINEERING-STANDARDS.md move together, or neither moves — then
 #      scripts/deploy-lib-version.sh and its test (a lib change raises the lib's
-#      VERSION), W7's decisions-check.sh on this tree, the W4 closing-line test, and
+#      VERSION), W7's decisions-check.sh on this tree, the W4 closing-line test,
+#      scripts/bash-dashdash-scan.sh (bash names a script after --) on this tree and its test, and
 #      S1's scripts/hook-bypass-scan.sh on this tree and its own test
 #   4) scripts/guard-mutants-test.sh and mutant-sane-test.sh, the T5 mutant tools' own tests
 #   5) scripts/fleet-versions-test.sh, the fleet check's own test
@@ -103,7 +104,7 @@ run_step() {
 step_1() {
     local f
     while IFS= read -r f; do
-        bash -n "$f" || fail_step 1
+        bash -n -- "$f" || fail_step 1
     done < <("${GIT}" ls-files '*.sh')
     if [ ! -x "${GUARD_DIFF_LINT}" ]; then
         printf '%s is missing or not executable — refusing to treat a skipped lint as a pass (C9).\n' "${GUARD_DIFF_LINT}" >&2
@@ -123,8 +124,8 @@ step_1() {
 }
 
 step_2() {
-    bash "${REPO_ROOT}/scripts/vendor-perms-check-test.sh" || fail_step 2
-    bash "${REPO_ROOT}/scripts/dockerfile-unzip-check-test.sh" || fail_step 2
+    bash -- "${REPO_ROOT}/scripts/vendor-perms-check-test.sh" || fail_step 2
+    bash -- "${REPO_ROOT}/scripts/dockerfile-unzip-check-test.sh" || fail_step 2
 }
 
 step_3() {
@@ -132,19 +133,21 @@ step_3() {
     "${REPO_ROOT}/scripts/version-text-pair-test.sh" || fail_step 3
     DEPLOY_LIB_VERSION_GIT="${GIT}" "${REPO_ROOT}/scripts/deploy-lib-version.sh" "${REPO_ROOT}" || fail_step 3
     "${REPO_ROOT}/scripts/deploy-lib-version-test.sh" || fail_step 3
-    DECISIONS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 3
-    bash "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 3
+    DECISIONS_GIT="${GIT}" bash -- "${REPO_ROOT}/scripts/decisions-check.sh" "${REPO_ROOT}" || fail_step 3
+    bash -- "${REPO_ROOT}/scripts/w4-closing-line-test.sh" || fail_step 3
+    bash -- "${REPO_ROOT}/scripts/bash-dashdash-scan.sh" "${REPO_ROOT}" || fail_step 3
+    bash -- "${REPO_ROOT}/scripts/bash-dashdash-scan-test.sh" || fail_step 3
     # The prose names the routes; the mutant tables are test data that rewrite the root gate's env -i lines or the scanner's;
     # the deploy lib's test.sh has one git-as shim line that drops HOME on purpose until card 759, skipped by its sha256.
-    HOOK_BYPASS_GIT="${GIT}" bash "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
+    HOOK_BYPASS_GIT="${GIT}" bash -- "${REPO_ROOT}/scripts/hook-bypass-scan.sh" "${REPO_ROOT}" CHANGELOG.md ENGINEERING-STANDARDS.md ROLLOUT.md \
         scripts/gate-run-mutants.txt scripts/gate-run-lib-run-mutants.txt scripts/hook-bypass-scan-mutants.txt \
         scripts/lib/deploy/test.sh:1b7e399fa4854b12935e4d8a134702d16122764eff22cb6f2de87a924e705a9b || fail_step 3
-    bash "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 3
+    bash -- "${REPO_ROOT}/scripts/hook-bypass-scan-test.sh" || fail_step 3
 }
 
 step_4() {
-    bash "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 4
-    bash "${REPO_ROOT}/scripts/mutant-sane-test.sh" || fail_step 4
+    bash -- "${REPO_ROOT}/scripts/guard-mutants-test.sh" || fail_step 4
+    bash -- "${REPO_ROOT}/scripts/mutant-sane-test.sh" || fail_step 4
 }
 
 step_5() {
@@ -196,16 +199,16 @@ step_10() {
         fail_step 10
     fi
     printf -- '--- step 10: deploy-lib test.sh again, from %s/deploy (owner nobody, DEPLOY_LIB_DIR unset) ---\n' "${APP_OWNED_LIB}"
-    env -u DEPLOY_LIB_DIR bash "${APP_OWNED_LIB}/deploy/test.sh" || fail_step 10
+    env -u DEPLOY_LIB_DIR bash -- "${APP_OWNED_LIB}/deploy/test.sh" || fail_step 10
 }
 
 step_11() {
-    bash "${REPO_ROOT}/scripts/decisions-check-test.sh" || fail_step 11
-    bash "${REPO_ROOT}/scripts/decisions-rollup-test.sh" || fail_step 11
+    bash -- "${REPO_ROOT}/scripts/decisions-check-test.sh" || fail_step 11
+    bash -- "${REPO_ROOT}/scripts/decisions-rollup-test.sh" || fail_step 11
 }
 
 step_12() {
-    bash "${REPO_ROOT}/scripts/gate-run-test.sh" || fail_step 12
+    bash -- "${REPO_ROOT}/scripts/gate-run-test.sh" || fail_step 12
 }
 
 for n in 1 2 3 4 5 6 7 8 9 10 11 12; do run_step "${n}"; done

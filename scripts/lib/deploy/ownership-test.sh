@@ -281,11 +281,11 @@ R_UID='no-such-user-c660'; rrun "${RT}"
 contains 'check: a find that fails refuses' "${OUT}" "REFUSED: root_owned_check: find failed under ${RT}, so a count nobody took is not a clean tree"
 absent 'check: and never reads as clean' "${OUT}" 'no root-owned path'
 contains 'check: and returns 1' "${OUT}" 'RC=1'
-OUT="$(env -i PATH=/usr/bin:/bin OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID=4242 bash "${LIB_DIR}/ownership.sh" "${RT}" 2>&1; printf 'RC=%s' "$?")"
+OUT="$(env -i PATH=/usr/bin:/bin OWNERSHIP_TEST_ROOT_UID=1 DEPLOY_ROOT_UID=4242 bash -- "${LIB_DIR}/ownership.sh" "${RT}" 2>&1; printf 'RC=%s' "$?")"
 equals 'check: run as a command, the lib file runs the check' "${OUT}" "no root-owned path under ${RT}"$'\nRC=0'
 # Without the seam DEPLOY_ROOT_UID is ignored and uid 0 is judged: as root a uid nobody holds, as nobody its own.
 if [ "${ME}" = 0 ]; then G_UID=4242 G_WANT='REFUSED: root_owned_check: 6 path(s)'; else G_UID=${ME} G_WANT="no root-owned path under ${RT}"; fi
-OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID="${G_UID}" bash "${LIB_DIR}/ownership.sh" "${RT}" 2>&1)"
+OUT="$(env -i PATH=/usr/bin:/bin DEPLOY_ROOT_UID="${G_UID}" bash -- "${LIB_DIR}/ownership.sh" "${RT}" 2>&1)"
 contains "check: DEPLOY_ROOT_UID=${G_UID} without OWNERSHIP_TEST_ROOT_UID=1 still judges uid 0" "${OUT}" "${G_WANT}"
 GL="${WORK}/check-glob"
 mkdir -p "${GL}/real-x/t" "${GL}/star*/t"; ln -s "${GL}/real-x" "${GL}/real-*"

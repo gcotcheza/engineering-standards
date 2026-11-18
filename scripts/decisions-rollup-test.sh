@@ -39,7 +39,7 @@ fresh() {
 }
 add_decision() { printf '# %s\n\nWhy it is so.\n\nA second paragraph.\n' "$2" >"${R}/docs/decisions/$1.md"; }
 commit() { git -C "${R}" add -- docs && git -C "${R}" commit -q -m "$1"; }
-run() { OUT="$(bash "${ROLLUP}" "${R}" 2>&1)"; RC=$?; }
+run() { OUT="$(bash -- "${ROLLUP}" "${R}" 2>&1)"; RC=$?; }
 snap() { SNAP="$(cat "${R}/docs/DECISIONS.md" 2>&1; ls "${R}/docs/decisions" 2>&1; git -C "${R}" status --porcelain)"; }
 unchanged() { local before="${SNAP}"; snap; equals "$1: nothing was written" "$([ "${before}" = "${SNAP}" ] && echo same || echo changed)" same; }
 
@@ -116,7 +116,7 @@ equals  'case 7: merging main into b conflicts' "$([ "${merge_rc}" -ne 0 ] && ec
 { git -C "${R}" show :2:docs/DECISIONS.md; git -C "${R}" show :3:docs/DECISIONS.md | tail -n +8; } >"${WORK}/both"
 cp -- "${WORK}/both" "${R}/docs/DECISIONS.md"
 git -C "${R}" add -- docs/DECISIONS.md; git -C "${R}" commit -q --no-edit
-OUT="$(bash "${DECISIONS_CHECK_SH}" "${R}" 2>&1)"; RC=$?
+OUT="$(bash -- "${DECISIONS_CHECK_SH}" "${R}" 2>&1)"; RC=$?
 matches 'case 7: keeping both sides says rebase' "${OUT}" '### file-1 is rolled up twice \(line [0-9]+\): rebase onto main and re-run decisions-rollup\.sh'
 equals  'case 7: exit code' "${RC}" 1
 
@@ -140,15 +140,15 @@ matches 'case 10: a symlink refuses' "${OUT}" '2026-02-03-0900-a-link\.md is not
 equals  'case 10: exit code' "${RC}" 1; unchanged 'case 10'
 
 # --- 11. a subdirectory as the root refuses -----------------------------------------------------
-fresh; mkdir "${R}/sub"; printf '# Decisions\n' >"${R}/sub/x"; snap; OUT="$(bash "${ROLLUP}" "${R}/sub" 2>&1)"; RC=$?
+fresh; mkdir "${R}/sub"; printf '# Decisions\n' >"${R}/sub/x"; snap; OUT="$(bash -- "${ROLLUP}" "${R}/sub" 2>&1)"; RC=$?
 matches 'case 11: a subdirectory refuses' "${OUT}" 'is not the top of its work tree'
 equals  'case 11: exit code' "${RC}" 2; unchanged 'case 11'
 
 # --- 12. a several-word git seam, and git's own words when it fails -------------------------------
-fresh; OUT="$(DECISIONS_GIT="git -C ${R}" bash "${ROLLUP}" "${R}" 2>&1)"; RC=$?
+fresh; OUT="$(DECISIONS_GIT="git -C ${R}" bash -- "${ROLLUP}" "${R}" 2>&1)"; RC=$?
 matches 'case 12a: git -C <tree> as the seam rolls up' "${OUT}" 'rolled 2 decision\(s\)'
 equals  'case 12a: exit code' "${RC}" 0
-fresh; snap; OUT="$(DECISIONS_GIT="git -C ${WORK}/no-such-tree" bash "${ROLLUP}" "${R}" 2>&1)"; RC=$?
+fresh; snap; OUT="$(DECISIONS_GIT="git -C ${WORK}/no-such-tree" bash -- "${ROLLUP}" "${R}" 2>&1)"; RC=$?
 matches 'case 12b: git stderr is kept' "${OUT}" 'is not a git work tree: fatal: cannot change to'
 equals  'case 12b: exit code' "${RC}" 2; unchanged 'case 12b'
 
