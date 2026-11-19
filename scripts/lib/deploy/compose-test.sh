@@ -724,6 +724,15 @@ absent 'cache: and says nothing of a missed config:cache' "${OUT}" 'NOTE: compos
 hfx opt 755; crun "${INIT}; deploy_compose run --rm --no-deps -T app php artisan optimize"
 equals 'cache: run artisan optimize, through deploy_compose, leaves the cache' "$(stat -c %a -- "${CROOT}/bootstrap/cache/config.php")" 600
 equals 'cache: and that deploy exits 0' "${RC}" 0
+# Apps that never run config:cache (orbit, memento, …) and gate trees hold no config.php.
+cfx cache-nodir; hcall exec -T app php artisan migrate --force
+contains 'cache: no bootstrap/cache: a call passes' "${OUT}" 'RC=0'
+absent 'cache: no bootstrap/cache: and nothing is noted' "${OUT}" 'NOTE: compose'
+absent 'cache: no bootstrap/cache: and nothing is refused' "${OUT}" 'REFUSED'
+cfx cache-nofile; mkdir -p "${CROOT}/bootstrap/cache"; hcall exec -T app php artisan migrate --force
+contains 'cache: no config.php: a call passes' "${OUT}" 'RC=0'
+absent 'cache: no config.php: and nothing is noted' "${OUT}" 'NOTE: compose'
+absent 'cache: no config.php: and nothing is refused' "${OUT}" 'REFUSED'
 hfx missed 644; hcall exec -T app php artisan migrate --force
 contains 'cache: a call that left a cache not owner-only says so' "${OUT}" 'NOTE: compose exec left a cached config that is not owner-only'
 equals 'cache: and makes it owner-only' "${CACHE_MODE}" 600
