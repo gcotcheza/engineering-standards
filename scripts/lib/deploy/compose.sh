@@ -1,10 +1,12 @@
-# fleet-deploy-lib 2026-11-18 sha256:c8d4b48eca4d184ef8dadbbadd0101592f032a602190ee05bc0312a9ad840532
+# fleet-deploy-lib 2026-11-19 sha256:a46005a86fb8f051304d79c29982bf75f0803b79cb6550ee45267f21d8e97029
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
 
 FLEET_COMPOSE_LIB="$(CDPATH='' cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/compose.sh"
 FLEET_COMPOSE_WORD='^/?[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$'
+# shellcheck source=scripts/lib/deploy/config-cache.sh
+. "${FLEET_COMPOSE_LIB%/*}/config-cache.sh"
 # External networks an app may join, by exact name: scribly and reflection share whisper (docs/DECISIONS.md).
 FLEET_COMPOSE_SHARED_NETWORKS="whisper-net"
 
@@ -191,7 +193,18 @@ deploy_compose_exec() {
             deploy_compose_buildcheck "$root" "$run" "$json" || { printf 'REFUSED: %s\n' "$DEPLOY_COMPOSE_ERR" >&2; return 1; } ;;
     esac
     for f in "${!COMPOSE_@}"; do unset "$f"; done
-    "$docker" "${argv[@]}" "$@"
+    "$docker" "${argv[@]}" "$@" || return
+    ! deploy_compose_caches_config "$@" || config_cache_private "$root"
+}
+
+# Whether compose args run artisan config:cache or optimize, which write bootstrap/cache/config.php. decision: config-cache-owner-only
+deploy_compose_caches_config() {
+    local a artisan=''
+    for a in "$@"; do
+        [[ ${a##*/} != artisan ]] || artisan=1
+        [[ -z $artisan || ! $a =~ ^(config:cache|optimize)$ ]] || return 0
+    done
+    return 1
 }
 
 # Before a build, up, create or run (a plain run builds a missing image), the tracked files as the app user
