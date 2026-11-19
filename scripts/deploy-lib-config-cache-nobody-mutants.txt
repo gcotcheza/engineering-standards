@@ -1,0 +1,4 @@
+# T5 guard-deletion mutants for scripts/lib/deploy/config-cache.sh (card 1031) that go red only as a non-root user.
+#   CONFIG_CACHE_TEST=$PWD/scripts/lib/deploy/config-cache-test.sh TMPDIR=<dir nobody owns> runuser -u nobody -- scripts/guard-mutants.sh scripts/lib/deploy/config-cache.sh scripts/deploy-lib-config-cache-nobody-mutants.txt
+# Root takes the setpriv branch, so deleting the non-root chmod is invisible to a root run; deploy-lib-config-cache-mutants.txt holds the rest.
+ccp-chmod-user-deleted@@cp -p -- "${CONFIG_CACHE_TEST%/*}/ownership.sh" "${MUTANT_TARGET%/*}/" && DEPLOY_LIB_DIR="${MUTANT_TARGET%/*}" bash "$CONFIG_CACHE_TEST"@@        PATH=${DEPLOY_EXEC_PATH:-/usr/sbin:/usr/bin:/sbin:/bin} chmod 600 -- "$file"@@        :

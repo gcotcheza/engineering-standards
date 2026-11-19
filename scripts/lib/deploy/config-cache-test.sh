@@ -28,9 +28,9 @@ run() {  # run FUNCTION ARGS…: OUT holds its output and RC= line
         bash -c '. "$1"; shift; "$@"; printf "RC=%s\n" "$?"' _ "${LIB_DIR}/config-cache.sh" "$@" 2>&1)"
     EXEC_PATH=''
 }
-stub_chmod() {  # stub_chmod BODY: a chmod in ${APP}/bin that runs BODY
-    printf '#!/bin/bash\n%s\n' "$1" >"${APP}/bin/chmod"
-    /bin/chmod 0755 "${APP}/bin/chmod"
+stub() {  # stub COMMAND BODY: a COMMAND in ${APP}/bin that runs BODY
+    printf '#!/bin/bash\n%s\n' "$2" >"${APP}/bin/$1"
+    /bin/chmod 0755 "${APP}/bin/$1"
     EXEC_PATH="${APP}/bin:/usr/bin:/bin"
 }
 
@@ -90,18 +90,18 @@ run config_cache_private "${WORK}/linkfile"
 contains 'private: a cache that is a link is refused' "${OUT}" 'is not a plain file'
 equals 'private: the link target keeps its mode' "$(mode "${WORK}/linktarget/bootstrap/cache/config.php")" 644
 app noop 644
-stub_chmod 'exit 0'
+stub chmod 'exit 0'
 run config_cache_private "${APP}"
 contains 'private: a chmod that changed nothing is caught by the check' "${OUT}" 'is 644: group or others'
 contains 'private: a chmod that changed nothing exits 1' "${OUT}" 'RC=1'
 app chmodfails 644
-stub_chmod 'exit 1'
+stub chmod 'exit 1'
 run config_cache_private "${APP}"
 contains 'private: a failing chmod is refused' "${OUT}" "REFUSED: config_cache_private: chmod 600 failed on ${APP}/bootstrap/cache/config.php"
 contains 'private: a failing chmod exits 1' "${OUT}" 'RC=1'
 if root_only_case 'private: chmod runs as the owner, never root'; then
     app asowner 644
-    stub_chmod "id -u >\"${APP}/bin/who\"; exec /bin/chmod \"\$@\""
+    stub chmod "id -u >\"${APP}/bin/who\"; exec /bin/chmod \"\$@\""
     run config_cache_private "${APP}"
     equals 'private: the uid chmod ran as' "$(cat "${APP}/bin/who" 2>&1)" "$(id -u nobody)"
     equals 'private: as root, the cache mode afterwards' "$(mode "${APP}/bootstrap/cache/config.php")" 600
@@ -113,6 +113,36 @@ if root_only_case 'private: an owner uid with no host name'; then
     run config_cache_private "${APP}"
     contains 'private: an unnamed owner uid is handled' "${OUT}" 'RC=0'
     equals 'private: the unnamed owner cache mode afterwards' "$(mode "${APP}/bootstrap/cache/config.php")" 600
+fi
+app statfails 644
+stub stat 'exit 1'
+run config_cache_private "${APP}"
+contains 'private: an owner that cannot be read is refused' "${OUT}" "REFUSED: config_cache_private: could not read who owns ${APP} and its cached config"
+contains 'private: an owner that cannot be read exits 1' "${OUT}" 'RC=1'
+if root_only_case 'private: a cache another uid owns is refused'; then
+    app otheruid 644
+    getent passwd 54321 >/dev/null && fail 'uid 54321 has a host name, so it cannot stand in for another uid'
+    chown 54321:54321 "${APP}/bootstrap/cache/config.php"
+    run config_cache_private "${APP}"
+    contains 'private: a cache another uid owns is refused, both uids named' "${OUT}" "REFUSED: config_cache_private: uid 54321 owns ${APP}/bootstrap/cache/config.php, not uid $(id -u nobody), who owns the app tree"
+    equals 'private: the other uid cache keeps its mode' "$(mode "${APP}/bootstrap/cache/config.php")" 644
+fi
+if root_only_case 'private: a cache swapped for a link after the check never reaches its target'; then
+    app victim 644
+    chown -R 54322:54322 "${APP}"
+    app swapped 644
+    stub stat "[ -e \"${APP}/bin/swapped\" ] || { : >\"${APP}/bin/swapped\"; mv \"${APP}/bootstrap/cache\" \"${APP}/bootstrap/cache.real\"; ln -s \"${WORK}/victim/bootstrap/cache\" \"${APP}/bootstrap/cache\"; }; exec /usr/bin/stat \"\$@\""
+    run config_cache_private "${APP}"
+    contains 'private: a swapped-in link is refused' "${OUT}" 'RC=1'
+    contains 'private: and is refused for its owner' "${OUT}" 'REFUSED: config_cache_private: uid 54322 owns'
+    equals "private: the swapped-in link's target keeps its mode" "$(mode "${WORK}/victim/bootstrap/cache/config.php")" 644
+fi
+if root_only_case 'private: a root-owned app tree is refused'; then
+    app roottree 644
+    chown root:root "${APP}"
+    run config_cache_private "${APP}"
+    contains 'private: a root-owned app tree is refused, both uids named' "${OUT}" "not uid 0, who owns the app tree"
+    equals 'private: the root-owned tree cache keeps its mode' "$(mode "${APP}/bootstrap/cache/config.php")" 644
 fi
 if root_only_case 'private: a root-owned cache is refused'; then
     app rootowned 644

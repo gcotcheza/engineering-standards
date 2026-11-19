@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-19 sha256:a46005a86fb8f051304d79c29982bf75f0803b79cb6550ee45267f21d8e97029
+# fleet-deploy-lib 2026-11-19 sha256:7e72831ffb496cc4a1e97e90f3fd286e0231a86555c04d71d4744e5b896b2b07
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -194,17 +194,34 @@ deploy_compose_exec() {
     esac
     for f in "${!COMPOSE_@}"; do unset "$f"; done
     "$docker" "${argv[@]}" "$@" || return
-    ! deploy_compose_caches_config "$@" || config_cache_private "$root"
+    ! deploy_compose_caches_config "$@" || { config_cache_private "$root"; return; }
+    config_cache_check "$root" >/dev/null 2>&1 && return 0
+    printf 'NOTE: compose %s left a cached config that is not owner-only (a config:cache this lib did not see?), so it is made owner-only now\n' "$sub" >&2
+    config_cache_private "$root"
 }
 
-# Whether compose args run artisan config:cache or optimize, which write bootstrap/cache/config.php. decision: config-cache-owner-only
+# Whether compose args run artisan config:cache, or optimize not --except=config, also inside an sh -c string; both
+# write bootstrap/cache/config.php. decision: config-cache-owner-only
 deploy_compose_caches_config() {
-    local a artisan=''
+    local a w words=() state=''
     for a in "$@"; do
-        [[ ${a##*/} != artisan ]] || artisan=1
-        [[ -z $artisan || ! $a =~ ^(config:cache|optimize)$ ]] || return 0
+        IFS=$' \t\n;&|()<>`"\'' read -rd '' -a words <<<"$a" || :
+        for w in "${words[@]}"; do
+            case $state:${w,,} in
+                *:artisan|*:*/artisan) state='command' ;;
+                command:-*) ;;
+                command:config:cache) return 0 ;;
+                command:optimize) state=optimize ;;
+                command:*) state='' ;;
+                optimize:--except) state=except ;;
+                optimize:--except=*) [[ ! ${w,,} =~ =(.*,)?config(,|$) ]] || state='' ;;
+                optimize:-*) ;;
+                optimize:*) return 0 ;;
+                except:*) [[ ${w,,} =~ ^(.*,)?config(,|$) ]] || return 0; state='' ;;
+            esac
+        done
     done
-    return 1
+    [[ $state == optimize ]]
 }
 
 # Before a build, up, create or run (a plain run builds a missing image), the tracked files as the app user

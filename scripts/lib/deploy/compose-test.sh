@@ -715,23 +715,54 @@ hfx() { # hfx NAME MODE: a fixture whose app tree holds a cached config at MODE,
     printf '<?php return [];\n' >"${CROOT}/bootstrap/cache/config.php"
     chmod "$2" "${CROOT}/bootstrap/cache/config.php"
     [ "$(id -u)" != 0 ] || chown -R nobody:nogroup "${CROOT}/bootstrap"
+    [ "$(id -u)" != 0 ] || { chown nobody:nogroup "${CROOT}"; chmod 711 "${WORK}"; }
 }
 hfx cc 644; hcall exec -T app php artisan config:cache
 equals 'cache: exec artisan config:cache leaves the cache' "${CACHE_MODE}" 600
 contains 'cache: and exits 0' "${OUT}" 'RC=0'
+absent 'cache: and says nothing of a missed config:cache' "${OUT}" 'NOTE: compose'
 hfx opt 755; crun "${INIT}; deploy_compose run --rm --no-deps -T app php artisan optimize"
 equals 'cache: run artisan optimize, through deploy_compose, leaves the cache' "$(stat -c %a -- "${CROOT}/bootstrap/cache/config.php")" 600
 equals 'cache: and that deploy exits 0' "${RC}" 0
-hfx path 644; hcall exec -T app php /var/www/html/artisan config:cache
-equals 'cache: artisan named by a path still counts' "${CACHE_MODE}" 600
-hfx echo 644; hcall exec -T app echo config:cache
-equals 'cache: config:cache with no artisan changes nothing' "${CACHE_MODE}" 644
-hfx clear 644; hcall exec -T app php artisan config:clear
-equals 'cache: another artisan command changes nothing' "${CACHE_MODE}" 644
-hfx optclear 644; hcall exec -T app php artisan optimize:clear
-equals 'cache: optimize:clear is not optimize' "${CACHE_MODE}" 644
-hfx before 644; hcall exec -T app config:cache artisan
-equals 'cache: config:cache before artisan changes nothing' "${CACHE_MODE}" 644
+hfx missed 644; hcall exec -T app php artisan migrate --force
+contains 'cache: a call that left a cache not owner-only says so' "${OUT}" 'NOTE: compose exec left a cached config that is not owner-only'
+equals 'cache: and makes it owner-only' "${CACHE_MODE}" 600
+contains 'cache: and exits 0' "${OUT}" 'RC=0'
+hfx missedok 600; hcall exec -T app php artisan migrate --force
+absent 'cache: an owner-only cache after a call is left alone, silently' "${OUT}" 'NOTE: compose'
+contains 'cache: and that call exits 0' "${OUT}" 'RC=0'
+# Each runs where config:cache left no cache: a call that counts as one is refused, one that does not passes.
+hnone() { # hnone NAME EXPECT ARGS…: EXPECT is counted or passed
+    local name=$1 expect=$2
+    shift 2
+    cfx "cache-none-${name}"; hcall exec -T app "$@"
+    if [ "${expect}" = counted ]; then
+        contains "cache: counts as config:cache: $*" "${OUT}" 'REFUSED: config_cache_private: no '
+        contains "cache: and exits 1: $*" "${OUT}" 'RC=1'
+    else
+        contains "cache: is not config:cache: $*" "${OUT}" 'RC=0'
+    fi
+}
+hnone sh counted sh -c 'php artisan config:cache'
+hnone path counted php /var/www/html/artisan config:cache
+hnone bash counted bash -c 'cd /var/www/html && php artisan config:cache && php artisan route:cache'
+hnone quoted counted sh -c "php artisan 'config:cache' "
+hnone trailing counted php artisan 'config:cache '
+hnone upper counted php artisan Config:Cache
+hnone option counted php artisan --env=production config:cache
+hnone optend counted sh -c 'php artisan optimize; php artisan queue:restart'
+hnone optopt counted php artisan optimize -v
+hnone except counted php artisan optimize --except=events,views
+hnone exceptsp counted php artisan optimize --except views
+hnone echo passed echo config:cache
+hnone clear passed php artisan config:clear
+hnone optclear passed php artisan optimize:clear
+hnone before passed config:cache artisan
+hnone tinker passed php artisan tinker --execute optimize
+hnone exceptcfg passed php artisan optimize --except=config
+hnone exceptlist passed php artisan optimize --except=events,config
+hnone exceptsep passed php artisan optimize --except config
+hnone optvexcept passed php artisan optimize -v --except=config
 cfx cache-none; hcall exec -T app php artisan config:cache
 contains 'cache: config:cache that left no cache fails the call' "${OUT}" 'REFUSED: config_cache_private: no '
 contains 'cache: and exits 1' "${OUT}" 'RC=1'
@@ -742,6 +773,9 @@ if root_only_case 'cache: a root-owned cache fails the call'; then
     hfx rootowned 644; chown root:root "${CROOT}/bootstrap/cache/config.php"; hcall exec -T app php artisan config:cache
     contains 'cache: a root-owned cache is refused' "${OUT}" 'REFUSED: config_cache_private: root owns'
     contains 'cache: and the call exits 1' "${OUT}" 'RC=1'
+    hfx rootmissed 644; chown root:root "${CROOT}/bootstrap/cache/config.php"; hcall exec -T app php artisan migrate --force
+    contains 'cache: a root-owned cache after any call is refused' "${OUT}" 'REFUSED: config_cache_private: root owns'
+    contains 'cache: and that call exits 1' "${OUT}" 'RC=1'
 fi
 
 if [ "${fails}" -eq 0 ]; then printf '\ncompose-test: all checks passed\n'; exit 0; fi

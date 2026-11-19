@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-19 sha256:61c3d417494686587bbeef82b4c138388f4c648ea4021ece135480e79854a57e
+# fleet-deploy-lib 2026-11-19 sha256:9b0c13141d57e6ebde116f146736bc06daea7e63ccf4bcc4fff5c70a5242675e
 # shellcheck shell=bash
 # Laravel's cached config holds APP_KEY and the database passwords, so it is owner-only. decision: config-cache-owner-only
 
@@ -18,21 +18,22 @@ config_cache_file() {
     printf '%s\n' "$file"
 }
 
-# config_cache_private <app-dir>: run after every config:cache. Its owner, never root, makes it 0600; 1 on any failure.
+# config_cache_private <app-dir>: run after every config:cache. The app tree's owner, never root, makes it 0600; 1 on any failure.
 config_cache_private() {
-    local file uid gid
-    file=$(config_cache_file config_cache_private "${1:-}") || return 1
-    [[ -n $file ]] || { printf 'REFUSED: config_cache_private: no %s/bootstrap/cache/config.php: run it after config:cache\n' "${1%/}" >&2; return 1; }
-    read -r uid gid < <(/usr/bin/stat -c '%u %g' -- "$file") || return 1
-    [[ $uid != 0 ]] || { printf 'REFUSED: config_cache_private: root owns %q: config:cache must run as the app user\n' "$file" >&2; return 1; }
-    # As root, chmod runs as the owner's uid (a container uid may have no host name), so a link swapped in
-    # reaches only what that uid could change already.
+    local dir=${1:-} file ids uid gid owner
+    file=$(config_cache_file config_cache_private "$dir") || return 1
+    [[ -n $file ]] || { printf 'REFUSED: config_cache_private: no %s/bootstrap/cache/config.php: run it after config:cache\n' "${dir%/}" >&2; return 1; }
+    ids=$(PATH=${DEPLOY_EXEC_PATH:-/usr/sbin:/usr/bin:/sbin:/bin} stat -c '%u %g' -- "$dir" "$file") || { printf 'REFUSED: config_cache_private: could not read who owns %q and its cached config\n' "$dir" >&2; return 1; }
+    { read -r uid gid; read -r owner _; } <<<"$ids"
+    [[ $owner != 0 ]] || { printf 'REFUSED: config_cache_private: root owns %q: config:cache must run as the app user\n' "$file" >&2; return 1; }
+    [[ $owner == "$uid" ]] || { printf 'REFUSED: config_cache_private: uid %s owns %q, not uid %s, who owns the app tree\n' "$owner" "$file" "$uid" >&2; return 1; }
+    # As root, chmod runs as the app tree's owner, read from the vetted tree, never from a path below it. decision: config-cache-owner-only
     if [[ $(/usr/bin/id -u) == 0 ]]; then
         PATH=${DEPLOY_EXEC_PATH:-/usr/sbin:/usr/bin:/sbin:/bin} /usr/bin/setpriv --reuid="$uid" --regid="$gid" --clear-groups -- chmod 600 -- "$file"
     else
         PATH=${DEPLOY_EXEC_PATH:-/usr/sbin:/usr/bin:/sbin:/bin} chmod 600 -- "$file"
     fi || { printf 'REFUSED: config_cache_private: chmod 600 failed on %q\n' "$file" >&2; return 1; }
-    config_cache_check "$1" >/dev/null
+    config_cache_check "$dir" >/dev/null
 }
 
 # config_cache_check <app-dir>: the VERIFY. 0 and one line when there is no cached config or nobody but its owner

@@ -128,7 +128,8 @@ everywhere: `summary.sh` (what a deploy prints, and its log), `resolve.sh` (whic
 request number means), `ledger.sh` (the gate ledger), `preflight.sh`, `cleanup.sh` (the
 after-deploy worktree reaper), `compose.sh` (root's compose, from `fleet-deploy`'s export only),
 `literal.sh` (a gate's literal guard, below), `ownership.sh` (root's ownership repair, which follows
-no link, and the gate's root-owned check) and `base.sh` (a gate's `--base` vetting, held by `base-test.sh`). Nothing vendors them: a
+no link, and the gate's root-owned check), `config-cache.sh` (Laravel's cached config made owner-only after a
+`config:cache`, and its check) and `base.sh` (a gate's `--base` vetting, held by `base-test.sh`). Nothing vendors them: a
 project's gate and deploy source the one copy on the box, `/srv/engineering-standards/scripts/lib/deploy`, through the `DEPLOY_LIB`
 pin in its own `scripts/lib/gate/deploy-lib.sh` (decision: t9-follows-the-deploy-lib). Four of root's reads in the app tree go through the app user:
 `deploy_head_file` and the pre-build tracked-file check through `git-as`, `deploy_app_env_value` and
