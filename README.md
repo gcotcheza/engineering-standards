@@ -32,7 +32,8 @@ with `scripts/guard-mutants.sh`.
 ## The gate
 
 `scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script and
-`fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then the vendor/
+`fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then shellcheck on the deploy and gate libs
+from outside this root (their `source=` paths must resolve as an app vendors them), then the vendor/
 and Dockerfile checks' fixtures, then the one step that judges this repo's own tree — VERSION and
 ENGINEERING-STANDARDS.md moved together, or neither moved, W7's decisions check passes on this tree
 and W4's closing line still matches its word-count `sed` — then the other fixture-only tests and shellcheck (the pinned image, style
@@ -144,7 +145,7 @@ through `deploy_git_or_refuse` (`docs/DECISIONS.md`, card 441).
 
 Line 1 of each file is `# fleet-deploy-lib <VERSION> sha256:<sha256 of line 2 to EOF>`, and the
 lib's `test.sh` recomputes it, so an edit without a re-stamp is a failing test. After
-changing a file here, raise `VERSION` first (gate step 3 checks it), then re-stamp it: `h=$(tail -n +2 f.sh | sha256sum | cut -d' ' -f1); sed -i
+changing a file here, raise `VERSION` first (gate step 4 checks it), then re-stamp it: `h=$(tail -n +2 f.sh | sha256sum | cut -d' ' -f1); sed -i
 "1s|.*|# fleet-deploy-lib $(cat VERSION) sha256:$h|" f.sh`
 
 Taking an update is merging here: the box copy is what every project reads next, so a project's own PR

@@ -1,11 +1,11 @@
-# fleet-deploy-lib 2026-11-19 sha256:7e72831ffb496cc4a1e97e90f3fd286e0231a86555c04d71d4744e5b896b2b07
+# fleet-deploy-lib 2026-11-20 sha256:55ad8a1f3cdaab15d08aa49c64bffa165f4cfbe59ab287b3ccb3bcc44d44d7ce
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
 
 FLEET_COMPOSE_LIB="$(CDPATH='' cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/compose.sh"
 FLEET_COMPOSE_WORD='^/?[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$'
-# shellcheck source=scripts/lib/deploy/config-cache.sh
+# shellcheck source-path=SCRIPTDIR source=config-cache.sh
 . "${FLEET_COMPOSE_LIB%/*}/config-cache.sh"
 # External networks an app may join, by exact name: scribly and reflection share whisper (docs/DECISIONS.md).
 FLEET_COMPOSE_SHARED_NETWORKS="whisper-net"

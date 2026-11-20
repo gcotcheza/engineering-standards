@@ -23,9 +23,9 @@ BUILD_DIRS=(vendor node_modules public-build bootstrap-cache artifacts)
 KIND=ci
 case $SCRIPT in *e2e*) KIND=e2e ;; esac
 
-# shellcheck source=scripts/lib/gate/export.sh
+# shellcheck source-path=SCRIPTDIR source=export.sh
 . "$LIB/export.sh" || exit 2
-# shellcheck source=scripts/lib/deploy/compose.sh
+# shellcheck source-path=SCRIPTDIR source=../deploy/compose.sh
 . "$LIB/../deploy/compose.sh" || exit 2
 DEPLOY_ROOT_UID=$ROOT_UID
 die() { printf 'gate-run: REFUSED: %s\n' "$*" >&2; exit 2; }

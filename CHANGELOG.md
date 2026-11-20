@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-20 — the deploy lib's shellcheck `source=` paths resolve from any directory (deploy-lib VERSION 2026-11-20; the standard is unchanged and VERSION is not bumped)
+`compose.sh` and `config-cache.sh` named their sourced files as `scripts/lib/deploy/…`, a path relative to this
+repo's root. An app gate that shellchecks the vendored lib at `--severity=style` from its own tree got SC1091 on
+both (Scribly's check.sh was red). Each now reads `# shellcheck source-path=SCRIPTDIR source=<file beside it>`, and
+`lib/gate/run.sh` and `lib/gate/compose.sh` take the same form for their four. New gate step 2 shellchecks
+`scripts/lib/deploy/*.sh` and `scripts/lib/gate/*.sh` mounted away from this root and run from `/`, which the
+old directives fail and step 9 (run from the root) never could; measured at 0.6s against step 1's 1.8s. The old
+steps 2–12 are now 3–13. Every header is re-stamped for 2026-11-20.
+
 ## 2026-11-19 — the deploy lib leaves Laravel's cached config owner-only (deploy-lib VERSION 2026-11-19)
 **Card 1031 (S8).** `bootstrap/cache/config.php` (APP_KEY and the database passwords) was 644 or 755 in all five Laravel
 apps on prod. The new `scripts/lib/deploy/config-cache.sh` has `config_cache_private` (0600 as the file's own
