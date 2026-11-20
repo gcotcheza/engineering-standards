@@ -33,14 +33,14 @@ else
 fi
 
 dc() { env -i PATH="$RUN_PATH" HOME=/root docker compose --project-directory "$TREE" "$@"; }
-# shellcheck source=scripts/lib/gate/export.sh
+# shellcheck source-path=SCRIPTDIR source=export.sh
 . "$LIB/export.sh" || die "the export lib could not be loaded"
 for f in "${files[@]}"; do
     [ "$f" = -f ] && continue
     env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -c "$EXPORT_YAML_CHECK" "$f"; rc=$?
     [ "$rc" = 0 ] || die "${f#"$TREE"/} has an include:, an extends: with file:, or is not YAML (exit $rc): it would read files from outside the tree"
 done
-# shellcheck source=scripts/lib/deploy/compose.sh
+# shellcheck source-path=SCRIPTDIR source=../deploy/compose.sh
 . "$RUN/lib/scripts/lib/deploy/compose.sh" || die "the deploy compose policy could not be loaded"
 DEPLOY_APP_BINDS_DIR=$RUN/gate-grants-no-extra-binds DEPLOY_ROOT_UID=$ROOT_UID
 json=$(dc -p "$APP" "${files[@]}" --env-file "$envf" --profile '*' config --format json) || die "compose config failed over the exported files"

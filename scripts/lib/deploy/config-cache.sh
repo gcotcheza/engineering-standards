@@ -1,8 +1,8 @@
-# fleet-deploy-lib 2026-11-19 sha256:9b0c13141d57e6ebde116f146736bc06daea7e63ccf4bcc4fff5c70a5242675e
+# fleet-deploy-lib 2026-11-20 sha256:dd5b789b4731360cabbe2845e22bfd191356e62c59407595e067bd78819df987
 # shellcheck shell=bash
 # Laravel's cached config holds APP_KEY and the database passwords, so it is owner-only. decision: config-cache-owner-only
 
-# shellcheck source=scripts/lib/deploy/ownership.sh
+# shellcheck source-path=SCRIPTDIR source=ownership.sh
 . "$(CDPATH='' cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/ownership.sh"
 
 # config_cache_file <caller> <app-dir>: prints <app-dir>/bootstrap/cache/config.php, or nothing when there is none;

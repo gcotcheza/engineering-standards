@@ -10,4 +10,4 @@ Card 797 found composer extracting packages with busybox `unzip`, which keeps th
 
 Neither script replaces an app's own in-image refusal, such as GhieCode's gate step `command -v unzip >/dev/null && die …`, which judges the built image rather than its Dockerfile. Apps keep that line when they swap their vendor block for these scripts.
 
-Both tests run in gate step 2, right after `bash -n`: measured 2026-11-10, the pair took 2.18s and 2.65s against 2.88s and 2.83s for `fleet-budget-test.sh`, the cheapest step after it, and 63s for the tree-judging step that used to be second.
+Both tests run in gate step 3, after `bash -n` and the lib shellcheck: measured 2026-11-10, the pair took 2.18s and 2.65s against 2.88s and 2.83s for `fleet-budget-test.sh`, the cheapest step after it, and 63s for the tree-judging step that used to be second.
