@@ -702,6 +702,16 @@ crun "cd -- '${CRUN}/scripts' && . lib/deploy/compose.sh && printf 'LIB=%s\\n' \
 contains 'compose: a relative source under a CDPATH decoy names its own copy' "${OUT}" "LIB=${CRUN}/scripts/lib/deploy/compose.sh"
 contains 'compose: and the export it reads is its own' "${OUT}" "COMPOSE root's files: docker-compose.yml at ${COMPOSE_SHA:0:12}"
 equals 'compose: and exits 0' "${RC}" 0
+# DEPLOY_COMPOSE names the lib after --, so a lib path bash could read as options still runs as the script (card 1244).
+cfx dashdash
+crun "${INIT}"'; read -ra w <<<"$DEPLOY_COMPOSE"; printf "WORDS=%s|%s|%s\n" "${w[0]}" "${w[1]}" "${w[2]}"'
+contains 'compose: DEPLOY_COMPOSE is bash, --, then the lib' "${OUT}" "WORDS=bash|--|${CRUN}/scripts/lib/deploy/compose.sh"
+cfx dashdash-path
+mkdir -p "${CRUN}/scripts/-lib"
+crun "cd -- '${CRUN}/scripts' && FLEET_COMPOSE_LIB=-lib/../lib/deploy/compose.sh; ${INIT}; deploy_compose ps"
+contains 'compose: a lib path that starts with - passes the policy' "${OUT}" "COMPOSE root's files: docker-compose.yml at ${COMPOSE_SHA:0:12}"
+contains 'compose: and runs the lib as the script, not as bash options' "${ARGV}" "--env-file ${CENV} ps"
+equals 'compose: and exits 0 (dash path)' "${RC}" 0
 
 # --- card 1031: a compose call running artisan config:cache or optimize leaves the cached config owner-only ---
 hcall() { # hcall ARGS…: a direct run of compose ARGS; OUT ends with RC=, CACHE_MODE is the cache's mode after it

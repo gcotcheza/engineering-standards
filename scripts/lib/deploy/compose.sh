@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-20 sha256:55ad8a1f3cdaab15d08aa49c64bffa165f4cfbe59ab287b3ccb3bcc44d44d7ce
+# fleet-deploy-lib 2026-11-20.1 sha256:a0c87e3e741592e0e9ad26a6fcf9576b7a1a25b1e37e4a13b338b492d059e9f8
 # shellcheck shell=bash
 # Root's compose reads no file the app user can edit: compose files exported beside this lib by
 # fleet-deploy, and root's /etc/fleet/app-env/<app>.env. docs/DECISIONS.md (backlog 320)
@@ -308,7 +308,7 @@ deploy_compose_init() {
     exported=$(head -c 41 "$run/export-sha" | tr -d '\n')
     [ "$exported" = "${1:-}" ] || refuse "the compose files were exported at ${exported:-nothing}, not the merge ${1:-(none)} this deploy lands."
     [[ ${DOCKER:-docker} =~ $FLEET_COMPOSE_WORD ]] || refuse "DOCKER '${DOCKER:-}' is not one plain word."
-    DEPLOY_COMPOSE="bash $FLEET_COMPOSE_LIB run $root ${DOCKER:-docker} $env ${DEPLOY_COMPOSE_FILE_LIST[*]} --"
+    DEPLOY_COMPOSE="bash -- $FLEET_COMPOSE_LIB run $root ${DOCKER:-docker} $env ${DEPLOY_COMPOSE_FILE_LIST[*]} --"
     json=$($DEPLOY_COMPOSE --profile '*' config --no-env-resolution --format json) || refuse "compose config failed, so the policy could not be checked."
     deploy_compose_policy "$root" "$json" "$DEPLOY_COMPOSE_APP" "$env" deploy_compose || refuse "$DEPLOY_COMPOSE_ERR"
     say "COMPOSE root's files: ${DEPLOY_COMPOSE_FILE_LIST[*]} at ${exported:0:12}, env $env, policy clean"
