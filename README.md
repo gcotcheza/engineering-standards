@@ -33,7 +33,7 @@ with `scripts/guard-mutants.sh`.
 
 `scripts/check.sh` is this repo's own pre-merge gate: `bash -n` on every tracked script and
 `fleet-lint-guard-diff` over `scripts/` first (a missing lint fails the step), then shellcheck on the deploy and gate libs
-from outside this root (their `source=` paths must resolve as an app vendors them), then the vendor/
+from outside this root (their `source=` paths must resolve from any directory), then the vendor/
 and Dockerfile checks' fixtures, then the one step that judges this repo's own tree — VERSION and
 ENGINEERING-STANDARDS.md moved together, or neither moved, W7's decisions check passes on this tree
 and W4's closing line still matches its word-count `sed` — then the other fixture-only tests and shellcheck (the pinned image, style
@@ -132,7 +132,8 @@ after-deploy worktree reaper), `compose.sh` (root's compose, from `fleet-deploy`
 no link, and the gate's root-owned check), `config-cache.sh` (Laravel's cached config made owner-only after a
 `config:cache`, and its check) and `base.sh` (a gate's `--base` vetting, held by `base-test.sh`). Nothing vendors them: a
 project's gate and deploy source the one copy on the box, `/srv/engineering-standards/scripts/lib/deploy`, through the `DEPLOY_LIB`
-pin in its own `scripts/lib/gate/deploy-lib.sh` (decision: t9-follows-the-deploy-lib). Four of root's reads in the app tree go through the app user:
+pin in its own `scripts/lib/gate/deploy-lib.sh` (decision: t9-follows-the-deploy-lib). An app gate that shellchecks the lib must hand it
+every `deploy/*.sh`, or pass `--external-sources`; gate step 2 here checks only that the `source=` paths resolve. Four of root's reads in the app tree go through the app user:
 `deploy_head_file` and the pre-build tracked-file check through `git-as`, `deploy_app_env_value` and
 `deploy_build_hash` through `sudo -u`; `deploy_compose_buildcheck`'s `cmp` still reads as root (card 320).
 Before any git call in `ROOT` the lib refuses a `.git` that is not a plain directory, or a link, FIFO
