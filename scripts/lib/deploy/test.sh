@@ -436,7 +436,7 @@ equals 'the work directory under /srv/worker-scratch carries its lane label' "$(
 VERSION_DECLARED="$(head -1 "${LIB_DIR}/VERSION")"
 matches 'VERSION is a date, with an optional same-day serial' "${VERSION_DECLARED}" '^[0-9]{4}-[0-9]{2}-[0-9]{2}(\.[0-9]+)?$'
 EMPTY_SET="$(printf '' | sha256sum | cut -d' ' -f1)"
-for f in summary resolve ledger preflight cleanup compose literal ownership base; do
+for f in summary resolve ledger preflight cleanup compose literal ownership base config-cache; do
     line1="$(head -1 "${LIB_DIR}/${f}.sh")"
     body="$(tail -n +2 "${LIB_DIR}/${f}.sh" | sha256sum | cut -d' ' -f1)"
     equals "${f}.sh header" "${line1}" "# fleet-deploy-lib ${VERSION_DECLARED} sha256:${body}"
@@ -3086,6 +3086,12 @@ OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash -- "${SCRIPT_DIR}/owner
 RC=$?
 contains 'ownership-test.sh passes as root' "${OUT}" 'ownership-test: all checks passed'
 equals 'ownership-test.sh exits' "${RC}" 0
+
+# --- 8b2. the cached Laravel config made owner-only (card 1031): its own suite ---
+OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash -- "${SCRIPT_DIR}/config-cache-test.sh" 2>&1)"
+RC=$?
+contains 'config-cache-test.sh passes as root' "${OUT}" 'config-cache-test: all checks passed'
+equals 'config-cache-test.sh exits' "${RC}" 0
 
 # --- 8c. a gate's --base vetting (card 863): its own suite, over fixture repos in WORK ---
 OUT="$(DEPLOY_LIB_DIR="${LIB_DIR}" TMPDIR="${WORK}" bash -- "${SCRIPT_DIR}/base-test.sh" 2>&1)"

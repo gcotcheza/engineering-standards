@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-11-19 — the deploy lib leaves Laravel's cached config owner-only (deploy-lib VERSION 2026-11-19)
+**Card 1031 (S8).** `bootstrap/cache/config.php` (APP_KEY and the database passwords) was 644 or 755 in all five Laravel
+apps on prod. The new `scripts/lib/deploy/config-cache.sh` has `config_cache_private` (0600 as the file's own
+uid through `setpriv`, then the check; refuses a root-owned cache, a link, or a missing cache) and
+`config_cache_check`, the VERIFY (also runnable as `config-cache.sh <app-dir>`). `compose.sh` sources it, and
+`deploy_compose_exec` calls `config_cache_private` on the app root after any successful compose call whose
+arguments run `artisan config:cache`, or `artisan optimize` without `--except=config`, also inside an `sh -c` or
+`bash -c` string and in any case. After every other successful compose call it runs the check, and repairs a cached
+config that is not owner-only with a NOTE, so a call it did not recognise is caught loudly by that call or the next one. Not every app caches:
+Orbit and health-tracker never run `config:cache`, and their stray caches are repaired only when their deploy makes
+a compose call through the lib. As root the chmod runs as the uid that owns the app tree, never one read from a path
+below it, and a cache with another owner is refused (review r1 reproduced a swapped `bootstrap/cache` turning
+another uid's file to 600). fleet-deploy already exports every flat file in the lib directory. Suites: `config-cache-test.sh` (run from
+`test.sh` 8b2) and new `cache:` rows in `compose-test.sh`; mutant tables
+`scripts/deploy-lib-config-cache-mutants.txt` (as root), `scripts/deploy-lib-config-cache-nobody-mutants.txt` (as
+nobody) and `scripts/deploy-lib-compose-cache-mutants.txt`. Every header
+is re-stamped for 2026-11-19. Decision: config-cache-owner-only.
+
 ## 2026-11-18 — the deploy lib's test.sh names its script operands after `--` (deploy-lib VERSION 2026-11-18; the standard is unchanged and VERSION is not bumped)
 **Card 1138.** The W52 root-exec guard refuses a lone `bash "<expanded path>"` script operand with no `--` in
 front of it, so `test.sh`'s six such runs (the driver, its own root probe twice, and the compose, ownership and

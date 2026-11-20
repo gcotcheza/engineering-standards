@@ -27,7 +27,7 @@ cfx() {
     CRUN="${CF}/${C_RUNDIR:-run}" CROOT="${CF}/www/demo" CENV="${CF}/app-env/demo.env" CBINDS="${CF}/app-binds/demo"
     mkdir -p "${CRUN}/scripts/lib/deploy" "${CRUN}/compose" "${CRUN}/buildcheck/docker/app" "${CROOT}/docker/app" "${CF}/app-env" "${CF}/app-binds" "${CF}/bin"
     chmod 755 "${CF}/app-binds"
-    cp "${LIB_DIR}/compose.sh" "${CRUN}/scripts/lib/deploy/"
+    cp "${LIB_DIR}/compose.sh" "${LIB_DIR}/config-cache.sh" "${LIB_DIR}/ownership.sh" "${CRUN}/scripts/lib/deploy/"
     printf 'services: {}\n' >"${CRUN}/compose/docker-compose.yml"
     printf 'FROM scratch\n' >"${CRUN}/buildcheck/docker/app/Dockerfile"
     cp "${CRUN}/buildcheck/docker/app/Dockerfile" "${CROOT}/docker/app/Dockerfile"
@@ -50,6 +50,7 @@ env | grep '^COMPOSE_' >>"$d/env"
 case " $* " in
     *' --no-interpolate '*) [ ! -e "$d/raw-fails" ] || exit 1; cat "$d/../raw.json" ;;
     *' config '*) [ ! -e "$d/config-empty" ] || exit 0; cat "$d/../config.json" ;;
+    *' exec '*) [ ! -e "$d/exec-fails" ] || exit 3 ;;
 esac
 exit 0
 SH
@@ -701,6 +702,90 @@ crun "cd -- '${CRUN}/scripts' && . lib/deploy/compose.sh && printf 'LIB=%s\\n' \
 contains 'compose: a relative source under a CDPATH decoy names its own copy' "${OUT}" "LIB=${CRUN}/scripts/lib/deploy/compose.sh"
 contains 'compose: and the export it reads is its own' "${OUT}" "COMPOSE root's files: docker-compose.yml at ${COMPOSE_SHA:0:12}"
 equals 'compose: and exits 0' "${RC}" 0
+
+# --- card 1031: a compose call running artisan config:cache or optimize leaves the cached config owner-only ---
+hcall() { # hcall ARGS…: a direct run of compose ARGS; OUT ends with RC=, CACHE_MODE is the cache's mode after it
+    OUT="$(env -i PATH=/usr/bin:/bin FLEET_DEPLOY_REPO=gcotcheza/demo ${C_UID:+DEPLOY_ROOT_UID=${C_UID}} \
+        bash -- "${CRUN}/scripts/lib/deploy/compose.sh" run "${CROOT}" "${CF}/bin/docker" "${CENV}" docker-compose.yml -- "$@" 2>&1; printf 'RC=%s\n' "$?")"
+    CACHE_MODE="$(stat -c %a -- "${CROOT}/bootstrap/cache/config.php" 2>&1)"
+}
+hfx() { # hfx NAME MODE: a fixture whose app tree holds a cached config at MODE, owned by nobody when root builds it
+    cfx "cache-$1"
+    mkdir -p "${CROOT}/bootstrap/cache"
+    printf '<?php return [];\n' >"${CROOT}/bootstrap/cache/config.php"
+    chmod "$2" "${CROOT}/bootstrap/cache/config.php"
+    [ "$(id -u)" != 0 ] || chown -R nobody:nogroup "${CROOT}/bootstrap"
+    [ "$(id -u)" != 0 ] || { chown nobody:nogroup "${CROOT}"; chmod 711 "${WORK}"; }
+}
+hfx cc 644; hcall exec -T app php artisan config:cache
+equals 'cache: exec artisan config:cache leaves the cache' "${CACHE_MODE}" 600
+contains 'cache: and exits 0' "${OUT}" 'RC=0'
+absent 'cache: and says nothing of a missed config:cache' "${OUT}" 'NOTE: compose'
+hfx opt 755; crun "${INIT}; deploy_compose run --rm --no-deps -T app php artisan optimize"
+equals 'cache: run artisan optimize, through deploy_compose, leaves the cache' "$(stat -c %a -- "${CROOT}/bootstrap/cache/config.php")" 600
+equals 'cache: and that deploy exits 0' "${RC}" 0
+# Apps that never run config:cache (orbit, memento, …) and gate trees hold no config.php.
+cfx cache-nodir; hcall exec -T app php artisan migrate --force
+contains 'cache: no bootstrap/cache: a call passes' "${OUT}" 'RC=0'
+absent 'cache: no bootstrap/cache: and nothing is noted' "${OUT}" 'NOTE: compose'
+absent 'cache: no bootstrap/cache: and nothing is refused' "${OUT}" 'REFUSED'
+cfx cache-nofile; mkdir -p "${CROOT}/bootstrap/cache"; hcall exec -T app php artisan migrate --force
+contains 'cache: no config.php: a call passes' "${OUT}" 'RC=0'
+absent 'cache: no config.php: and nothing is noted' "${OUT}" 'NOTE: compose'
+absent 'cache: no config.php: and nothing is refused' "${OUT}" 'REFUSED'
+hfx missed 644; hcall exec -T app php artisan migrate --force
+contains 'cache: a call that left a cache not owner-only says so' "${OUT}" 'NOTE: compose exec left a cached config that is not owner-only'
+equals 'cache: and makes it owner-only' "${CACHE_MODE}" 600
+contains 'cache: and exits 0' "${OUT}" 'RC=0'
+hfx missedok 600; hcall exec -T app php artisan migrate --force
+absent 'cache: an owner-only cache after a call is left alone, silently' "${OUT}" 'NOTE: compose'
+contains 'cache: and that call exits 0' "${OUT}" 'RC=0'
+# Each runs where config:cache left no cache: a call that counts as one is refused, one that does not passes.
+hnone() { # hnone NAME EXPECT ARGS…: EXPECT is counted or passed
+    local name=$1 expect=$2
+    shift 2
+    cfx "cache-none-${name}"; hcall exec -T app "$@"
+    if [ "${expect}" = counted ]; then
+        contains "cache: counts as config:cache: $*" "${OUT}" 'REFUSED: config_cache_private: no '
+        contains "cache: and exits 1: $*" "${OUT}" 'RC=1'
+    else
+        contains "cache: is not config:cache: $*" "${OUT}" 'RC=0'
+    fi
+}
+hnone sh counted sh -c 'php artisan config:cache'
+hnone path counted php /var/www/html/artisan config:cache
+hnone bash counted bash -c 'cd /var/www/html && php artisan config:cache && php artisan route:cache'
+hnone quoted counted sh -c "php artisan 'config:cache' "
+hnone trailing counted php artisan 'config:cache '
+hnone upper counted php artisan Config:Cache
+hnone option counted php artisan --env=production config:cache
+hnone optend counted sh -c 'php artisan optimize; php artisan queue:restart'
+hnone optopt counted php artisan optimize -v
+hnone except counted php artisan optimize --except=events,views
+hnone exceptsp counted php artisan optimize --except views
+hnone echo passed echo config:cache
+hnone clear passed php artisan config:clear
+hnone optclear passed php artisan optimize:clear
+hnone before passed config:cache artisan
+hnone tinker passed php artisan tinker --execute optimize
+hnone exceptcfg passed php artisan optimize --except=config
+hnone exceptlist passed php artisan optimize --except=events,config
+hnone exceptsep passed php artisan optimize --except config
+hnone optvexcept passed php artisan optimize -v --except=config
+cfx cache-none; hcall exec -T app php artisan config:cache
+contains 'cache: config:cache that left no cache fails the call' "${OUT}" 'REFUSED: config_cache_private: no '
+contains 'cache: and exits 1' "${OUT}" 'RC=1'
+hfx dockerfails 644; : >"${CF}/bin/exec-fails"; hcall exec -T app php artisan config:cache
+contains "cache: a failed config:cache keeps docker's exit code" "${OUT}" 'RC=3'
+equals 'cache: and the cache is left as it was' "${CACHE_MODE}" 644
+if root_only_case 'cache: a root-owned cache fails the call'; then
+    hfx rootowned 644; chown root:root "${CROOT}/bootstrap/cache/config.php"; hcall exec -T app php artisan config:cache
+    contains 'cache: a root-owned cache is refused' "${OUT}" 'REFUSED: config_cache_private: root owns'
+    contains 'cache: and the call exits 1' "${OUT}" 'RC=1'
+    hfx rootmissed 644; chown root:root "${CROOT}/bootstrap/cache/config.php"; hcall exec -T app php artisan migrate --force
+    contains 'cache: a root-owned cache after any call is refused' "${OUT}" 'REFUSED: config_cache_private: root owns'
+    contains 'cache: and that call exits 1' "${OUT}" 'RC=1'
+fi
 
 if [ "${fails}" -eq 0 ]; then printf '\ncompose-test: all checks passed\n'; exit 0; fi
 printf '\ncompose-test: %s check(s) failed\n' "${fails}" >&2
