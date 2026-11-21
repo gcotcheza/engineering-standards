@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-20 — the deploy lib names its compose lib after `--` (deploy-lib VERSION 2026-11-20.1; the standard is unchanged and VERSION is not bumped)
+**Card 1244.** `deploy_compose_init` built `DEPLOY_COMPOSE` as `bash $FLEET_COMPOSE_LIB run …`, a word-split root
+run with no `--` before the script, against decision bash-names-a-script-after-dashdash. It now reads
+`bash -- $FLEET_COMPOSE_LIB run …`; the path is still the lib's own `pwd -P` path, so nothing else changes.
+New `compose-test.sh` cases check the words are `bash`, `--`, then the lib, and run the lib from a relative path
+starting with `-` (old line: `bash: -/: invalid option`). `bash-dashdash-scan.sh` still skips quoted strings, so it
+cannot see this line. Every header is re-stamped for 2026-11-20.1.
+
 ## 2026-11-20 — the deploy lib's shellcheck `source=` paths resolve from any directory (deploy-lib VERSION 2026-11-20; the standard is unchanged and VERSION is not bumped)
 `compose.sh` and `config-cache.sh` named their sourced files as `scripts/lib/deploy/…`, a path relative to this
 repo's root. An app gate that shellchecks the lib in place at `--severity=style` from its own tree got SC1091 on

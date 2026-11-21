@@ -1,4 +1,4 @@
-# fleet-deploy-lib 2026-11-20 sha256:dd5b789b4731360cabbe2845e22bfd191356e62c59407595e067bd78819df987
+# fleet-deploy-lib 2026-11-20.1 sha256:dd5b789b4731360cabbe2845e22bfd191356e62c59407595e067bd78819df987
 # shellcheck shell=bash
 # Laravel's cached config holds APP_KEY and the database passwords, so it is owner-only. decision: config-cache-owner-only
 
