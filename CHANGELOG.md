@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-21 — gate-image-tags lets a teardown through under an unread COMPOSE_FILE (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Fineprint #155 (S8 blocker).** A gate that sources a file this check cannot read and then tears down by project
+name, `"${DOWN[@]}" down -v` with `DOWN=(docker compose -p "$PROJECT")` and no `-f`, went red with "unread -f
+values: COMPOSE_FILE, which … (sourced at line …) may set": the idle subcommand was worked out only after the
+origin block had already called `bad()`. It is now worked out first, and a call whose subcommand is a named
+teardown or inspection (down, ps, logs, …) skips both origin refusals, the sourced file and a `COMPOSE_FILE` given
+more than one value above the line, because whichever file set holds, it builds nothing. A call whose subcommand
+was never read (`-`) and every call that builds or runs stay strict, and an unresolved `-f` value is still
+refused on any call. Such a teardown counts as a read call, never a bare `docker compose` mention. Cases 48a–48d.
+
 ## 2026-11-20 — the deploy lib names its compose lib after `--` (deploy-lib VERSION 2026-11-20.1; the standard is unchanged and VERSION is not bumped)
 **Card 1244.** `deploy_compose_init` built `DEPLOY_COMPOSE` as `bash $FLEET_COMPOSE_LIB run …`, a word-split root
 run with no `--` before the script, against decision bash-names-a-script-after-dashdash. It now reads
