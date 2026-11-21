@@ -14,7 +14,9 @@
 # merged set. A variable is read from the assignments above the call, never
 # from the file's last one. Everything it cannot read is printed, never
 # assumed: an unresolved -f value, a call whose subcommand was never reached,
-# and any line naming `docker compose` that yielded no call at all.
+# and any line naming `docker compose` that yielded no call at all. A named
+# teardown or inspection (down, ps, logs, …) builds nothing, so an unread
+# COMPOSE_FILE above it is not printed; a call that builds or runs still is.
 #
 # A pinned third-party image (postgres:18-alpine) is shared on purpose and is
 # never a finding — only a tag something here builds can be overwritten. The
@@ -606,30 +608,31 @@ read_gate_sets() {
                             defline = i
                         }
                     }
+                    # A call that inspects or tears down builds nothing, whatever
+                    # named its files; a subcommand never read is not judged either.
+                    idle = (subc ~ "^(down|ps|logs|config|version|ls|images|top|port|kill|stop|rm|" \
+                                    "pause|unpause|events|wait|cp|convert|push|pull|-)$")
+                    teardown = (idle && subc != "-")
                     origin = (named ? "-f" : "")
                     if (!named) {
                         vv = varval("COMPOSE_FILE", i)
                         if (VARHAVE && varexp("COMPOSE_FILE", i)) {
                             origin = "COMPOSE_FILE"
-                            if (VARSPLIT)
-                                bad("COMPOSE_FILE (more than one value is set above this line)")
-                            else {
+                            if (VARSPLIT) {
+                                if (!teardown) bad("COMPOSE_FILE (more than one value is set above this line)")
+                            } else {
                                 nsep = split(vv, SEP, ":")
                                 for (z = 1; z <= nsep; z++) addfile(SEP[z])
                             }
                         } else if (srcln && srcln < i) {
                             origin = "sourced"
-                            bad("COMPOSE_FILE, which " srcpath " (sourced at line " srcln ") may set")
+                            if (!teardown) bad("COMPOSE_FILE, which " srcpath " (sourced at line " srcln ") may set")
                         } else {
                             origin = "default"
                             nsep = split(defset, SEP, ",")
                             for (z = 1; z <= nsep; z++) if (SEP[z] != "") addfile(SEP[z])
                         }
                     }
-                    # A call that inspects or tears down builds nothing, whatever
-                    # named its files; a subcommand never read is not judged either.
-                    idle = (subc ~ "^(down|ps|logs|config|version|ls|images|top|port|kill|stop|rm|" \
-                                    "pause|unpause|events|wait|cp|convert|push|pull|-)$")
                     judged = idle ? 0 : 1
                     # A file this reader could not resolve is a file missing from
                     # the merge, so the rest of the set is not judged either.
@@ -639,7 +642,7 @@ read_gate_sets() {
                         out(sprintf("set\t%s\t%d\t%d\t%s\t%s\t%s\t%d\t%d\n", \
                             script, i, judged, origin, subc, FSET, builds, (BAD != "") ? 1 : 0), defline)
                     if (BAD != "") out(sprintf("setbad\t%s\t%d\t%s\n", script, i, BAD), defline)
-                    if (FSET != "" || BAD != "") for (z = i; z <= LE[i]; z++) SEEN[z] = 1
+                    if (FSET != "" || BAD != "" || teardown) for (z = i; z <= LE[i]; z++) SEEN[z] = 1
                 }
             }
             for (z = 1; z <= nout; z++)
