@@ -637,7 +637,7 @@ docker compose -f docker-compose.ci.yml up -d'
     run "$1"
 }
 subst_src substdown down ''
-lacks   'case 48e: a teardown inside "$( )" is read, so its unread source is not named' "${OUT}" 'unread -f values'
+lacks   'case 48e: a teardown inside a quoted command substitution is read, so its unread source is not named' "${OUT}" 'unread -f values'
 matches 'case 48e: and the -f run beside it carries the verdict' "${OUT}" '^ok '
 equals  'case 48e: exit code' "${RC}" 0
 for sub in up build; do
@@ -660,7 +660,7 @@ service substquote docker-compose.yml 'x/app:latest' build
 # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
 gate_script substquote e2e.sh 'echo "$(date) then docker compose -f docker-compose.yml build"'
 run substquote
-matches 'case 48g: quoted text after a $( ) is a mention, not a call' "${OUT}" 'scripts/e2e\.sh:1'
+matches 'case 48g: quoted text after a command substitution is a mention, not a call' "${OUT}" 'scripts/e2e\.sh:1'
 lacks   'case 48g: and no call is read from it' "${OUT}" 'docker-compose\.yml \(scripts/e2e\.sh:1'
 
 # --- 49. a -f wrapper carrying no subcommand -> not judged, whatever it names --
