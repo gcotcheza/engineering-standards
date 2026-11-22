@@ -335,9 +335,10 @@ read_gate_sets() {
         -v prefile="$6" -v srcbad="$7" -v emit="$8" '
         function pad(c, n,   s, i) { s = ""; for (i = 0; i < n; i++) s = s c; return s }
         # C code, S single-quoted, D double-quoted, N comment, H heredoc body.
-        # A $( inside double quotes is code again until its own ), then quoted.
-        function lex(   i, line, n, m, j, c, st, hd, nhd, tok, hre, ns, PD) {
-            st = 0; hd = ""; ns = 0
+        # A $( inside double quotes is code again until its own ), then quoted; a ( in
+        # ${ } or a case pattern ) does not count, and one left open is LEXOPEN.
+        function lex(   i, line, n, m, j, c, st, hd, nhd, tok, hre, ns, PD, BR, CS, OPL, w, a) {
+            st = 0; hd = ""; ns = 0; LEXOPEN = 0
             hre = "^<<[-~]?[ \t]*[\\\\\"" q "]?[A-Za-z_][A-Za-z0-9_]*[\"" q "]?"
             for (i = 1; i <= NR; i++) {
                 line = L[i]; n = length(line); m = ""
@@ -354,7 +355,8 @@ read_gate_sets() {
                     if (st == 2) {
                         if (c == "\\" && j < n) { m = m "DD"; j += 2; continue }
                         if (c == "$" && substr(line, j + 1, 1) == "(") {
-                            ns++; PD[ns] = 0; st = 0; m = m "CC"; j += 2; continue
+                            ns++; PD[ns] = 0; BR[ns] = 0; CS[ns] = 0; OPL[ns] = i
+                            st = 0; m = m "CC"; j += 2; continue
                         }
                         m = m "D"; if (c == "\"") st = 0; j++; continue
                     }
@@ -372,23 +374,33 @@ read_gate_sets() {
                         nhd = tok
                         m = m pad("C", RLENGTH); j += RLENGTH; continue
                     }
+                    if (ns && c == "$" && substr(line, j + 1, 1) == "{") { BR[ns]++; m = m "CC"; j += 2; continue }
+                    if (ns && BR[ns]) { if (c == "}") BR[ns]--; m = m "C"; j++; continue }
+                    if (ns && (j == 1 || substr(line, j - 1, 1) ~ /[ \t;&|(]/)) {
+                        w = substr(line, j, 4); a = substr(line, j + 4, 1)
+                        if (w == "case" && (a == "" || a ~ /[ \t]/)) CS[ns]++
+                        else if (w == "esac" && CS[ns] && (a == "" || a ~ /[ \t;&|)]/)) CS[ns]--
+                    }
                     if (ns && c == "(") PD[ns]++
                     else if (ns && c == ")") {
                         if (PD[ns]) PD[ns]--
-                        else { ns--; st = 2 }
+                        else if (!CS[ns]) { ns--; st = 2 }
                     }
                     m = m "C"; j++
                 }
                 M[i] = m
                 if (nhd != "") hd = nhd
             }
+            if (ns) LEXOPEN = OPL[1]
         }
         # A command can run past its line: a trailing \ or an unclosed ( continues it.
-        function needjoin(s, mk,   j, c, mc, depth) {
-            depth = 0
+        function needjoin(s, mk,   j, c, mc, depth, br) {
+            depth = 0; br = 0
             for (j = 1; j <= length(s); j++) {
                 mc = substr(mk, j, 1); c = substr(s, j, 1)
                 if (mc != "C") continue
+                if (c == "$" && substr(s, j + 1, 1) == "{" && substr(mk, j + 1, 1) == "C") { br++; j++; continue }
+                if (br) { if (c == "}") br--; continue }
                 if (c == "(") depth++
                 else if (c == ")" && depth > 0) depth--
             }
@@ -533,17 +545,22 @@ read_gate_sets() {
             dep = 0
             for (i = 1; i <= NR; i++) {
                 cnt = tokenize(LS[i], LM[i])
-                head = 1; ex = 0; dmax = dep
+                head = 1; ex = 0; dmax = dep; pd = 0
                 for (k = 1; k <= cnt; k++) {
                     t = T[k]
+                    if (t == "(") pd++
+                    else if (t == ")" && pd) pd--
                     if (t ~ /^(if|case|for|while|until|\{)$/) { dep++; if (dep > dmax) dmax = dep }
                     else if (t ~ /^(fi|esac|done|\})$/) { if (dep) dep-- }
                     if (head && t == "export") { ex = 1; head = 0; continue }
                     if ((head || ex) && t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
                         nm = t; sub(/=.*$/, "", nm)
                         vv = t; sub(/^[^=]*=/, "", vv); gsub("[\"" q "]", "", vv)
-                        note(nm, vv, (ex || (k < cnt && T[k + 1] !~ /^[;()&|{}<>]$/)) ? 1 : 0, \
-                            (dep > 0) ? 1 : 0, i)
+                        e = (ex || (k < cnt && T[k + 1] !~ /^[;()&|{}<>]$/)) ? 1 : 0
+                        note(nm, vv, e, (dep > 0) ? 1 : 0, i)
+                        # Held only by one command or one ( ): after it, unset is as possible.
+                        for (z = k + 1; z <= cnt && T[z] ~ /^[A-Za-z_][A-Za-z0-9_]*=/; z++) ;
+                        if (pd || (!ex && z <= cnt && T[z] !~ /^[;()&|{}<>]$/)) note(nm, "", e, 1, i)
                         head = 0; continue
                     }
                     ex = 0
@@ -654,6 +671,7 @@ read_gate_sets() {
                     if (FSET != "" || BAD != "" || teardown) for (z = i; z <= LE[i]; z++) SEEN[z] = 1
                 }
             }
+            if (LEXOPEN) out(sprintf("setbad\t%s\t%d\ta quoted $( ) this reader never saw close\n", script, LEXOPEN), 0)
             for (z = 1; z <= nout; z++)
                 if (!OUTD[z] || !USEDDEF[OUTD[z]]) printf "%s", OUTT[z]
             for (i = 1; i <= NR; i++)

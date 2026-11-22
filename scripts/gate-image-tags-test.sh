@@ -663,6 +663,57 @@ run substquote
 matches 'case 48g: quoted text after a command substitution is a mention, not a call' "${OUT}" 'scripts/e2e\.sh:1'
 lacks   'case 48g: and no call is read from it' "${OUT}" 'docker-compose\.yml \(scripts/e2e\.sh:1'
 
+# --- 48h. a COMPOSE_FILE held by one command or one ( ) does not decide a later build --
+# $1 project, $2 the line that sets it before `up --build` on line 2
+scoped() {
+    service "$1" docker-compose.yml 'x/app:latest' build
+    overlay "$1" docker-compose.ci.yml app 'x/app:ci'
+    gate_script "$1" e2e.sh "$2
+docker compose up -d --build"
+    run "$1"
+    matches "case 48h: $1 leaves unset as possible, so the build is unread" "${OUT}" \
+        'unread -f values: +COMPOSE_FILE \(more than one value is set above this line\) in scripts/e2e\.sh:2$'
+    equals  "case 48h: $1 exit code" "${RC}" 1
+}
+# shellcheck disable=SC2016  # the fixtures are scripts, not this one's expansion
+{
+    scoped scopeqsub 'cfg="$(COMPOSE_FILE=docker-compose.ci.yml docker compose config -q)"'
+    scoped scopeqexp 'cfg="$(export COMPOSE_FILE=docker-compose.ci.yml; docker compose config -q)"'
+    scoped scopeusub 'cfg=$(COMPOSE_FILE=docker-compose.ci.yml docker compose config -q)'
+    scoped scopesubsh '(export COMPOSE_FILE=docker-compose.ci.yml; docker compose config -q)'
+    scoped scopeprefix 'COMPOSE_FILE=docker-compose.ci.yml docker compose config -q'
+}
+
+# --- 48i. a build inside "$( )" is judged like any other -----------------------------
+# $1 project, $2 the script; the build is expected at line $3
+subst_build() {
+    service "$1" docker-compose.yml 'x/app:latest' build
+    gate_script "$1" e2e.sh "$2"
+    run "$1"
+    matches "case 48i: $1 builds the production tag" "${OUT}" \
+        "FAIL .*: the gate run at scripts/e2e\\.sh:$3 builds image tag x/app:latest"
+    equals  "case 48i: $1 exit code" "${RC}" 1
+    lacks   "case 48i: $1 closes its substitution" "${OUT}" 'never saw close'
+}
+# shellcheck disable=SC2016  # the fixtures are scripts, not this one's expansion
+{
+    subst_build substbuild 'x="$(docker compose -f docker-compose.yml build)"' 1
+    subst_build substbrace 'v="$(echo ${x//(/})"
+docker compose -f docker-compose.yml build' 2
+    subst_build substcase 'x="$(case "$1" in a) docker compose -f docker-compose.yml build;; esac)"' 1
+}
+
+# --- 48j. a quoted command substitution never closed -> unread, not passed -----------
+service substopen docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script substopen e2e.sh 'x="$(echo ( "
+docker compose -f docker-compose.yml build'
+run substopen
+# shellcheck disable=SC2016  # the expected text names the fixture's own $( )
+matches 'case 48j: an unclosed quoted command substitution is named' "${OUT}" \
+    'unread -f values: +a quoted \$\( \) this reader never saw close in scripts/e2e\.sh:1$'
+equals  'case 48j: exit code' "${RC}" 1
+
 # --- 49. a -f wrapper carrying no subcommand -> not judged, whatever it names --
 service teardownf docker-compose.yml 'x/app:latest' build
 overlay teardownf docker-compose.ci.yml app 'x/app:ci'
