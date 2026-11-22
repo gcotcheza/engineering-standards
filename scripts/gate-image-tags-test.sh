@@ -684,6 +684,37 @@ docker compose up -d --build"
     scoped scopeprefix 'COMPOSE_FILE=docker-compose.ci.yml docker compose config -q'
 }
 
+# --- 48k. the same export inside a ( ) spread over lines -> still scoped --------------
+# $1 project, $2 the opener, $3 the closer; the build is on line 5
+scoped_lines() {
+    service "$1" docker-compose.yml 'x/app:latest' build
+    overlay "$1" docker-compose.ci.yml app 'x/app:ci'
+    gate_script "$1" e2e.sh "$2
+  export COMPOSE_FILE=docker-compose.ci.yml
+  docker compose config -q
+$3
+docker compose up -d --build"
+    run "$1"
+    matches "case 48k: $1 is read inside its ( ), so the build is unread" "${OUT}" \
+        'unread -f values: +COMPOSE_FILE \(more than one value is set above this line\) in scripts/e2e\.sh:5$'
+    equals  "case 48k: $1 exit code" "${RC}" 1
+}
+# shellcheck disable=SC2016  # the fixtures are scripts, not this one's expansion
+{
+    scoped_lines linesqsub 'cfg="$(' ')"'
+    scoped_lines linesusub 'cfg=$(' ')'
+    scoped_lines linessubsh '(' ')'
+}
+
+# --- 48l. a prefix decides its own call, and only that one ----------------------------
+service prefixown docker-compose.yml 'x/app:latest' build
+overlay prefixown docker-compose.ci.yml app 'x/app:ci'
+gate_script prefixown e2e.sh 'COMPOSE_FILE=docker-compose.ci.yml docker compose up -d --build'
+run prefixown
+matches 'case 48l: a COMPOSE_FILE prefix names its own call'"'"'s files' "${OUT}" \
+    'gate runs: +docker-compose\.ci\.yml \(scripts/e2e\.sh:1, COMPOSE_FILE\) builds nothing$'
+equals  'case 48l: exit code' "${RC}" 0
+
 # --- 48i. a build inside "$( )" is judged like any other -----------------------------
 # $1 project, $2 the script; the build is expected at line $3
 subst_build() {
@@ -701,7 +732,17 @@ subst_build() {
     subst_build substbrace 'v="$(echo ${x//(/})"
 docker compose -f docker-compose.yml build' 2
     subst_build substcase 'x="$(case "$1" in a) docker compose -f docker-compose.yml build;; esac)"' 1
+    subst_build substcasethen 'x="$(if true; then case "$1" in a) docker compose -f docker-compose.yml build;; esac; fi)"' 1
+    subst_build substcasenest 'x="$( (case "$m" in a) : ;; esac); docker compose -f docker-compose.yml build)"' 1
 }
+
+# --- 48m. the word case as an argument opens no case -----------------------------------
+service caseword docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script caseword e2e.sh 'v="$(echo case closed)"'
+run caseword
+lacks   'case 48m: an argument named case leaves the substitution closed' "${OUT}" 'never saw close'
+equals  'case 48m: exit code' "${RC}" 0
 
 # --- 48j. a quoted command substitution never closed -> unread, not passed -----------
 service substopen docker-compose.yml 'x/app:latest' build

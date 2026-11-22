@@ -334,10 +334,17 @@ read_gate_sets() {
     awk -v script="$2" -v known="$3" -v defset="$4" -v root="$5" \
         -v prefile="$6" -v srcbad="$7" -v emit="$8" '
         function pad(c, n,   s, i) { s = ""; for (i = 0; i < n; i++) s = s c; return s }
+        # Whether a word at j stands where a command starts: after ; & | ( { or then/do/else/elif.
+        function cmdpos(s, j,   p, w) {
+            p = substr(s, 1, j - 1); sub(/[ \t]+$/, "", p)
+            if (p == "" || p ~ /[;&|({]$/) return 1
+            w = p; sub(/.*[^A-Za-z]/, "", w)
+            return (w ~ /^(then|do|else|elif)$/ && (w == p || substr(p, length(p) - length(w), 1) ~ /[ \t;&|(]/))
+        }
         # C code, S single-quoted, D double-quoted, N comment, H heredoc body.
         # A $( inside double quotes is code again until its own ), then quoted; a ( in
         # ${ } or a case pattern ) does not count, and one left open is LEXOPEN.
-        function lex(   i, line, n, m, j, c, st, hd, nhd, tok, hre, ns, PD, BR, CS, OPL, w, a) {
+        function lex(   i, line, n, m, j, c, st, hd, nhd, tok, hre, ns, PD, BR, CS, CL, OPL, w, a) {
             st = 0; hd = ""; ns = 0; LEXOPEN = 0
             hre = "^<<[-~]?[ \t]*[\\\\\"" q "]?[A-Za-z_][A-Za-z0-9_]*[\"" q "]?"
             for (i = 1; i <= NR; i++) {
@@ -376,15 +383,16 @@ read_gate_sets() {
                     }
                     if (ns && c == "$" && substr(line, j + 1, 1) == "{") { BR[ns]++; m = m "CC"; j += 2; continue }
                     if (ns && BR[ns]) { if (c == "}") BR[ns]--; m = m "C"; j++; continue }
-                    if (ns && (j == 1 || substr(line, j - 1, 1) ~ /[ \t;&|(]/)) {
+                    if (ns && cmdpos(line, j)) {
                         w = substr(line, j, 4); a = substr(line, j + 4, 1)
-                        if (w == "case" && (a == "" || a ~ /[ \t]/)) CS[ns]++
+                        if (w == "case" && (a == "" || a ~ /[ \t]/)) { CS[ns]++; CL[ns "," CS[ns]] = PD[ns] }
                         else if (w == "esac" && CS[ns] && (a == "" || a ~ /[ \t;&|)]/)) CS[ns]--
                     }
                     if (ns && c == "(") PD[ns]++
                     else if (ns && c == ")") {
-                        if (PD[ns]) PD[ns]--
-                        else if (!CS[ns]) { ns--; st = 2 }
+                        if (CS[ns] && CL[ns "," CS[ns]] == PD[ns]) ;
+                        else if (PD[ns]) PD[ns]--
+                        else { ns--; st = 2 }
                     }
                     m = m "C"; j++
                 }
@@ -542,8 +550,11 @@ read_gate_sets() {
                 }
                 LS[i] = s; LM[i] = mk; LE[i] = j
             }
-            dep = 0
+            dep = 0; skipto = 0
             for (i = 1; i <= NR; i++) {
+                # A line a join already read is read there, inside its ( ), not again.
+                if (i <= skipto) { LDEP[i] = LDEP[jh]; continue }
+                jh = i; skipto = LE[i]
                 cnt = tokenize(LS[i], LM[i])
                 head = 1; ex = 0; dmax = dep; pd = 0
                 for (k = 1; k <= cnt; k++) {
@@ -640,7 +651,14 @@ read_gate_sets() {
                                     "pause|unpause|events|wait|cp|convert|push|pull|-)$")
                     teardown = (idle && subc != "-")
                     origin = (named ? "-f" : "")
-                    if (!named) {
+                    cfh = 0
+                    for (z = k - 1; z >= 1 && T[z] ~ /^[A-Za-z_][A-Za-z0-9_]*=/; z--)
+                        if (T[z] ~ /^COMPOSE_FILE=/) { cfp = T[z]; sub(/^[^=]*=/, "", cfp); gsub("[\"" q "]", "", cfp); cfh = 1 }
+                    if (!named && cfh) {
+                        origin = "COMPOSE_FILE"
+                        nsep = split(cfp, SEP, ":")
+                        for (z = 1; z <= nsep; z++) addfile(SEP[z])
+                    } else if (!named) {
                         vv = varval("COMPOSE_FILE", i)
                         if (VARHAVE && varexp("COMPOSE_FILE", i)) {
                             origin = "COMPOSE_FILE"
