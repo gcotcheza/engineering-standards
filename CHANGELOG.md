@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-22 — gate-image-tags reads a compose call inside `"$( … )"` (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 1252, Fineprint #155 (S8 blocker).** Fineprint's teardown is `out="$("${DOWN[@]}" down -v --remove-orphans
+2>&1)" || rc=$?`, and #99's teardown rule never saw its `down`: the lexer had no notion of a `$(` inside double
+quotes, so the quote closed at `"$("`, `${DOWN[@]}` was read as code split on its braces, and the call came out
+with no subcommand, refused as unread under the sourced file. A `$(` inside double quotes is now code until its
+own `)` (a nested `( )` counted, a `(` inside `${ }` and a case pattern's `)` not, at any depth; `case` and
+`esac` count only where a command starts), then the string is quoted again; one never closed is refused as
+unread. The call inside is read like any other: a teardown passes, a build there is judged (cases 48e–48g,
+48i, 48j, 48m).
+**A false allow closed, older than this change.** A `COMPOSE_FILE` set as one command's prefix
+(`COMPOSE_FILE=ci.yml docker compose config`), or inside `( )` or `$( )`, was read as set for the rest of the
+file, so a later `docker compose up --build` was judged against the gate file and passed while it built the
+production tag. Such an assignment now leaves "unset" as possible too, so a later call that reads it is refused
+as having more than one value; a teardown still passes. A `( )` spread over several lines is read once, inside
+it, and a prefix still names its own call's files. No app swept uses either form. Cases 48h, 48k, 48l.
+
 ## 2026-11-21 — gate-image-tags lets a teardown through under an unread COMPOSE_FILE (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Fineprint #155 (S8 blocker).** A gate that sources a file this check cannot read and then tears down by project
 name, `"${DOWN[@]}" down -v` with `DOWN=(docker compose -p "$PROJECT")` and no `-f`, went red with "unread -f
