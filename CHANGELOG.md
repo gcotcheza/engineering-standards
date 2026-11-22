@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-22 — gate-image-tags reads a compose call inside `"$( … )"` (the standard and the deploy lib are unchanged; VERSION is not bumped)
+**Card 1252, Fineprint #155 (S8 blocker).** Fineprint's teardown is `out="$("${DOWN[@]}" down -v --remove-orphans
+2>&1)" || rc=$?`, and #99's teardown rule never saw its `down`: the lexer had no notion of a `$(` inside double
+quotes, so the quote closed at `"$("`, `${DOWN[@]}` was read as code split on its braces, and the call came out
+with no subcommand, refused as unread under the sourced file. A `$(` inside double quotes is now code until its
+own `)` (a nested `( )` counted), then the string is quoted again. The call inside is read like any other: a
+teardown passes, an `up` or `build` there is still judged and still refused under an unread source. Cases 48e–48g.
+
 ## 2026-11-21 — gate-image-tags lets a teardown through under an unread COMPOSE_FILE (the standard and the deploy lib are unchanged; VERSION is not bumped)
 **Fineprint #155 (S8 blocker).** A gate that sources a file this check cannot read and then tears down by project
 name, `"${DOWN[@]}" down -v` with `DOWN=(docker compose -p "$PROJECT")` and no `-f`, went red with "unread -f

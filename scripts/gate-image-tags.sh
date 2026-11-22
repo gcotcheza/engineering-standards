@@ -335,8 +335,9 @@ read_gate_sets() {
         -v prefile="$6" -v srcbad="$7" -v emit="$8" '
         function pad(c, n,   s, i) { s = ""; for (i = 0; i < n; i++) s = s c; return s }
         # C code, S single-quoted, D double-quoted, N comment, H heredoc body.
-        function lex(   i, line, n, m, j, c, st, hd, nhd, tok, hre) {
-            st = 0; hd = ""
+        # A $( inside double quotes is code again until its own ), then quoted.
+        function lex(   i, line, n, m, j, c, st, hd, nhd, tok, hre, ns, PD) {
+            st = 0; hd = ""; ns = 0
             hre = "^<<[-~]?[ \t]*[\\\\\"" q "]?[A-Za-z_][A-Za-z0-9_]*[\"" q "]?"
             for (i = 1; i <= NR; i++) {
                 line = L[i]; n = length(line); m = ""
@@ -352,6 +353,9 @@ read_gate_sets() {
                     if (st == 1) { m = m "S"; if (c == q) st = 0; j++; continue }
                     if (st == 2) {
                         if (c == "\\" && j < n) { m = m "DD"; j += 2; continue }
+                        if (c == "$" && substr(line, j + 1, 1) == "(") {
+                            ns++; PD[ns] = 0; st = 0; m = m "CC"; j += 2; continue
+                        }
                         m = m "D"; if (c == "\"") st = 0; j++; continue
                     }
                     if (c == "\\") { if (j < n) { m = m "CC"; j += 2 } else { m = m "C"; j++ } continue }
@@ -367,6 +371,11 @@ read_gate_sets() {
                         gsub("[\"" q "\\\\]", "", tok)
                         nhd = tok
                         m = m pad("C", RLENGTH); j += RLENGTH; continue
+                    }
+                    if (ns && c == "(") PD[ns]++
+                    else if (ns && c == ")") {
+                        if (PD[ns]) PD[ns]--
+                        else { ns--; st = 2 }
                     }
                     m = m "C"; j++
                 }

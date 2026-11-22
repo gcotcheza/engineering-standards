@@ -624,6 +624,45 @@ matches 'case 48d: an up under a two-valued COMPOSE_FILE is still unread' "${OUT
     'unread -f values: +COMPOSE_FILE \(more than one value is set above this line\) in scripts/e2e\.sh:3$'
 equals  'case 48d: up exit code' "${RC}" 1
 
+# --- 48e. the array teardown inside x="$( … )", Fineprint's e2e.sh:427 -> read --
+# $1 project, $2 the subcommand, $3 what runs before it inside the $( )
+subst_src() {
+    service "$1" docker-compose.yml 'x/app:latest' build
+    overlay "$1" docker-compose.ci.yml app 'x/app:ci'
+    # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+    gate_script "$1" e2e.sh 'source "$here/scripts/missing-lib.sh"
+DOWN=(docker compose -p "$PROJECT")
+out="$('"$3"'"${DOWN[@]}" '"$2"' -v --remove-orphans 2>&1)" || rc=$?
+docker compose -f docker-compose.ci.yml up -d'
+    run "$1"
+}
+subst_src substdown down ''
+lacks   'case 48e: a teardown inside "$( )" is read, so its unread source is not named' "${OUT}" 'unread -f values'
+matches 'case 48e: and the -f run beside it carries the verdict' "${OUT}" '^ok '
+equals  'case 48e: exit code' "${RC}" 0
+for sub in up build; do
+    subst_src "substidle${sub}" "${sub}" ''
+    # shellcheck disable=SC2016  # the expected text quotes the fixture's own $here
+    matches "case 48e: an ${sub} inside \"\$( )\" under an unreadable source is still named" "${OUT}" \
+        'unread -f values: +COMPOSE_FILE, which \$here/scripts/missing-lib\.sh \(sourced at line 1\) may set in scripts/e2e\.sh:3$'
+    equals  "case 48e: ${sub} exit code" "${RC}" 1
+done
+
+# --- 48f. a ( ) inside the "$( )" does not end it early --------------------------
+subst_src substnest down ' (cd /tmp) && '
+lacks   'case 48f: a teardown after a nested ( ) is still read' "${OUT}" 'unread -f values'
+matches 'case 48f: and the line below is code again, a call read' "${OUT}" \
+    'gate runs: +docker-compose\.ci\.yml \(scripts/e2e\.sh:4, -f\) builds nothing$'
+equals  'case 48f: exit code' "${RC}" 0
+
+# --- 48g. after the $( )'s own ), the rest of the string is quoted again --------
+service substquote docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script substquote e2e.sh 'echo "$(date) then docker compose -f docker-compose.yml build"'
+run substquote
+matches 'case 48g: quoted text after a $( ) is a mention, not a call' "${OUT}" 'scripts/e2e\.sh:1'
+lacks   'case 48g: and no call is read from it' "${OUT}" 'docker-compose\.yml \(scripts/e2e\.sh:1'
+
 # --- 49. a -f wrapper carrying no subcommand -> not judged, whatever it names --
 service teardownf docker-compose.yml 'x/app:latest' build
 overlay teardownf docker-compose.ci.yml app 'x/app:ci'
