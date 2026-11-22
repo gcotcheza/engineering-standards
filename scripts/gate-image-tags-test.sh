@@ -574,6 +574,56 @@ matches 'case 48: a bare call under an unreadable sourced file is named' "${OUT}
 matches 'case 48: and no default file set is invented for it' "${OUT}" 'gate runs: +none read beside this root$'
 equals  'case 48: exit code' "${RC}" 1
 
+# --- 48a. a teardown through an array under an unreadable source -> not unread --
+# $1 project, $2 the subcommand the DOWN array is used with
+idle_src() {
+    service "$1" docker-compose.yml 'x/app:latest' build
+    overlay "$1" docker-compose.ci.yml app 'x/app:ci'
+    # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+    gate_script "$1" e2e.sh 'source "$here/scripts/missing-lib.sh"
+DOWN=(docker compose -p "$PROJECT")
+"${DOWN[@]}" '"$2"' -v
+docker compose -f docker-compose.ci.yml up -d'
+    run "$1"
+}
+idle_src srcdown down
+lacks   'case 48a: an array teardown builds nothing, so its unread source is not named' "${OUT}" 'unread -f values'
+matches 'case 48a: and the -f run beside it carries the verdict' "${OUT}" '^ok '
+equals  'case 48a: exit code' "${RC}" 0
+
+# --- 48b. the same array with up or build -> still unread -----------------------
+for sub in up build; do
+    idle_src "srcidle${sub}" "${sub}"
+    # shellcheck disable=SC2016  # the expected text quotes the fixture's own $here
+    matches "case 48b: an array ${sub} under an unreadable source is still named" "${OUT}" \
+        'unread -f values: +COMPOSE_FILE, which \$here/scripts/missing-lib\.sh \(sourced at line 1\) may set in scripts/e2e\.sh:3$'
+    equals  "case 48b: ${sub} exit code" "${RC}" 1
+done
+
+# --- 48c. a literal teardown under an unreadable source -> a call, not a mention -
+service srclit docker-compose.yml 'x/app:latest' build
+# shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+gate_script srclit e2e.sh '. "$here/scripts/missing-lib.sh"
+docker compose -p acme down -v'
+run srclit
+lacks   'case 48c: a literal teardown is not an unread call' "${OUT}" 'unread -f values'
+lacks   'case 48c: nor a line that yielded no call' "${OUT}" 'e2e\.sh:2'
+
+# --- 48d. COMPOSE_FILE given two values: a teardown is let through, up is not ---
+for sub in down up; do
+    service "cfsplit${sub}" docker-compose.yml 'x/app:latest' build
+    # shellcheck disable=SC2016  # the fixture is a script, not this one's expansion
+    gate_script "cfsplit${sub}" e2e.sh 'export COMPOSE_FILE=docker-compose.yml
+if [ -n "${CI:-}" ]; then export COMPOSE_FILE=docker-compose.ci.yml; fi
+docker compose '"${sub}"
+done
+run cfsplitdown
+lacks   'case 48d: a teardown under a two-valued COMPOSE_FILE is not unread' "${OUT}" 'more than one value'
+run cfsplitup
+matches 'case 48d: an up under a two-valued COMPOSE_FILE is still unread' "${OUT}" \
+    'unread -f values: +COMPOSE_FILE \(more than one value is set above this line\) in scripts/e2e\.sh:3$'
+equals  'case 48d: up exit code' "${RC}" 1
+
 # --- 49. a -f wrapper carrying no subcommand -> not judged, whatever it names --
 service teardownf docker-compose.yml 'x/app:latest' build
 overlay teardownf docker-compose.ci.yml app 'x/app:ci'
