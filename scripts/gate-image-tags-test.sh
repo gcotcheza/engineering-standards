@@ -1571,6 +1571,39 @@ run arrsent
 equals  'case 85i: exit code' "${RC}" 1
 lacks   "case 85i: the array's value never appears" "${OUT}" 'SENTINEL-85i'
 
+# --- 86. a *local* compose file is production-side, not unrecognised -> PASS ----
+service localprod docker-compose.yml       'qp/app:latest' build
+service localprod docker-compose.local.yml 'qp/app:local' build
+service localprod docker-compose.ci.yml    'qp/app:ci' build
+gate_script localprod ci.sh 'docker compose -f docker-compose.ci.yml build app'
+run localprod
+lacks   'case 86: a *local* file is not unrecognised' "${OUT}" 'unrecognised|named neither'
+equals  'case 86: exit code' "${RC}" 0
+
+# --- 86b. a *local* file building a gate tag still shares it -> FAIL -------------
+service localshared docker-compose.local.yml 'qp/app:ci' build
+service localshared docker-compose.ci.yml    'qp/app:ci' build
+run localshared
+matches 'case 86b: the shared tag is named' "${OUT}" 'FAIL .*: image tag qp/app:ci is built for the gate and run in production'
+matches 'case 86b: the *local* file is the production side' "${OUT}" 'production: +docker-compose\.local\.yml:5$'
+equals  'case 86b: exit code' "${RC}" 1
+
+# --- 86c. a gate run over a *local* file reaches production -> FAIL -------------
+service localrun docker-compose.local.yml 'qp/app:local' build
+service localrun docker-compose.ci.yml    'qp/app:ci' build
+gate_script localrun ci.sh 'docker compose -f docker-compose.local.yml build app'
+run localrun
+matches 'case 86c: the gate run is refused' "${OUT}" \
+    'FAIL .*: the gate run at scripts/ci\.sh:1 builds image tag qp/app:local, which production is recreated from'
+equals  'case 86c: exit code' "${RC}" 1
+
+# --- 86d. *local-e2e* stays gate-side: the e2e arm is read first -> FAIL ---------
+service locale2e docker-compose.local-e2e.yml 'qp/app:latest' build
+service locale2e docker-compose.yml           'qp/app:latest' build
+run locale2e
+matches 'case 86d: the e2e file is the gate side' "${OUT}" 'gate: +docker-compose\.local-e2e\.yml:5$'
+equals  'case 86d: exit code' "${RC}" 1
+
 if [ "${fails}" -eq 0 ]; then
     printf 'gate-image-tags-test: all checks passed\n'
     exit 0

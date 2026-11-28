@@ -706,7 +706,7 @@ for f in "${FILES[@]}"; do
     side=production
     case "${rel}" in
         *e2e*|*ci*) side=gate; GATE_FILES+=("${rel}") ;;
-        docker-compose.yml|docker-compose.yaml|compose.yml|compose.yaml|*prod*|*staging*)
+        docker-compose.yml|docker-compose.yaml|compose.yml|compose.yaml|*prod*|*staging*|*local*)
             PROD_FILES+=("${rel}") ;;
         *) PROD_FILES+=("${rel}"); ODD_FILES+=("${rel}") ;;
     esac
